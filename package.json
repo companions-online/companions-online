@@ -10,7 +10,8 @@
     "build:client": "tsx client/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cli:map": "tsx cli/view-map.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

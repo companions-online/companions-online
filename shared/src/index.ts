@@ -23,3 +23,6 @@ export type {
 } from './protocol/codec.js';
 export { tileToScreen, screenToTile } from './coordinates.js';
 export type { ScreenPoint, TilePoint } from './coordinates.js';
+export { terrainChar, buildingChar, blueprintChar, tileChar } from './ascii.js';
+export { PerlinNoise, WorldMap, generateWorld } from './world/index.js';
+export type { WorldGenResult, EntitySpawn } from './world/index.js';
