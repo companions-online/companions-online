@@ -1,0 +1,28 @@
+/** Client → Server opcodes */
+export const enum ClientOpcode {
+  Action = 0x01,
+  Ping   = 0x02,
+}
+
+/** Server → Client opcodes */
+export const enum ServerOpcode {
+  Pong            = 0x02,
+  WorldDelta      = 0x10,
+  EntityFullState = 0x11,
+  Chunk           = 0x20,
+}
+
+/** Section tags within a WorldDelta message */
+export const enum DeltaSectionTag {
+  End            = 0x00,
+  EntityUpdates  = 0x01,
+  EntityRemovals = 0x02,
+  TileUpdates    = 0x03,
+}
+
+/** Bit indices for tile fields in tile delta bitmask */
+export const enum TileFieldBit {
+  Terrain      = 0,
+  Building     = 1,
+  BuildingMeta = 2,
+}
