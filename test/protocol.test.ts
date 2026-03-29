@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ClientAction, ActionType, Direction,
-  encodeAction, encodePing, encodePong,
+  encodeAction, encodePing, encodePong, encodeWelcome,
   encodeWorldDelta, encodeEntityFullState, encodeChunk,
   decodeClientMessage, decodeServerMessage,
   rleEncode, rleDecode,
@@ -57,6 +57,15 @@ describe('ACTION messages', () => {
 });
 
 // ---- Ping/Pong ----
+
+describe('WELCOME', () => {
+  it('round-trips Welcome', () => {
+    const buf = encodeWelcome(42);
+    expect(buf.byteLength).toBe(3);
+    const msg = decodeServerMessage(buf);
+    expect(msg).toEqual({ type: 'welcome', entityId: 42 });
+  });
+});
 
 describe('PING/PONG', () => {
   it('round-trips Ping', () => {

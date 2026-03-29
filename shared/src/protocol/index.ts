@@ -2,7 +2,7 @@ export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './opc
 export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
-  encodeAction, encodePing, encodePong,
+  encodeAction, encodePing, encodePong, encodeWelcome,
   encodeWorldDelta, encodeEntityFullState, encodeChunk,
   decodeServerMessage, decodeClientMessage,
 } from './codec.js';

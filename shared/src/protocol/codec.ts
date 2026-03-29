@@ -308,6 +308,13 @@ export function encodePong(clientTime: number): ArrayBuffer {
   return w.getBuffer();
 }
 
+export function encodeWelcome(entityId: number): ArrayBuffer {
+  const w = new BufferWriter(3);
+  w.writeU8(ServerOpcode.Welcome);
+  w.writeU16(entityId);
+  return w.getBuffer();
+}
+
 export function encodeWorldDelta(
   tick: number,
   entityUpdates: DecodedEntityUpdate[],
@@ -397,6 +404,7 @@ export function encodeChunk(
 // --- Decoders ---
 
 export type DecodedServerMessage =
+  | { type: 'welcome'; entityId: number }
   | { type: 'pong'; clientTime: number }
   | { type: 'worldDelta'; data: DecodedWorldDelta }
   | { type: 'entityFullState'; data: DecodedEntityFullState }
@@ -422,6 +430,9 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
 
     case ServerOpcode.Chunk:
       return { type: 'chunk', data: decodeChunk(r) };
+
+    case ServerOpcode.Welcome:
+      return { type: 'welcome', entityId: r.readU16() };
 
     default:
       throw new Error(`Unknown server opcode: 0x${opcode.toString(16)}`);

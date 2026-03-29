@@ -10,6 +10,7 @@ export class EntityManager {
   private nextId = 1;
   private alive = new Set<number>();
   private dirty = new Map<number, number>();
+  private destroyed: number[] = [];
 
   // Synced components
   readonly position      = new ComponentStore<PositionData>(ComponentBit.Position, this.dirty);
@@ -33,6 +34,7 @@ export class EntityManager {
   destroy(id: number): void {
     this.alive.delete(id);
     this.dirty.delete(id);
+    this.destroyed.push(id);
     this.position.delete(id);
     this.direction.delete(id);
     this.nextWaypoint.delete(id);
@@ -54,6 +56,14 @@ export class EntityManager {
 
   clearDirty(): void {
     this.dirty.clear();
+  }
+
+  getDestroyed(): readonly number[] {
+    return this.destroyed;
+  }
+
+  clearDestroyed(): void {
+    this.destroyed = [];
   }
 
   getEntityCount(): number {

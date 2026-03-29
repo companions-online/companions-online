@@ -11,7 +11,7 @@ export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './pro
 export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
-  encodeAction, encodePing, encodePong,
+  encodeAction, encodePing, encodePong, encodeWelcome,
   encodeWorldDelta, encodeEntityFullState, encodeChunk,
   decodeServerMessage, decodeClientMessage,
 } from './protocol/codec.js';
@@ -26,3 +26,5 @@ export type { ScreenPoint, TilePoint } from './coordinates.js';
 export { terrainChar, buildingChar, blueprintChar, tileChar } from './ascii.js';
 export { PerlinNoise, WorldMap, generateWorld } from './world/index.js';
 export type { WorldGenResult, EntitySpawn } from './world/index.js';
+export { resolveAction } from './action-resolver.js';
+export type { ActionContext } from './action-resolver.js';
