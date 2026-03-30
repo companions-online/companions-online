@@ -14,6 +14,8 @@ import type { DecodedAction, DecodedEntityUpdate } from '@shared/protocol/codec.
 import { EntityManager } from './ecs/entity-manager.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { setMoveTarget, clearMoveTarget, runMovement } from './systems/movement.js';
+import { initCritterAI, runCritterAI } from './systems/critter-ai.js';
+import { OccupancyGrid } from './occupancy.js';
 
 const PORT = 3001;
 const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 42;
@@ -41,6 +43,15 @@ for (const spawn of entitySpawns) {
   if (bp.speed > 0) entities.speed.set(eid, bp.speed);
 }
 entities.clearDirty();
+
+// --- Occupancy grid ---
+const occupancy = new OccupancyGrid(MAP_SIZE, MAP_SIZE);
+for (const eid of entities.getAllEntities()) {
+  const pos = entities.position.get(eid);
+  if (pos) occupancy.set(pos.tileX, pos.tileY, eid);
+}
+
+initCritterAI(entities);
 console.log(`[server] ${entities.getEntityCount()} entities created`);
 
 // --- Client sessions ---
@@ -80,6 +91,7 @@ function createPlayerEntity(): number {
   entities.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
   entities.statusEffects.set(eid, { effects: 0 });
   entities.speed.set(eid, bp.speed);
+  occupancy.set(sx, sy, eid);
 
   return eid;
 }
@@ -188,15 +200,18 @@ loop.start((tick, _dt) => {
     if (action.action === ClientAction.MoveTo) {
       const a = action as { action: number; tileX: number; tileY: number };
       if (map.isWalkable(a.tileX, a.tileY)) {
-        setMoveTarget(session.entityId, a.tileX, a.tileY);
+        setMoveTarget(session.entityId, a.tileX, a.tileY, entities, map, occupancy);
       }
     } else if (action.action === ClientAction.Cancel) {
       clearMoveTarget(session.entityId);
     }
   }
 
-  // 2. Run movement
-  runMovement(entities, map);
+  // 2. Critter AI
+  runCritterAI(entities, map, occupancy);
+
+  // 3. Run movement
+  runMovement(entities, map, occupancy);
 
   // 3. Broadcast
   broadcastTick(tick);
@@ -262,6 +277,8 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    const pos = entities.position.get(entityId);
+    if (pos) occupancy.clear(pos.tileX, pos.tileY);
     entities.destroy(entityId);
     clearMoveTarget(entityId);
     sessions.delete(ws);

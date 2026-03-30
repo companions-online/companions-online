@@ -28,3 +28,5 @@ export { PerlinNoise, WorldMap, generateWorld } from './world/index.js';
 export type { WorldGenResult, EntitySpawn } from './world/index.js';
 export { resolveAction } from './action-resolver.js';
 export type { ActionContext } from './action-resolver.js';
+export { findPath } from './pathfinding.js';
+export type { PathResult } from './pathfinding.js';
