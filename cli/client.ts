@@ -2,24 +2,29 @@ import WebSocket from 'ws';
 import { MAP_SIZE, CHUNK_SIZE, VIEW_RANGE } from '../shared/src/constants.js';
 import { Terrain, Building } from '../shared/src/terrain.js';
 import { tileChar } from '../shared/src/ascii.js';
-import { BlueprintType } from '../shared/src/blueprints.js';
+import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
 import { ClientAction } from '../shared/src/actions.js';
 import {
   decodeServerMessage, encodeAction,
 } from '../shared/src/protocol/codec.js';
-import type { EntityComponents, DecodedAction } from '../shared/src/protocol/codec.js';
+import type { EntityComponents, DecodedAction, SyncedInventoryItem } from '../shared/src/protocol/codec.js';
 import { resolveAction } from '../shared/src/action-resolver.js';
+import { getAllRecipes } from '../shared/src/recipes.js';
+import type { Recipe } from '../shared/src/recipes.js';
+import { canCraft, equipSlotToNumber, numberToEquipSlot } from '../shared/src/inventory.js';
 
 // --- State ---
-const terrain = new Uint8Array(MAP_SIZE * MAP_SIZE);
-const buildings = new Uint8Array(MAP_SIZE * MAP_SIZE);
+const terrainGrid = new Uint8Array(MAP_SIZE * MAP_SIZE);
+const buildingsGrid = new Uint8Array(MAP_SIZE * MAP_SIZE);
 const entityMap = new Map<number, EntityComponents & { speed?: number }>();
 
 let myEntityId = 0;
 let cursorDX = 0;
 let cursorDY = 0;
 let lastTick = 0;
-let debugMode = false;
+let panelMode: 'none' | 'debug' | 'inventory' | 'crafting' = 'none';
+let invCursor = 0;
+let inventory: SyncedInventoryItem[] = [];
 const debugLog: string[] = [];
 const DEBUG_MAX = 200;
 
@@ -56,8 +61,8 @@ ws.on('message', (data) => {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
           const gi = (sy + ly) * MAP_SIZE + (sx + lx);
           const ci = ly * CHUNK_SIZE + lx;
-          terrain[gi] = t[ci];
-          buildings[gi] = b[ci];
+          terrainGrid[gi] = t[ci];
+          buildingsGrid[gi] = b[ci];
         }
       }
       dbg(`← Chunk (${chunkX},${chunkY})`);
@@ -69,7 +74,7 @@ ws.on('message', (data) => {
       entityMap.set(entityId, { ...components, speed });
       const pos = components.position;
       const bpId = components.blueprintId?.blueprintId;
-      dbg(`← FullState #${entityId} bp=${bpId ?? '?'} pos=${pos ? `(${pos.tileX},${pos.tileY})` : '?'}`);
+      dbg(`← Full #${entityId} bp=${bpId ?? '?'} pos=${pos ? `(${pos.tileX},${pos.tileY})` : '?'}`);
       break;
     }
 
@@ -87,6 +92,12 @@ ws.on('message', (data) => {
       break;
     }
 
+    case 'inventorySync':
+      inventory = msg.items;
+      if (invCursor >= inventory.length) invCursor = Math.max(0, inventory.length - 1);
+      dbg(`← Inv ${msg.items.length} items`);
+      break;
+
     case 'pong':
       break;
   }
@@ -94,17 +105,29 @@ ws.on('message', (data) => {
   render();
 });
 
-ws.on('close', () => {
-  cleanup();
-  console.log('Disconnected.');
-  process.exit(0);
-});
+ws.on('close', () => { cleanup(); console.log('Disconnected.'); process.exit(0); });
+ws.on('error', (err) => { cleanup(); console.error('Connection error:', err.message); process.exit(1); });
 
-ws.on('error', (err) => {
-  cleanup();
-  console.error('Connection error:', err.message);
-  process.exit(1);
-});
+// --- Helpers ---
+function sendAction(action: DecodedAction) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(encodeAction(action));
+  }
+}
+
+function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprintId: number } | undefined {
+  const key = wy * MAP_SIZE + wx;
+  for (const [eid, comp] of entityMap) {
+    if (!comp.position || comp.blueprintId === undefined) continue;
+    const bpId = typeof comp.blueprintId === 'number'
+      ? comp.blueprintId
+      : (comp.blueprintId as { blueprintId: number }).blueprintId;
+    if (comp.position.tileY * MAP_SIZE + comp.position.tileX === key && eid !== myEntityId) {
+      return { entityId: eid, blueprintId: bpId };
+    }
+  }
+  return undefined;
+}
 
 // --- Rendering ---
 function render() {
@@ -118,15 +141,15 @@ function render() {
   const statusRows = 2;
   const mapRows = rows - statusRows;
 
-  const debugWidth = debugMode ? 42 : 0;
-  const mapCols = cols - debugWidth;
+  const panelWidth = panelMode !== 'none' ? 42 : 0;
+  const mapCols = cols - panelWidth;
 
   const halfW = Math.floor(mapCols / 2);
   const halfH = Math.floor(mapRows / 2);
 
   // Build entity position lookup
-  const entityAtTile = new Map<number, number>(); // tileKey → blueprintType
-  for (const [eid, comp] of entityMap) {
+  const entityAtTile = new Map<number, number>();
+  for (const [, comp] of entityMap) {
     if (comp.position && comp.blueprintId !== undefined) {
       const bpId = typeof comp.blueprintId === 'number'
         ? comp.blueprintId
@@ -135,7 +158,7 @@ function render() {
     }
   }
 
-  let out = '\x1b[H'; // cursor home (no clear — overwrite in place)
+  let out = '\x1b[H';
 
   for (let vy = 0; vy < mapRows; vy++) {
     const wy = playerY - halfH + vy;
@@ -145,15 +168,15 @@ function render() {
       const wx = playerX - halfW + vx;
       const dx = vx - halfW;
       const dy = vy - halfH;
-      const isCursor = dx === cursorDX && dy === cursorDY;
+      const isCursor = panelMode === 'none' && dx === cursorDX && dy === cursorDY;
 
       let ch: string;
       if (wx < 0 || wx >= MAP_SIZE || wy < 0 || wy >= MAP_SIZE) {
         ch = ' ';
       } else {
         const gi = wy * MAP_SIZE + wx;
-        const t = terrain[gi] as Terrain;
-        const b = buildings[gi] as Building;
+        const t = terrainGrid[gi] as Terrain;
+        const b = buildingsGrid[gi] as Building;
         const ent = entityAtTile.get(gi) as BlueprintType | undefined;
         ch = tileChar(t, b, ent);
       }
@@ -165,12 +188,22 @@ function render() {
       }
     }
 
-    // Debug panel
-    if (debugMode) {
+    // Right panel
+    if (panelWidth > 0) {
       line += '\x1b[90m│\x1b[0m';
-      const dbgIdx = debugLog.length - mapRows + vy;
-      const dbgLine = dbgIdx >= 0 && dbgIdx < debugLog.length ? debugLog[dbgIdx] : '';
-      line += dbgLine.slice(0, debugWidth - 2).padEnd(debugWidth - 2);
+      const pw = panelWidth - 2;
+      let panelLine = '';
+
+      if (panelMode === 'debug') {
+        const dbgIdx = debugLog.length - mapRows + vy;
+        panelLine = dbgIdx >= 0 && dbgIdx < debugLog.length ? debugLog[dbgIdx] : '';
+      } else if (panelMode === 'inventory') {
+        panelLine = renderInventoryLine(vy, mapRows, pw);
+      } else if (panelMode === 'crafting') {
+        panelLine = renderCraftingLine(vy, mapRows, pw);
+      }
+
+      line += panelLine.slice(0, pw).padEnd(pw);
     }
 
     out += line + '\n';
@@ -179,13 +212,75 @@ function render() {
   // Status bar
   const cursorWorldX = playerX + cursorDX;
   const cursorWorldY = playerY + cursorDY;
-  const status1 = ` Player (${playerX},${playerY}) | Cursor (${cursorWorldX},${cursorWorldY}) | Entities: ${entityMap.size} | Tick: ${lastTick}`;
-  const status2 = ` [arrows] move cursor  [enter] act  [d] debug  [q] quit`;
+  const wt = inventory.reduce((s, i) => s + (getBlueprint(i.blueprintId)?.weight ?? 0) * i.quantity, 0);
+  const status1 = ` (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${entityMap.size} T:${lastTick} W:${wt}/50`;
+  const keys = panelMode === 'none'
+    ? ' [arrows]move [enter]act [i]nv [d]ebug [q]uit'
+    : panelMode === 'inventory'
+    ? ' [↑↓]select [e]quip [g]drop [c]raft [i]close'
+    : panelMode === 'crafting'
+    ? ' [↑↓]select [enter]craft [c]back [i]close'
+    : ' [d]close [q]uit';
 
   out += `\x1b[7m${status1.padEnd(cols)}\x1b[0m\n`;
-  out += `\x1b[7m${status2.padEnd(cols)}\x1b[0m`;
+  out += `\x1b[7m${keys.padEnd(cols)}\x1b[0m`;
 
   process.stdout.write(out);
+}
+
+function renderInventoryLine(vy: number, totalRows: number, maxW: number): string {
+  if (vy === 0) return '\x1b[1mINVENTORY\x1b[0m';
+  if (vy === 1) return '';
+
+  const itemIdx = vy - 2;
+  if (itemIdx >= 0 && itemIdx < inventory.length) {
+    const item = inventory[itemIdx];
+    const bp = getBlueprint(item.blueprintId);
+    const name = bp?.name ?? `#${item.blueprintId}`;
+    const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
+    let slotPrefix = '    ';
+    if (item.equippedSlot === 1) slotPrefix = '[H] ';
+    else if (item.equippedSlot === 2) slotPrefix = '[B] ';
+    else if (item.equippedSlot === 3) slotPrefix = '[^] ';
+
+    const selected = itemIdx === invCursor;
+    const text = `${selected ? '>' : ' '} ${slotPrefix}${name}${qty}`;
+    return selected ? `\x1b[7m${text}\x1b[0m` : text;
+  }
+
+  const footerStart = Math.max(inventory.length + 3, totalRows - 3);
+  if (vy === footerStart) {
+    const wt = inventory.reduce((s, i) => s + (getBlueprint(i.blueprintId)?.weight ?? 0) * i.quantity, 0);
+    return `Weight: ${wt}/50`;
+  }
+  return '';
+}
+
+function renderCraftingLine(vy: number, totalRows: number, maxW: number): string {
+  if (vy === 0) return '\x1b[1mCRAFTING\x1b[0m';
+  if (vy === 1) return '';
+
+  const recipes = getAllRecipes();
+  // Build a simple inventory for canCraft check
+  const inv = { items: inventory.map(i => ({ itemId: i.itemId, blueprintId: i.blueprintId, quantity: i.quantity, equippedSlot: numberToEquipSlot(i.equippedSlot) })), maxWeight: 50 };
+
+  const recipeIdx = vy - 2;
+  if (recipeIdx >= 0 && recipeIdx < recipes.length) {
+    const recipe = recipes[recipeIdx];
+    const outBp = getBlueprint(recipe.output.blueprintId);
+    const outName = outBp?.name ?? '?';
+    const inputs = recipe.inputs.map(inp => {
+      const ibp = getBlueprint(inp.blueprintId);
+      return `${inp.quantity} ${ibp?.name ?? '?'}`;
+    }).join(', ');
+    const craftable = canCraft(recipe, inv);
+    const selected = recipeIdx === invCursor;
+    const prefix = selected ? '>' : ' ';
+    const text = `${prefix} ${outName} (${inputs})`;
+    if (!craftable) return `\x1b[90m${text}\x1b[0m`;
+    return selected ? `\x1b[7m${text}\x1b[0m` : text;
+  }
+  return '';
 }
 
 // --- Input ---
@@ -193,23 +288,89 @@ process.stdin.setRawMode!(true);
 process.stdin.resume();
 process.stdin.setEncoding('utf8');
 
-process.stdout.write('\x1b[?25l'); // hide cursor
-process.stdout.write('\x1b[2J');   // clear screen
+process.stdout.write('\x1b[?25l');
+process.stdout.write('\x1b[2J');
 
 process.stdin.on('data', (key: string) => {
-  if (key === 'q' || key === '\x03') { // q or Ctrl-C
+  if (key === 'q' || key === '\x03') {
     cleanup();
     ws.close();
     process.exit(0);
   }
 
-  if (key === 'd') {
-    debugMode = !debugMode;
-    process.stdout.write('\x1b[2J'); // clear on toggle
+  // Panel toggles
+  if (key === 'd' && panelMode !== 'inventory' && panelMode !== 'crafting') {
+    panelMode = panelMode === 'debug' ? 'none' : 'debug';
+    process.stdout.write('\x1b[2J');
     render();
     return;
   }
 
+  if (key === 'i') {
+    if (panelMode === 'inventory' || panelMode === 'crafting') {
+      panelMode = 'none';
+    } else {
+      panelMode = 'inventory';
+      invCursor = 0;
+    }
+    process.stdout.write('\x1b[2J');
+    render();
+    return;
+  }
+
+  // --- Inventory mode ---
+  if (panelMode === 'inventory') {
+    if (key === '\x1b[A') { invCursor = Math.max(0, invCursor - 1); }
+    else if (key === '\x1b[B') { invCursor = Math.min(inventory.length - 1, invCursor + 1); }
+    else if (key === 'e' && inventory.length > 0) {
+      const item = inventory[invCursor];
+      if (item) {
+        if (item.equippedSlot > 0) {
+          sendAction({ action: ClientAction.Unequip, slot: item.equippedSlot });
+          dbg(`→ Unequip slot=${item.equippedSlot}`);
+        } else {
+          sendAction({ action: ClientAction.Equip, itemId: item.itemId });
+          dbg(`→ Equip itemId=${item.itemId}`);
+        }
+      }
+    }
+    else if (key === 'g' && inventory.length > 0) {
+      const item = inventory[invCursor];
+      if (item) {
+        sendAction({ action: ClientAction.Drop, itemId: item.itemId });
+        dbg(`→ Drop itemId=${item.itemId}`);
+      }
+    }
+    else if (key === 'c') {
+      panelMode = 'crafting';
+      invCursor = 0;
+      process.stdout.write('\x1b[2J');
+    }
+    render();
+    return;
+  }
+
+  // --- Crafting mode ---
+  if (panelMode === 'crafting') {
+    const recipes = getAllRecipes();
+    if (key === '\x1b[A') { invCursor = Math.max(0, invCursor - 1); }
+    else if (key === '\x1b[B') { invCursor = Math.min(recipes.length - 1, invCursor + 1); }
+    else if (key === '\r' || key === '\n') {
+      if (invCursor >= 0 && invCursor < recipes.length) {
+        sendAction({ action: ClientAction.Craft, recipeId: recipes[invCursor].id });
+        dbg(`→ Craft recipe=${recipes[invCursor].id}`);
+      }
+    }
+    else if (key === 'c') {
+      panelMode = 'inventory';
+      invCursor = 0;
+      process.stdout.write('\x1b[2J');
+    }
+    render();
+    return;
+  }
+
+  // --- Map mode (default) ---
   const maxRange = Math.floor(VIEW_RANGE / 2);
 
   if (key === '\x1b[A') { cursorDY = Math.max(-maxRange, cursorDY - 1); }
@@ -236,30 +397,37 @@ function doAction() {
 
   const gi = ty * MAP_SIZE + tx;
   const isWalkable = !(
-    terrain[gi] === Terrain.Water ||
-    terrain[gi] === Terrain.Rock ||
-    terrain[gi] === Terrain.River
+    terrainGrid[gi] === Terrain.Water ||
+    terrainGrid[gi] === Terrain.Rock ||
+    terrainGrid[gi] === Terrain.River
   ) && (
-    buildings[gi] === Building.None ||
-    buildings[gi] === Building.Floor ||
-    buildings[gi] === Building.Door
+    buildingsGrid[gi] === Building.None ||
+    buildingsGrid[gi] === Building.Floor ||
+    buildingsGrid[gi] === Building.Door
   );
+
+  const entAt = entityAtWorldTile(tx, ty);
 
   const action = resolveAction({
     targetX: tx,
     targetY: ty,
     isWalkable,
+    entityAtTarget: entAt,
   });
 
-  if (action && ws.readyState === WebSocket.OPEN) {
-    ws.send(encodeAction(action));
-    dbg(`→ Action MoveTo (${tx},${ty})`);
+  if (action) {
+    sendAction(action);
+    if (action.action === ClientAction.Pickup) {
+      dbg(`→ Pickup eid=${(action as any).entityId}`);
+    } else {
+      dbg(`→ MoveTo (${tx},${ty})`);
+    }
     render();
   }
 }
 
 function cleanup() {
-  process.stdout.write('\x1b[?25h'); // show cursor
-  process.stdout.write('\x1b[0m');   // reset attributes
+  process.stdout.write('\x1b[?25h');
+  process.stdout.write('\x1b[0m');
   if (process.stdin.setRawMode) process.stdin.setRawMode(false);
 }

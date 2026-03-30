@@ -11,6 +11,7 @@ export const enum ServerOpcode {
   EntityFullState = 0x11,
   Chunk           = 0x20,
   Welcome         = 0x30,
+  InventorySync   = 0x31,
 }
 
 /** Section tags within a WorldDelta message */

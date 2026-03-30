@@ -6,12 +6,16 @@ export { StatusEffect } from './status-effects.js';
 export { ComponentBit, WAYPOINT_NONE } from './components.js';
 export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintIdData, StatusEffectsData } from './components.js';
 export { BlueprintType, getBlueprint } from './blueprints.js';
-export type { Blueprint } from './blueprints.js';
+export type { Blueprint, BlueprintCategory, EquipSlot } from './blueprints.js';
+export { getRecipe, getAllRecipes } from './recipes.js';
+export type { Recipe } from './recipes.js';
+export { getWeight, findItem, getEquipped, hasItems, canCraft, equipSlotToNumber, numberToEquipSlot, EQUIP_SLOT_NONE, EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from './inventory.js';
+export type { InventoryItem, Inventory } from './inventory.js';
 export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './protocol/opcodes.js';
 export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
-  encodeAction, encodePing, encodePong, encodeWelcome,
+  encodeAction, encodePing, encodePong, encodeWelcome, encodeInventorySync,
   encodeWorldDelta, encodeEntityFullState, encodeChunk,
   decodeServerMessage, decodeClientMessage,
 } from './protocol/codec.js';
@@ -19,6 +23,8 @@ export type {
   EntityComponents,
   DecodedEntityUpdate, DecodedTileUpdate, DecodedWorldDelta,
   DecodedEntityFullState, DecodedChunk, DecodedAction,
+  SyncedInventoryItem,
+  DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
   DecodedServerMessage, DecodedClientMessage,
 } from './protocol/codec.js';
 export { tileToScreen, screenToTile } from './coordinates.js';

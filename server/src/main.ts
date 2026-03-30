@@ -8,14 +8,16 @@ import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
-  encodeWorldDelta, encodePong, decodeClientMessage,
+  encodeWorldDelta, encodePong, decodeClientMessage, encodeInventorySync,
 } from '@shared/protocol/codec.js';
-import type { DecodedAction, DecodedEntityUpdate } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft } from '@shared/protocol/codec.js';
+import { numberToEquipSlot } from '@shared/inventory.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { setMoveTarget, clearMoveTarget, runMovement } from './systems/movement.js';
 import { initCritterAI, runCritterAI } from './systems/critter-ai.js';
 import { OccupancyGrid } from './occupancy.js';
+import { InventoryManager } from './inventory-manager.js';
 
 const PORT = 3001;
 const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 42;
@@ -37,10 +39,10 @@ for (const spawn of entitySpawns) {
   entities.direction.set(eid, { dir: Direction.S });
   entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   entities.currentAction.set(eid, { actionType: ActionType.Idle });
-  entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
+  if (bp.maxHp) entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
   entities.blueprintId.set(eid, { blueprintId: spawn.blueprint });
   entities.statusEffects.set(eid, { effects: 0 });
-  if (bp.speed > 0) entities.speed.set(eid, bp.speed);
+  if (bp.speed) entities.speed.set(eid, bp.speed);
 }
 entities.clearDirty();
 
@@ -52,6 +54,9 @@ for (const eid of entities.getAllEntities()) {
 }
 
 initCritterAI(entities);
+
+// --- Inventory manager ---
+const inventoryMgr = new InventoryManager();
 console.log(`[server] ${entities.getEntityCount()} entities created`);
 
 // --- Client sessions ---
@@ -87,11 +92,16 @@ function createPlayerEntity(): number {
   entities.direction.set(eid, { dir: Direction.S });
   entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   entities.currentAction.set(eid, { actionType: ActionType.Idle });
-  entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
+  entities.health.set(eid, { currentHp: bp.maxHp ?? 100, maxHp: bp.maxHp ?? 100 });
   entities.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
   entities.statusEffects.set(eid, { effects: 0 });
-  entities.speed.set(eid, bp.speed);
+  entities.speed.set(eid, bp.speed ?? 3);
   occupancy.set(sx, sy, eid);
+
+  // Starter inventory
+  inventoryMgr.create(eid, 50);
+  inventoryMgr.addItem(eid, BlueprintType.Wood, 2);
+  inventoryMgr.addItem(eid, BlueprintType.Rock, 1);
 
   return eid;
 }
@@ -128,6 +138,13 @@ function sendInitialState(session: ClientSession): void {
       session.knownEntities.add(eid);
     }
   }
+
+  // Send initial inventory
+  sendInventorySync(session);
+}
+
+function sendInventorySync(session: ClientSession): void {
+  session.ws.send(encodeInventorySync(inventoryMgr.getSyncData(session.entityId)));
 }
 
 // --- Per-tick broadcast ---
@@ -204,6 +221,51 @@ loop.start((tick, _dt) => {
       }
     } else if (action.action === ClientAction.Cancel) {
       clearMoveTarget(session.entityId);
+    } else if (action.action === ClientAction.Pickup) {
+      const a = action as DecodedActionPickup;
+      const targetPos = entities.position.get(a.entityId);
+      const playerPos = entities.position.get(session.entityId);
+      if (targetPos && playerPos) {
+        const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+        const bp = entities.blueprintId.get(a.entityId);
+        const bpDef = bp ? getBlueprint(bp.blueprintId) : undefined;
+        if (dist <= 1 && bpDef && (bpDef.category === 'item' || bpDef.category === 'resource')) {
+          const result = inventoryMgr.addItem(session.entityId, bp!.blueprintId, 1);
+          if (result.success) {
+            occupancy.clear(targetPos.tileX, targetPos.tileY);
+            entities.destroy(a.entityId);
+            sendInventorySync(session);
+          }
+        }
+      }
+    } else if (action.action === ClientAction.Equip) {
+      const a = action as DecodedActionEquip;
+      if (inventoryMgr.equip(session.entityId, a.itemId)) {
+        sendInventorySync(session);
+      }
+    } else if (action.action === ClientAction.Unequip) {
+      const a = action as DecodedActionUnequip;
+      const slot = numberToEquipSlot(a.slot);
+      if (slot && inventoryMgr.unequip(session.entityId, slot)) {
+        sendInventorySync(session);
+      }
+    } else if (action.action === ClientAction.Drop) {
+      const a = action as DecodedActionDrop;
+      const dropped = inventoryMgr.drop(session.entityId, a.itemId);
+      if (dropped) {
+        const playerPos = entities.position.get(session.entityId);
+        if (playerPos) {
+          const groundEid = entities.create();
+          entities.position.set(groundEid, { tileX: playerPos.tileX, tileY: playerPos.tileY });
+          entities.blueprintId.set(groundEid, { blueprintId: dropped.blueprintId });
+        }
+        sendInventorySync(session);
+      }
+    } else if (action.action === ClientAction.Craft) {
+      const a = action as DecodedActionCraft;
+      if (inventoryMgr.craft(session.entityId, a.recipeId)) {
+        sendInventorySync(session);
+      }
     }
   }
 
@@ -281,6 +343,7 @@ wss.on('connection', (ws) => {
     if (pos) occupancy.clear(pos.tileX, pos.tileY);
     entities.destroy(entityId);
     clearMoveTarget(entityId);
+    inventoryMgr.destroy(entityId);
     sessions.delete(ws);
     console.log(`[server] client #${entityId} disconnected (total: ${sessions.size})`);
   });

@@ -26,14 +26,55 @@ export function buildingChar(b: Building): string {
 
 export function blueprintChar(bp: BlueprintType): string {
   switch (bp) {
-    case BlueprintType.Player: return '@';
-    case BlueprintType.Deer:   return 'd';
-    case BlueprintType.Rabbit: return 'r';
-    case BlueprintType.Fox:    return 'f';
-    case BlueprintType.Wolf:   return 'w';
-    case BlueprintType.Tree:   return 'T';
-    case BlueprintType.Rock:   return 'O';
-    default:                   return '?';
+    // Creatures
+    case BlueprintType.Player:   return '@';
+    case BlueprintType.Deer:     return 'd';
+    case BlueprintType.Rabbit:   return 'r';
+    case BlueprintType.Fox:      return 'f';
+    case BlueprintType.Wolf:     return 'w';
+    case BlueprintType.Bear:     return 'B';
+    case BlueprintType.Skeleton: return 'Z';
+    // Resources
+    case BlueprintType.Wood:     return 'w';
+    case BlueprintType.Rock:     return 'o';
+    case BlueprintType.Iron:     return 'i';
+    case BlueprintType.Hide:     return 'h';
+    case BlueprintType.RawMeat:  return 'm';
+    case BlueprintType.RawFish:  return 'n';
+    // Tools
+    case BlueprintType.Axe:        return 'a';
+    case BlueprintType.Pickaxe:    return 'p';
+    case BlueprintType.Hammer:     return 'k';
+    case BlueprintType.FishingRod: return 'j';
+    // Weapons
+    case BlueprintType.WoodenClub: return 'c';
+    case BlueprintType.StoneKnife: return 's';
+    case BlueprintType.IronSword:  return 'S';
+    case BlueprintType.IronSpear:  return '/';
+    // Armor
+    case BlueprintType.HideVest:       return 'v';
+    case BlueprintType.HideCap:        return 'u';
+    case BlueprintType.IronChestplate: return 'V';
+    case BlueprintType.IronHelm:       return 'U';
+    // Consumables
+    case BlueprintType.CookedFish: return 'F';
+    case BlueprintType.CookedMeat: return 'C';
+    case BlueprintType.Bandage:    return 'b';
+    // Placeables
+    case BlueprintType.Campfire:     return '*';
+    case BlueprintType.WoodenWall:   return '#';
+    case BlueprintType.WoodenDoor:   return '+';
+    case BlueprintType.StorageChest: return '$';
+    // World objects
+    case BlueprintType.Tree:     return 'T';
+    case BlueprintType.HillRock: return '^';
+    // NPCs
+    case BlueprintType.Hermit:   return 'H';
+    case BlueprintType.Trader:   return 'M';
+    case BlueprintType.Wanderer: return 'W';
+    // Special
+    case BlueprintType.Compass: return '!';
+    default:                    return '?';
   }
 }
 

@@ -135,8 +135,22 @@ export interface DecodedActionCancel { action: number; }
 export interface DecodedActionMoveTo { action: number; tileX: number; tileY: number; }
 export interface DecodedActionInteract { action: number; entityId: number; }
 export interface DecodedActionBuild { action: number; buildingType: number; tileX: number; tileY: number; }
+export interface DecodedActionPickup { action: number; entityId: number; }
+export interface DecodedActionEquip { action: number; itemId: number; }
+export interface DecodedActionUnequip { action: number; slot: number; }
+export interface DecodedActionDrop { action: number; itemId: number; }
+export interface DecodedActionCraft { action: number; recipeId: number; }
 
-export type DecodedAction = DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild;
+export type DecodedAction =
+  | DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild
+  | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft;
+
+export interface SyncedInventoryItem {
+  itemId: number;
+  blueprintId: number;
+  quantity: number;
+  equippedSlot: number;
+}
 
 // --- Component encode/decode ---
 
@@ -288,6 +302,16 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     w.writeU8(a.buildingType);
     w.writeU16(a.tileX);
     w.writeU16(a.tileY);
+  } else if (action.action === ClientAction.Pickup) {
+    w.writeU16((action as DecodedActionPickup).entityId);
+  } else if (action.action === ClientAction.Equip) {
+    w.writeU16((action as DecodedActionEquip).itemId);
+  } else if (action.action === ClientAction.Unequip) {
+    w.writeU8((action as DecodedActionUnequip).slot);
+  } else if (action.action === ClientAction.Drop) {
+    w.writeU16((action as DecodedActionDrop).itemId);
+  } else if (action.action === ClientAction.Craft) {
+    w.writeU16((action as DecodedActionCraft).recipeId);
   }
   return w.getBuffer();
 }
@@ -312,6 +336,19 @@ export function encodeWelcome(entityId: number): ArrayBuffer {
   const w = new BufferWriter(3);
   w.writeU8(ServerOpcode.Welcome);
   w.writeU16(entityId);
+  return w.getBuffer();
+}
+
+export function encodeInventorySync(items: SyncedInventoryItem[]): ArrayBuffer {
+  const w = new BufferWriter(2 + items.length * 6);
+  w.writeU8(ServerOpcode.InventorySync);
+  w.writeU8(items.length);
+  for (const item of items) {
+    w.writeU16(item.itemId);
+    w.writeU16(item.blueprintId);
+    w.writeU8(item.quantity);
+    w.writeU8(item.equippedSlot);
+  }
   return w.getBuffer();
 }
 
@@ -408,7 +445,8 @@ export type DecodedServerMessage =
   | { type: 'pong'; clientTime: number }
   | { type: 'worldDelta'; data: DecodedWorldDelta }
   | { type: 'entityFullState'; data: DecodedEntityFullState }
-  | { type: 'chunk'; data: DecodedChunk };
+  | { type: 'chunk'; data: DecodedChunk }
+  | { type: 'inventorySync'; items: SyncedInventoryItem[] };
 
 export type DecodedClientMessage =
   | { type: 'action'; data: DecodedAction }
@@ -433,6 +471,20 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
 
     case ServerOpcode.Welcome:
       return { type: 'welcome', entityId: r.readU16() };
+
+    case ServerOpcode.InventorySync: {
+      const count = r.readU8();
+      const items: SyncedInventoryItem[] = [];
+      for (let i = 0; i < count; i++) {
+        items.push({
+          itemId: r.readU16(),
+          blueprintId: r.readU16(),
+          quantity: r.readU8(),
+          equippedSlot: r.readU8(),
+        });
+      }
+      return { type: 'inventorySync', items };
+    }
 
     default:
       throw new Error(`Unknown server opcode: 0x${opcode.toString(16)}`);
@@ -466,6 +518,16 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action, buildingType: r.readU8(), tileX: r.readU16(), tileY: r.readU16() };
     case ClientAction.Cancel:
       return { action };
+    case ClientAction.Pickup:
+      return { action, entityId: r.readU16() };
+    case ClientAction.Equip:
+      return { action, itemId: r.readU16() };
+    case ClientAction.Unequip:
+      return { action, slot: r.readU8() };
+    case ClientAction.Drop:
+      return { action, itemId: r.readU16() };
+    case ClientAction.Craft:
+      return { action, recipeId: r.readU16() };
     default:
       throw new Error(`Unknown client action: 0x${(action as number).toString(16)}`);
   }

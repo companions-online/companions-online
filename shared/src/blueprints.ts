@@ -1,32 +1,147 @@
+export type BlueprintCategory = 'creature' | 'item' | 'resource' | 'placeable' | 'npc';
+export type EquipSlot = 'hand' | 'body' | 'head';
+
 export interface Blueprint {
   id: number;
   name: string;
+  category: BlueprintCategory;
   sprite: string;
-  maxHp: number;
-  speed: number;        // tiles per second
-  damage: number;       // base damage per hit
-  attackSpeed: number;  // ticks between attacks
-  collides: boolean;
+  // Creature-specific
+  maxHp?: number;
+  speed?: number;
+  damage?: number;
+  attackSpeed?: number;
+  collides?: boolean;
+  // Item-specific
+  stackable?: boolean;
+  maxStack?: number;
+  weight?: number;
+  equipSlot?: EquipSlot;
+  hpBonus?: number;
+  weaponDamage?: number;
+  weaponSpeed?: number;
+  consumeHeal?: number;
+  consumeTicks?: number;
 }
 
 export const enum BlueprintType {
-  Player = 0,
-  Deer   = 1,
-  Rabbit = 2,
-  Fox    = 3,
-  Wolf   = 4,
-  Tree   = 10,
-  Rock   = 11,
+  // Creatures 0-19
+  Player   = 0,
+  Deer     = 1,
+  Rabbit   = 2,
+  Fox      = 3,
+  Wolf     = 4,
+  Bear     = 5,
+  Skeleton = 6,
+
+  // Resources 20-29
+  Wood     = 20,
+  Rock     = 21,
+  Iron     = 22,
+  Hide     = 23,
+  RawMeat  = 24,
+  RawFish  = 25,
+
+  // Tools 30-39
+  Axe        = 30,
+  Pickaxe    = 31,
+  Hammer     = 32,
+  FishingRod = 33,
+
+  // Weapons 40-49
+  WoodenClub = 40,
+  StoneKnife = 41,
+  IronSword  = 42,
+  IronSpear  = 43,
+
+  // Armor 50-59
+  HideVest        = 50,
+  HideCap         = 51,
+  IronChestplate  = 52,
+  IronHelm        = 53,
+
+  // Consumables 60-69
+  CookedFish = 60,
+  CookedMeat = 61,
+  Bandage    = 62,
+
+  // Placeables 70-79
+  Campfire     = 70,
+  WoodenWall   = 71,
+  WoodenDoor   = 72,
+  StorageChest = 73,
+
+  // World objects 80-89
+  Tree     = 80,
+  HillRock = 81,
+
+  // NPCs 90-99
+  Hermit   = 90,
+  Trader   = 91,
+  Wanderer = 92,
+
+  // Special 100+
+  Compass = 100,
 }
 
 const BLUEPRINTS: Blueprint[] = [
-  { id: BlueprintType.Player, name: 'Player', sprite: 'player', maxHp: 100, speed: 3,   damage: 5,  attackSpeed: 20, collides: true },
-  { id: BlueprintType.Deer,   name: 'Deer',   sprite: 'deer',   maxHp: 30,  speed: 3.5, damage: 0,  attackSpeed: 0,  collides: true },
-  { id: BlueprintType.Rabbit, name: 'Rabbit', sprite: 'rabbit', maxHp: 10,  speed: 4,   damage: 0,  attackSpeed: 0,  collides: true },
-  { id: BlueprintType.Fox,    name: 'Fox',    sprite: 'fox',    maxHp: 25,  speed: 3,   damage: 8,  attackSpeed: 15, collides: true },
-  { id: BlueprintType.Wolf,   name: 'Wolf',   sprite: 'wolf',   maxHp: 50,  speed: 2.5, damage: 15, attackSpeed: 20, collides: true },
-  { id: BlueprintType.Tree,   name: 'Tree',   sprite: 'tree',   maxHp: 50,  speed: 0,   damage: 0,  attackSpeed: 0,  collides: true },
-  { id: BlueprintType.Rock,   name: 'Rock',   sprite: 'rock',   maxHp: 80,  speed: 0,   damage: 0,  attackSpeed: 0,  collides: true },
+  // --- Creatures ---
+  { id: BlueprintType.Player,   name: 'Player',   category: 'creature', sprite: 'player',   maxHp: 100, speed: 3,   damage: 1,  attackSpeed: 2,  collides: true },
+  { id: BlueprintType.Deer,     name: 'Deer',     category: 'creature', sprite: 'deer',     maxHp: 12,  speed: 3.5, damage: 0,  attackSpeed: 0,  collides: true },
+  { id: BlueprintType.Rabbit,   name: 'Rabbit',   category: 'creature', sprite: 'rabbit',   maxHp: 3,   speed: 4,   damage: 0,  attackSpeed: 0,  collides: true },
+  { id: BlueprintType.Fox,      name: 'Fox',      category: 'creature', sprite: 'fox',      maxHp: 10,  speed: 3,   damage: 2,  attackSpeed: 3,  collides: true },
+  { id: BlueprintType.Wolf,     name: 'Wolf',     category: 'creature', sprite: 'wolf',     maxHp: 20,  speed: 2.5, damage: 4,  attackSpeed: 4,  collides: true },
+  { id: BlueprintType.Bear,     name: 'Bear',     category: 'creature', sprite: 'bear',     maxHp: 40,  speed: 2,   damage: 7,  attackSpeed: 5,  collides: true },
+  { id: BlueprintType.Skeleton, name: 'Skeleton', category: 'creature', sprite: 'skeleton', maxHp: 25,  speed: 2.5, damage: 5,  attackSpeed: 4,  collides: true },
+
+  // --- Resources ---
+  { id: BlueprintType.Wood,    name: 'Wood',     category: 'resource', sprite: 'wood',     stackable: true, maxStack: 99, weight: 1 },
+  { id: BlueprintType.Rock,    name: 'Rock',     category: 'resource', sprite: 'rock_i',   stackable: true, maxStack: 99, weight: 2 },
+  { id: BlueprintType.Iron,    name: 'Iron',     category: 'resource', sprite: 'iron',     stackable: true, maxStack: 99, weight: 3 },
+  { id: BlueprintType.Hide,    name: 'Hide',     category: 'resource', sprite: 'hide',     stackable: true, maxStack: 99, weight: 1 },
+  { id: BlueprintType.RawMeat, name: 'Raw Meat', category: 'resource', sprite: 'rawmeat',  stackable: true, maxStack: 99, weight: 1 },
+  { id: BlueprintType.RawFish, name: 'Raw Fish', category: 'resource', sprite: 'rawfish',  stackable: true, maxStack: 99, weight: 1 },
+
+  // --- Tools ---
+  { id: BlueprintType.Axe,        name: 'Axe',         category: 'item', sprite: 'axe',     weight: 3, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 4 },
+  { id: BlueprintType.Pickaxe,    name: 'Pickaxe',     category: 'item', sprite: 'pickaxe', weight: 3, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
+  { id: BlueprintType.Hammer,     name: 'Hammer',      category: 'item', sprite: 'hammer',  weight: 4, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
+  { id: BlueprintType.FishingRod, name: 'Fishing Rod', category: 'item', sprite: 'fishrod', weight: 2, equipSlot: 'hand' },
+
+  // --- Weapons ---
+  { id: BlueprintType.WoodenClub, name: 'Wooden Club', category: 'item', sprite: 'club',   weight: 2, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 5 },
+  { id: BlueprintType.StoneKnife, name: 'Stone Knife', category: 'item', sprite: 'knife',  weight: 1, equipSlot: 'hand', weaponDamage: 4, weaponSpeed: 3 },
+  { id: BlueprintType.IronSword,  name: 'Iron Sword',  category: 'item', sprite: 'sword',  weight: 3, equipSlot: 'hand', weaponDamage: 7, weaponSpeed: 4 },
+  { id: BlueprintType.IronSpear,  name: 'Iron Spear',  category: 'item', sprite: 'spear',  weight: 3, equipSlot: 'hand', weaponDamage: 6, weaponSpeed: 4 },
+
+  // --- Armor ---
+  { id: BlueprintType.HideVest,       name: 'Hide Vest',       category: 'item', sprite: 'hvest',  weight: 3, equipSlot: 'body', hpBonus: 10 },
+  { id: BlueprintType.HideCap,        name: 'Hide Cap',        category: 'item', sprite: 'hcap',   weight: 1, equipSlot: 'head', hpBonus: 5 },
+  { id: BlueprintType.IronChestplate, name: 'Iron Chestplate', category: 'item', sprite: 'ichest', weight: 6, equipSlot: 'body', hpBonus: 25 },
+  { id: BlueprintType.IronHelm,       name: 'Iron Helm',       category: 'item', sprite: 'ihelm',  weight: 3, equipSlot: 'head', hpBonus: 10 },
+
+  // --- Consumables ---
+  { id: BlueprintType.CookedFish, name: 'Cooked Fish', category: 'item', sprite: 'cfish', stackable: true, maxStack: 10, weight: 1, consumeHeal: 15, consumeTicks: 3 },
+  { id: BlueprintType.CookedMeat, name: 'Cooked Meat', category: 'item', sprite: 'cmeat', stackable: true, maxStack: 10, weight: 1, consumeHeal: 20, consumeTicks: 3 },
+  { id: BlueprintType.Bandage,    name: 'Bandage',     category: 'item', sprite: 'band',  stackable: true, maxStack: 10, weight: 1, consumeHeal: 30, consumeTicks: 10 },
+
+  // --- Placeables ---
+  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  weight: 4 },
+  { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', weight: 4, collides: true, maxHp: 30 },
+  { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', weight: 5, collides: true, maxHp: 30 },
+  { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', weight: 6, collides: true, maxHp: 50 },
+
+  // --- World objects ---
+  { id: BlueprintType.Tree,     name: 'Tree',      category: 'creature', sprite: 'tree', maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
+  { id: BlueprintType.HillRock, name: 'Hill Rock', category: 'creature', sprite: 'hill', maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
+
+  // --- NPCs ---
+  { id: BlueprintType.Hermit,   name: 'The Hermit',   category: 'npc', sprite: 'hermit',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
+  { id: BlueprintType.Trader,   name: 'The Trader',   category: 'npc', sprite: 'trader',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
+  { id: BlueprintType.Wanderer, name: 'The Wanderer', category: 'npc', sprite: 'wanderer', maxHp: 999, speed: 1, damage: 0, attackSpeed: 0, collides: true },
+
+  // --- Special ---
+  { id: BlueprintType.Compass, name: 'Compass', category: 'item', sprite: 'compass', weight: 1 },
 ];
 
 const blueprintMap = new Map<number, Blueprint>();

@@ -2,13 +2,14 @@ export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './opc
 export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
-  encodeAction, encodePing, encodePong, encodeWelcome,
+  encodeAction, encodePing, encodePong, encodeWelcome, encodeInventorySync,
   encodeWorldDelta, encodeEntityFullState, encodeChunk,
   decodeServerMessage, decodeClientMessage,
 } from './codec.js';
 export type {
-  EntityComponents,
+  EntityComponents, SyncedInventoryItem,
   DecodedEntityUpdate, DecodedTileUpdate, DecodedWorldDelta,
   DecodedEntityFullState, DecodedChunk, DecodedAction,
+  DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
   DecodedServerMessage, DecodedClientMessage,
 } from './codec.js';
