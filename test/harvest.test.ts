@@ -9,191 +9,168 @@ import { ActionType } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
-import { startHarvest, runHarvest, cancelHarvest, isHarvesting, resetHarvest } from '../server/src/systems/harvest.js';
-import { initTreeResource, getTreeResource, resetResources, runRespawns } from '../server/src/systems/resources.js';
-import { resetMovement, runMovement } from '../server/src/systems/movement.js';
+import { startHarvest, runHarvest, cancelHarvest, isHarvesting } from '../server/src/systems/harvest.js';
+import { initTreeResource, runRespawns } from '../server/src/systems/resources.js';
+import { runMovement } from '../server/src/systems/movement.js';
+import type { SystemState } from '../server/src/system-state.js';
 import {
   encodeAction, decodeClientMessage, ClientAction,
 } from '@shared/index.js';
 
-const SIZE = MAP_SIZE;
-let em: EntityManager;
-let occ: OccupancyGrid;
-let inv: InventoryManager;
-let map: WorldMap;
+function makeWorld(): SystemState {
+  return {
+    map: new WorldMap(MAP_SIZE, MAP_SIZE),
+    entities: new EntityManager(),
+    occupancy: new OccupancyGrid(MAP_SIZE, MAP_SIZE),
+    inventoryMgr: new InventoryManager(),
+    moveStates: new Map(),
+    harvestStates: new Map(),
+    critterStates: new Map(),
+    treeResources: new Map(),
+    respawnQueue: [],
+    respawnRng: 12345,
+    currentTick: 0,
+  };
+}
 
-function createPlayer(x: number, y: number): number {
-  const eid = em.create();
-  em.position.set(eid, { tileX: x, tileY: y });
-  em.direction.set(eid, { dir: Direction.S });
-  em.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-  em.currentAction.set(eid, { actionType: ActionType.Idle });
-  em.health.set(eid, { currentHp: 100, maxHp: 100 });
-  em.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
-  em.statusEffects.set(eid, { effects: 0 });
-  em.speed.set(eid, 20); // fast for tests
-  occ.set(x, y, eid);
-  inv.create(eid, 100);
+function createPlayer(w: SystemState, x: number, y: number): number {
+  const eid = w.entities.create();
+  w.entities.position.set(eid, { tileX: x, tileY: y });
+  w.entities.direction.set(eid, { dir: Direction.S });
+  w.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
+  w.entities.currentAction.set(eid, { actionType: ActionType.Idle });
+  w.entities.health.set(eid, { currentHp: 100, maxHp: 100 });
+  w.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
+  w.entities.statusEffects.set(eid, { effects: 0 });
+  w.entities.speed.set(eid, 20);
+  w.occupancy.set(x, y, eid);
+  w.inventoryMgr.create(eid, 100);
   return eid;
 }
 
-function createTree(x: number, y: number): number {
-  const eid = em.create();
-  em.position.set(eid, { tileX: x, tileY: y });
-  em.blueprintId.set(eid, { blueprintId: BlueprintType.Tree });
-  em.health.set(eid, { currentHp: 50, maxHp: 50 });
-  em.statusEffects.set(eid, { effects: 0 });
-  occ.set(x, y, eid);
-  initTreeResource(eid);
+function createTree(w: SystemState, x: number, y: number): number {
+  const eid = w.entities.create();
+  w.entities.position.set(eid, { tileX: x, tileY: y });
+  w.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Tree });
+  w.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
+  w.entities.statusEffects.set(eid, { effects: 0 });
+  w.occupancy.set(x, y, eid);
+  initTreeResource(eid, w);
   return eid;
 }
 
-function setRockTerrain(x: number, y: number): void {
-  map.setTerrain(x, y, Terrain.Rock);
-}
+let w: SystemState;
 
 beforeEach(() => {
-  em = new EntityManager();
-  occ = new OccupancyGrid(SIZE, SIZE);
-  inv = new InventoryManager();
-  map = new WorldMap(SIZE, SIZE); // all grass by default
-  resetHarvest();
-  resetMovement();
-  resetResources();
+  w = makeWorld();
 });
 
 describe('Harvest system', () => {
   it('harvests tree when adjacent: yields wood after tick cost', () => {
-    const player = createPlayer(10, 10);
-    const tree = createTree(11, 10);
-    em.clearDirty();
+    const player = createPlayer(w, 10, 10);
+    createTree(w, 11, 10);
+    w.entities.clearDirty();
 
-    const ok = startHarvest(player, 11, 10, em, map, occ, inv);
-    expect(ok).toBe(true);
-    expect(isHarvesting(player)).toBe(true);
+    expect(startHarvest(player, 11, 10, w)).toBe(true);
+    expect(isHarvesting(player, w)).toBe(true);
 
-    // Run 10 ticks (bare-hand tree harvest = 10 ticks)
-    for (let i = 0; i < 10; i++) {
-      runHarvest(em, map, occ, inv);
-    }
+    for (let i = 0; i < 10; i++) runHarvest(w);
 
-    const playerInv = inv.get(player)!;
-    expect(playerInv.items.some(i => i.blueprintId === BlueprintType.Wood)).toBe(true);
+    const inv = w.inventoryMgr.get(player)!;
+    expect(inv.items.some(i => i.blueprintId === BlueprintType.Wood)).toBe(true);
   });
 
   it('harvests tree faster with axe', () => {
-    const player = createPlayer(10, 10);
-    createTree(11, 10);
-    inv.addItem(player, BlueprintType.Axe, 1);
-    const axeItem = inv.get(player)!.items.find(i => i.blueprintId === BlueprintType.Axe)!;
-    inv.equip(player, axeItem.itemId);
-    em.clearDirty();
+    const player = createPlayer(w, 10, 10);
+    createTree(w, 11, 10);
+    w.inventoryMgr.addItem(player, BlueprintType.Axe, 1);
+    const axeItem = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Axe)!;
+    w.inventoryMgr.equip(player, axeItem.itemId);
+    w.entities.clearDirty();
 
-    startHarvest(player, 11, 10, em, map, occ, inv);
+    startHarvest(player, 11, 10, w);
+    for (let i = 0; i < 4; i++) runHarvest(w);
 
-    // Should yield in 4 ticks with axe
-    for (let i = 0; i < 4; i++) {
-      runHarvest(em, map, occ, inv);
-    }
-
-    const wood = inv.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
     expect(wood!.quantity).toBe(1);
   });
 
   it('tree depletes after 5 harvests and is destroyed', () => {
-    const player = createPlayer(10, 10);
-    const tree = createTree(11, 10);
-    em.clearDirty();
+    const player = createPlayer(w, 10, 10);
+    const tree = createTree(w, 11, 10);
+    w.entities.clearDirty();
 
-    startHarvest(player, 11, 10, em, map, occ, inv);
+    startHarvest(player, 11, 10, w);
+    for (let i = 0; i < 50; i++) runHarvest(w);
 
-    // 5 cycles × 10 ticks = 50 ticks for bare-hand
-    for (let i = 0; i < 50; i++) {
-      runHarvest(em, map, occ, inv);
-    }
-
-    const wood = inv.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood?.quantity).toBe(5);
-    expect(em.exists(tree)).toBe(false);
-    expect(occ.get(11, 10)).toBe(0);
+    expect(w.entities.exists(tree)).toBe(false);
+    expect(w.occupancy.get(11, 10)).toBe(0);
   });
 
   it('cancel harvest sets idle', () => {
-    const player = createPlayer(10, 10);
-    createTree(11, 10);
-    em.clearDirty();
+    const player = createPlayer(w, 10, 10);
+    createTree(w, 11, 10);
+    w.entities.clearDirty();
 
-    startHarvest(player, 11, 10, em, map, occ, inv);
-    cancelHarvest(player, em);
+    startHarvest(player, 11, 10, w);
+    cancelHarvest(player, w);
 
-    expect(isHarvesting(player)).toBe(false);
-    expect(em.currentAction.get(player)?.actionType).toBe(ActionType.Idle);
+    expect(isHarvesting(player, w)).toBe(false);
+    expect(w.entities.currentAction.get(player)?.actionType).toBe(ActionType.Idle);
   });
 
-  it('mines hill rock for rock', () => {
-    const player = createPlayer(10, 10);
-    setRockTerrain(11, 10);
-    em.clearDirty();
+  it('mines rock terrain for rock', () => {
+    const player = createPlayer(w, 10, 10);
+    w.map.setTerrain(11, 10, Terrain.Rock);
+    w.entities.clearDirty();
 
-    startHarvest(player, 11, 10, em, map, occ, inv);
+    startHarvest(player, 11, 10, w);
+    for (let i = 0; i < 10; i++) runHarvest(w);
 
-    for (let i = 0; i < 10; i++) {
-      runHarvest(em, map, occ, inv);
-    }
-
-    const rock = inv.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
+    const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock).toBeDefined();
   });
 
   it('pathfinds to tree if not adjacent', () => {
-    const player = createPlayer(5, 10);
-    createTree(11, 10);
-    em.clearDirty();
+    const player = createPlayer(w, 5, 10);
+    createTree(w, 11, 10);
+    w.entities.clearDirty();
 
-    const ok = startHarvest(player, 11, 10, em, map, occ, inv);
-    expect(ok).toBe(true);
+    expect(startHarvest(player, 11, 10, w)).toBe(true);
 
-    // Run movement ticks to get there
     for (let i = 0; i < 30; i++) {
-      runHarvest(em, map, occ, inv);
-      runMovement(em, map, occ);
-      em.clearDirty();
+      runHarvest(w);
+      runMovement(w);
+      w.entities.clearDirty();
     }
 
-    // Should have started channeling
-    // Run more harvest ticks for actual yield
-    for (let i = 0; i < 15; i++) {
-      runHarvest(em, map, occ, inv);
-    }
+    for (let i = 0; i < 15; i++) runHarvest(w);
 
-    const wood = inv.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
   });
 });
 
 describe('Tree respawning', () => {
   it('depleted trees respawn after delay', () => {
-    const player = createPlayer(10, 10);
-    createTree(11, 10);
-    em.clearDirty();
+    const player = createPlayer(w, 10, 10);
+    createTree(w, 11, 10);
+    w.entities.clearDirty();
 
-    startHarvest(player, 11, 10, em, map, occ, inv);
+    startHarvest(player, 11, 10, w);
+    for (let i = 0; i < 50; i++) runHarvest(w);
 
-    // Deplete tree (5 × 10 = 50 ticks)
-    for (let i = 0; i < 50; i++) {
-      runHarvest(em, map, occ, inv);
-    }
+    const countBefore = w.entities.getEntityCount();
 
-    const countBefore = em.getEntityCount();
-
-    // Run respawns for 601 ticks (respawn at 600)
     for (let tick = 1; tick <= 601; tick++) {
-      runRespawns(tick, em, map, occ);
+      (w as any).currentTick = tick;
+      runRespawns(w);
     }
 
-    // A new tree should have spawned somewhere
-    expect(em.getEntityCount()).toBeGreaterThan(countBefore);
+    expect(w.entities.getEntityCount()).toBeGreaterThan(countBefore);
   });
 });
 

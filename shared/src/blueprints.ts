@@ -102,22 +102,22 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.RawFish, name: 'Raw Fish', category: 'resource', sprite: 'rawfish',  stackable: true, maxStack: 99, weight: 1 },
 
   // --- Tools ---
-  { id: BlueprintType.Axe,        name: 'Axe',         category: 'item', sprite: 'axe',     weight: 3, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 4 },
-  { id: BlueprintType.Pickaxe,    name: 'Pickaxe',     category: 'item', sprite: 'pickaxe', weight: 3, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
-  { id: BlueprintType.Hammer,     name: 'Hammer',      category: 'item', sprite: 'hammer',  weight: 4, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
-  { id: BlueprintType.FishingRod, name: 'Fishing Rod', category: 'item', sprite: 'fishrod', weight: 2, equipSlot: 'hand' },
+  { id: BlueprintType.Axe,        name: 'Axe',         category: 'item', sprite: 'axe',     stackable: true, maxStack: 10, weight: 3, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 4 },
+  { id: BlueprintType.Pickaxe,    name: 'Pickaxe',     category: 'item', sprite: 'pickaxe', stackable: true, maxStack: 10, weight: 3, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
+  { id: BlueprintType.Hammer,     name: 'Hammer',      category: 'item', sprite: 'hammer',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', weaponDamage: 2, weaponSpeed: 5 },
+  { id: BlueprintType.FishingRod, name: 'Fishing Rod', category: 'item', sprite: 'fishrod', stackable: true, maxStack: 10, weight: 2, equipSlot: 'hand' },
 
   // --- Weapons ---
-  { id: BlueprintType.WoodenClub, name: 'Wooden Club', category: 'item', sprite: 'club',   weight: 2, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 5 },
-  { id: BlueprintType.StoneKnife, name: 'Stone Knife', category: 'item', sprite: 'knife',  weight: 1, equipSlot: 'hand', weaponDamage: 4, weaponSpeed: 3 },
-  { id: BlueprintType.IronSword,  name: 'Iron Sword',  category: 'item', sprite: 'sword',  weight: 3, equipSlot: 'hand', weaponDamage: 7, weaponSpeed: 4 },
-  { id: BlueprintType.IronSpear,  name: 'Iron Spear',  category: 'item', sprite: 'spear',  weight: 3, equipSlot: 'hand', weaponDamage: 6, weaponSpeed: 4 },
+  { id: BlueprintType.WoodenClub, name: 'Wooden Club', category: 'item', sprite: 'club',   stackable: true, maxStack: 10, weight: 2, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 5 },
+  { id: BlueprintType.StoneKnife, name: 'Stone Knife', category: 'item', sprite: 'knife',  stackable: true, maxStack: 10, weight: 1, equipSlot: 'hand', weaponDamage: 4, weaponSpeed: 3 },
+  { id: BlueprintType.IronSword,  name: 'Iron Sword',  category: 'item', sprite: 'sword',  stackable: true, maxStack: 10, weight: 3, equipSlot: 'hand', weaponDamage: 7, weaponSpeed: 4 },
+  { id: BlueprintType.IronSpear,  name: 'Iron Spear',  category: 'item', sprite: 'spear',  stackable: true, maxStack: 10, weight: 3, equipSlot: 'hand', weaponDamage: 6, weaponSpeed: 4 },
 
   // --- Armor ---
-  { id: BlueprintType.HideVest,       name: 'Hide Vest',       category: 'item', sprite: 'hvest',  weight: 3, equipSlot: 'body', hpBonus: 10 },
-  { id: BlueprintType.HideCap,        name: 'Hide Cap',        category: 'item', sprite: 'hcap',   weight: 1, equipSlot: 'head', hpBonus: 5 },
-  { id: BlueprintType.IronChestplate, name: 'Iron Chestplate', category: 'item', sprite: 'ichest', weight: 6, equipSlot: 'body', hpBonus: 25 },
-  { id: BlueprintType.IronHelm,       name: 'Iron Helm',       category: 'item', sprite: 'ihelm',  weight: 3, equipSlot: 'head', hpBonus: 10 },
+  { id: BlueprintType.HideVest,       name: 'Hide Vest',       category: 'item', sprite: 'hvest',  stackable: true, maxStack: 10, weight: 3, equipSlot: 'body', hpBonus: 10 },
+  { id: BlueprintType.HideCap,        name: 'Hide Cap',        category: 'item', sprite: 'hcap',   stackable: true, maxStack: 10, weight: 1, equipSlot: 'head', hpBonus: 5 },
+  { id: BlueprintType.IronChestplate, name: 'Iron Chestplate', category: 'item', sprite: 'ichest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'body', hpBonus: 25 },
+  { id: BlueprintType.IronHelm,       name: 'Iron Helm',       category: 'item', sprite: 'ihelm',  stackable: true, maxStack: 10, weight: 3, equipSlot: 'head', hpBonus: 10 },
 
   // --- Consumables ---
   { id: BlueprintType.CookedFish, name: 'Cooked Fish', category: 'item', sprite: 'cfish', stackable: true, maxStack: 10, weight: 1, consumeHeal: 15, consumeTicks: 3 },
@@ -125,10 +125,10 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.Bandage,    name: 'Bandage',     category: 'item', sprite: 'band',  stackable: true, maxStack: 10, weight: 1, consumeHeal: 30, consumeTicks: 10 },
 
   // --- Placeables ---
-  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  weight: 4, equipSlot: 'hand' },
-  { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
-  { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
-  { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },
+  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand' },
+  { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
+  { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', stackable: true, maxStack: 10, weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
+  { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },
 
   // --- World objects ---
   { id: BlueprintType.Tree,     name: 'Tree',      category: 'creature', sprite: 'tree', maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
