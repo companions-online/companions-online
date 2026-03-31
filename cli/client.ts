@@ -3,12 +3,13 @@ import { MAP_SIZE, CHUNK_SIZE, VIEW_RANGE } from '../shared/src/constants.js';
 import { Terrain, Building } from '../shared/src/terrain.js';
 import { tileChar } from '../shared/src/ascii.js';
 import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
-import { ClientAction } from '../shared/src/actions.js';
+import { ClientAction, ActionType } from '../shared/src/actions.js';
 import {
   decodeServerMessage, encodeAction,
 } from '../shared/src/protocol/codec.js';
 import type { EntityComponents, DecodedAction, SyncedInventoryItem } from '../shared/src/protocol/codec.js';
-import { resolveAction } from '../shared/src/action-resolver.js';
+import { resolveAction, describeAction } from '../shared/src/action-resolver.js';
+import type { ActionContext } from '../shared/src/action-resolver.js';
 import { getAllRecipes } from '../shared/src/recipes.js';
 import type { Recipe } from '../shared/src/recipes.js';
 import { canCraft, equipSlotToNumber, numberToEquipSlot } from '../shared/src/inventory.js';
@@ -25,6 +26,9 @@ let lastTick = 0;
 let panelMode: 'none' | 'debug' | 'inventory' | 'crafting' = 'none';
 let invCursor = 0;
 let inventory: SyncedInventoryItem[] = [];
+let prevInventory: SyncedInventoryItem[] = [];
+let harvestCount = 0;
+let harvestItemName = '';
 const debugLog: string[] = [];
 const DEBUG_MAX = 200;
 
@@ -84,6 +88,14 @@ ws.on('message', (data) => {
       for (const eu of d.entityUpdates) {
         const existing = entityMap.get(eu.entityId) ?? {};
         entityMap.set(eu.entityId, { ...existing, ...eu.components });
+        // Clear harvest tracking when my entity stops harvesting
+        if (eu.entityId === myEntityId && eu.components.currentAction) {
+          const at = eu.components.currentAction.actionType;
+          if (at !== ActionType.Harvesting && harvestCount > 0) {
+            // Keep the display for one more render, then clear
+            setTimeout(() => { harvestCount = 0; harvestItemName = ''; render(); }, 1500);
+          }
+        }
       }
       for (const rid of d.entityRemovals) {
         entityMap.delete(rid);
@@ -92,11 +104,30 @@ ws.on('message', (data) => {
       break;
     }
 
-    case 'inventorySync':
+    case 'inventorySync': {
+      prevInventory = inventory;
       inventory = msg.items;
       if (invCursor >= inventory.length) invCursor = Math.max(0, inventory.length - 1);
+
+      // Track harvest yields by diffing inventory
+      const myAction = entityMap.get(myEntityId)?.currentAction;
+      const actionType = myAction && 'actionType' in myAction ? myAction.actionType : undefined;
+      if (actionType === ActionType.Harvesting && prevInventory.length > 0) {
+        // Find what was added
+        for (const item of inventory) {
+          const prev = prevInventory.find(p => p.blueprintId === item.blueprintId);
+          const prevQty = prev?.quantity ?? 0;
+          if (item.quantity > prevQty) {
+            const delta = item.quantity - prevQty;
+            harvestCount += delta;
+            harvestItemName = getBlueprint(item.blueprintId)?.name ?? '?';
+          }
+        }
+      }
+
       dbg(`← Inv ${msg.items.length} items`);
       break;
+    }
 
     case 'pong':
       break;
@@ -113,6 +144,29 @@ function sendAction(action: DecodedAction) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(encodeAction(action));
   }
+}
+
+function buildCursorContext(playerX: number, playerY: number, dx: number, dy: number): ActionContext | null {
+  const tx = playerX + dx;
+  const ty = playerY + dy;
+  if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) return null;
+
+  const gi = ty * MAP_SIZE + tx;
+  const t = terrainGrid[gi] as Terrain;
+  const b = buildingsGrid[gi] as Building;
+  const isWalkable = !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
+    && (b === Building.None || b === Building.Floor || b === Building.Door);
+  const entAt = entityAtWorldTile(tx, ty);
+  const handItem = inventory.find(i => i.equippedSlot === 1);
+
+  return {
+    targetX: tx,
+    targetY: ty,
+    isWalkable,
+    terrainType: t,
+    entityAtTarget: entAt,
+    equippedHandBlueprintId: handItem?.blueprintId,
+  };
 }
 
 function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprintId: number } | undefined {
@@ -213,9 +267,19 @@ function render() {
   const cursorWorldX = playerX + cursorDX;
   const cursorWorldY = playerY + cursorDY;
   const wt = inventory.reduce((s, i) => s + (getBlueprint(i.blueprintId)?.weight ?? 0) * i.quantity, 0);
-  const status1 = ` (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${entityMap.size} T:${lastTick} W:${wt}/50`;
+  // Speculative action label for status bar
+  const cursorCtx = buildCursorContext(playerX, playerY, cursorDX, cursorDY);
+  const cursorAction = cursorCtx ? resolveAction(cursorCtx) : null;
+  const actionLabel = describeAction(cursorAction, cursorCtx ?? undefined);
+
+  // Harvest progress indicator
+  const myAction = myEntity?.currentAction;
+  const isCurrentlyHarvesting = myAction && 'actionType' in myAction && myAction.actionType === ActionType.Harvesting;
+  const harvestStatus = harvestCount > 0 ? ` | +${harvestCount} ${harvestItemName}` : isCurrentlyHarvesting ? ' | Harvesting...' : '';
+
+  const status1 = ` (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${entityMap.size} T:${lastTick} W:${wt}/50${harvestStatus}`;
   const keys = panelMode === 'none'
-    ? ' [arrows]move [enter]act [i]nv [d]ebug [q]uit'
+    ? ` [arrows]move [enter]${actionLabel} [u]se [i]nv [d]ebug [q]uit`
     : panelMode === 'inventory'
     ? ' [↑↓]select [e]quip [g]drop [c]raft [i]close'
     : panelMode === 'crafting'
@@ -346,6 +410,10 @@ process.stdin.on('data', (key: string) => {
       invCursor = 0;
       process.stdout.write('\x1b[2J');
     }
+    else if (key === '\x1b' && key.length === 1) {
+      panelMode = 'none';
+      process.stdout.write('\x1b[2J');
+    }
     render();
     return;
   }
@@ -361,7 +429,7 @@ process.stdin.on('data', (key: string) => {
         dbg(`→ Craft recipe=${recipes[invCursor].id}`);
       }
     }
-    else if (key === 'c') {
+    else if (key === 'c' || (key === '\x1b' && key.length === 1)) {
       panelMode = 'inventory';
       invCursor = 0;
       process.stdout.write('\x1b[2J');
@@ -381,6 +449,10 @@ process.stdin.on('data', (key: string) => {
     doAction();
     return;
   }
+  else if (key === 'u') {
+    doUseItemAt();
+    return;
+  }
   else return;
 
   render();
@@ -390,40 +462,32 @@ function doAction() {
   const myEntity = entityMap.get(myEntityId);
   if (!myEntity?.position) return;
 
-  const tx = myEntity.position.tileX + cursorDX;
-  const ty = myEntity.position.tileY + cursorDY;
+  const ctx = buildCursorContext(myEntity.position.tileX, myEntity.position.tileY, cursorDX, cursorDY);
+  if (!ctx) return;
 
-  if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) return;
-
-  const gi = ty * MAP_SIZE + tx;
-  const isWalkable = !(
-    terrainGrid[gi] === Terrain.Water ||
-    terrainGrid[gi] === Terrain.Rock ||
-    terrainGrid[gi] === Terrain.River
-  ) && (
-    buildingsGrid[gi] === Building.None ||
-    buildingsGrid[gi] === Building.Floor ||
-    buildingsGrid[gi] === Building.Door
-  );
-
-  const entAt = entityAtWorldTile(tx, ty);
-
-  const action = resolveAction({
-    targetX: tx,
-    targetY: ty,
-    isWalkable,
-    entityAtTarget: entAt,
-  });
+  const action = resolveAction(ctx);
 
   if (action) {
     sendAction(action);
-    if (action.action === ClientAction.Pickup) {
-      dbg(`→ Pickup eid=${(action as any).entityId}`);
-    } else {
-      dbg(`→ MoveTo (${tx},${ty})`);
-    }
+    const label = describeAction(action, ctx);
+    dbg(`→ ${label} (${ctx.targetX},${ctx.targetY})`);
     render();
   }
+}
+
+function doUseItemAt() {
+  const myEntity = entityMap.get(myEntityId);
+  if (!myEntity?.position) return;
+  const handItem = inventory.find(i => i.equippedSlot === 1);
+  if (!handItem) return;
+
+  const tx = myEntity.position.tileX + cursorDX;
+  const ty = myEntity.position.tileY + cursorDY;
+  if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) return;
+
+  sendAction({ action: ClientAction.UseItemAt, itemId: handItem.itemId, tileX: tx, tileY: ty });
+  dbg(`→ UseItemAt item=${handItem.itemId} at (${tx},${ty})`);
+  render();
 }
 
 function cleanup() {

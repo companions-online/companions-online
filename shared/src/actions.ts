@@ -20,5 +20,7 @@ export const enum ClientAction {
   Equip    = 0x05,
   Unequip  = 0x06,
   Drop     = 0x07,
-  Craft    = 0x08,
+  Craft      = 0x08,
+  Harvest    = 0x09,
+  UseItemAt  = 0x0A,
 }

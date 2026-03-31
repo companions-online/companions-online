@@ -1,23 +1,71 @@
 import { ClientAction } from './actions.js';
-import { getBlueprint } from './blueprints.js';
+import { getBlueprint, BlueprintType } from './blueprints.js';
+import { Terrain } from './terrain.js';
 import type { DecodedAction } from './protocol/codec.js';
 
 export interface ActionContext {
   targetX: number;
   targetY: number;
   isWalkable: boolean;
+  terrainType?: Terrain;
   entityAtTarget?: { entityId: number; blueprintId: number };
+  equippedHandBlueprintId?: number;
 }
 
 /** Determine the right action for a given target tile. Returns null if no action possible. */
 export function resolveAction(ctx: ActionContext): DecodedAction | null {
   if (ctx.entityAtTarget) {
     const bp = getBlueprint(ctx.entityAtTarget.blueprintId);
-    if (bp && (bp.category === 'item' || bp.category === 'resource')) {
-      return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
+    if (bp) {
+      if (bp.category === 'item' || bp.category === 'resource') {
+        return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
+      }
+      if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree ||
+          ctx.entityAtTarget.blueprintId === BlueprintType.HillRock) {
+        return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
+      }
     }
+  }
+
+  // Rock terrain = mineable hill
+  if (ctx.terrainType === Terrain.Rock) {
+    return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
+  }
+
+  // Water tile with fishing rod
+  if (ctx.terrainType === Terrain.Water || ctx.terrainType === Terrain.River) {
+    if (ctx.equippedHandBlueprintId === BlueprintType.FishingRod) {
+      return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
+    }
+    return null;
   }
 
   if (!ctx.isWalkable) return null;
   return { action: ClientAction.MoveTo, tileX: ctx.targetX, tileY: ctx.targetY };
+}
+
+/** Human-readable label for an action (for status bar display). */
+export function describeAction(action: DecodedAction | null, ctx?: ActionContext): string {
+  if (!action) return '---';
+  switch (action.action) {
+    case ClientAction.MoveTo: return 'move';
+    case ClientAction.Pickup: {
+      if (ctx?.entityAtTarget) {
+        const bp = getBlueprint(ctx.entityAtTarget.blueprintId);
+        if (bp) return `pickup ${bp.name}`;
+      }
+      return 'pickup';
+    }
+    case ClientAction.Harvest: {
+      if (ctx?.entityAtTarget) {
+        if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) return 'chop';
+        if (ctx.entityAtTarget.blueprintId === BlueprintType.HillRock) return 'mine';
+      }
+      if (ctx?.terrainType === Terrain.Rock) return 'mine';
+      if (ctx?.terrainType === Terrain.Water || ctx?.terrainType === Terrain.River) return 'fish';
+      return 'harvest';
+    }
+    case ClientAction.Cancel: return 'cancel';
+    default: return 'act';
+  }
 }

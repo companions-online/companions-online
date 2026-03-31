@@ -10,14 +10,16 @@ import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
   encodeWorldDelta, encodePong, decodeClientMessage, encodeInventorySync,
 } from '@shared/protocol/codec.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft } from '@shared/protocol/codec.js';
-import { numberToEquipSlot } from '@shared/inventory.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt } from '@shared/protocol/codec.js';
+import { numberToEquipSlot, findItem } from '@shared/inventory.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { setMoveTarget, clearMoveTarget, runMovement } from './systems/movement.js';
 import { initCritterAI, runCritterAI } from './systems/critter-ai.js';
 import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
+import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems/harvest.js';
+import { initTreeResource, runRespawns } from './systems/resources.js';
 
 const PORT = 3001;
 const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 42;
@@ -43,6 +45,7 @@ for (const spawn of entitySpawns) {
   entities.blueprintId.set(eid, { blueprintId: spawn.blueprint });
   entities.statusEffects.set(eid, { effects: 0 });
   if (bp.speed) entities.speed.set(eid, bp.speed);
+  if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid);
 }
 entities.clearDirty();
 
@@ -204,6 +207,55 @@ function broadcastTick(tick: number): void {
   }
 }
 
+// --- UseItemAt handler ---
+function handleUseItemAt(session: ClientSession, itemId: number, tileX: number, tileY: number): void {
+  const inv = inventoryMgr.get(session.entityId);
+  if (!inv) return;
+  const item = findItem(inv, itemId);
+  if (!item) return;
+
+  const bp = getBlueprint(item.blueprintId);
+  if (!bp) return;
+
+  // Cooking: RawFish/RawMeat at campfire
+  if (item.blueprintId === BlueprintType.RawFish || item.blueprintId === BlueprintType.RawMeat) {
+    // Check campfire adjacent to target
+    const playerPos = entities.position.get(session.entityId);
+    if (!playerPos) return;
+    // Player must be adjacent to campfire, or we check the target tile
+    const campfireEid = occupancy.get(tileX, tileY);
+    if (!campfireEid) return;
+    const campBp = entities.blueprintId.get(campfireEid);
+    if (!campBp || campBp.blueprintId !== BlueprintType.Campfire) return;
+    // Player must be adjacent to campfire
+    if (Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) > 1) return;
+
+    const outputBp = item.blueprintId === BlueprintType.RawFish ? BlueprintType.CookedFish : BlueprintType.CookedMeat;
+    inventoryMgr.removeItem(session.entityId, itemId, 1);
+    inventoryMgr.addItem(session.entityId, outputBp, 1);
+    sendInventorySync(session);
+    return;
+  }
+
+  // Placing: placeable items
+  if (bp.category === 'placeable') {
+    if (!map.isWalkable(tileX, tileY) || occupancy.isOccupied(tileX, tileY)) return;
+    const playerPos = entities.position.get(session.entityId);
+    if (!playerPos) return;
+    if (Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) > 2) return;
+
+    inventoryMgr.removeItem(session.entityId, itemId, 1);
+
+    const eid = entities.create();
+    entities.position.set(eid, { tileX, tileY });
+    entities.blueprintId.set(eid, { blueprintId: item.blueprintId });
+    if (bp.maxHp) entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
+    if (bp.collides) occupancy.set(tileX, tileY, eid);
+
+    sendInventorySync(session);
+  }
+}
+
 // --- Game loop ---
 const loop = new GameLoop(TICK_RATE);
 
@@ -266,11 +318,35 @@ loop.start((tick, _dt) => {
       if (inventoryMgr.craft(session.entityId, a.recipeId)) {
         sendInventorySync(session);
       }
+    } else if (action.action === ClientAction.Harvest) {
+      const a = action as DecodedActionHarvest;
+      if (isHarvesting(session.entityId)) cancelHarvest(session.entityId, entities);
+      clearMoveTarget(session.entityId);
+      startHarvest(session.entityId, a.tileX, a.tileY, entities, map, occupancy, inventoryMgr);
+    } else if (action.action === ClientAction.UseItemAt) {
+      const a = action as DecodedActionUseItemAt;
+      handleUseItemAt(session, a.itemId, a.tileX, a.tileY);
+    }
+
+    // Any non-harvest action cancels harvest
+    if (action.action !== ClientAction.Harvest && isHarvesting(session.entityId)) {
+      cancelHarvest(session.entityId, entities);
     }
   }
 
   // 2. Critter AI
   runCritterAI(entities, map, occupancy);
+
+  // 2.5 Run harvest system
+  const harvestYielded = runHarvest(entities, map, occupancy, inventoryMgr);
+  for (const eid of harvestYielded) {
+    for (const [, s] of sessions) {
+      if (s.entityId === eid) { sendInventorySync(s); break; }
+    }
+  }
+
+  // 2.6 Run respawns
+  runRespawns(loop.currentTick, entities, map, occupancy);
 
   // 3. Run movement
   runMovement(entities, map, occupancy);

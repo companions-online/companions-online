@@ -25,6 +25,7 @@ export type {
   DecodedEntityFullState, DecodedChunk, DecodedAction,
   SyncedInventoryItem,
   DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
+  DecodedActionHarvest, DecodedActionUseItemAt,
   DecodedServerMessage, DecodedClientMessage,
 } from './protocol/codec.js';
 export { tileToScreen, screenToTile } from './coordinates.js';
@@ -32,7 +33,7 @@ export type { ScreenPoint, TilePoint } from './coordinates.js';
 export { terrainChar, buildingChar, blueprintChar, tileChar } from './ascii.js';
 export { PerlinNoise, WorldMap, generateWorld } from './world/index.js';
 export type { WorldGenResult, EntitySpawn } from './world/index.js';
-export { resolveAction } from './action-resolver.js';
+export { resolveAction, describeAction } from './action-resolver.js';
 export type { ActionContext } from './action-resolver.js';
 export { findPath } from './pathfinding.js';
 export type { PathResult } from './pathfinding.js';

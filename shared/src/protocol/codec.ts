@@ -140,10 +140,13 @@ export interface DecodedActionEquip { action: number; itemId: number; }
 export interface DecodedActionUnequip { action: number; slot: number; }
 export interface DecodedActionDrop { action: number; itemId: number; }
 export interface DecodedActionCraft { action: number; recipeId: number; }
+export interface DecodedActionHarvest { action: number; tileX: number; tileY: number; }
+export interface DecodedActionUseItemAt { action: number; itemId: number; tileX: number; tileY: number; }
 
 export type DecodedAction =
   | DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild
-  | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft;
+  | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft
+  | DecodedActionHarvest | DecodedActionUseItemAt;
 
 export interface SyncedInventoryItem {
   itemId: number;
@@ -312,6 +315,15 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     w.writeU16((action as DecodedActionDrop).itemId);
   } else if (action.action === ClientAction.Craft) {
     w.writeU16((action as DecodedActionCraft).recipeId);
+  } else if (action.action === ClientAction.Harvest) {
+    const a = action as DecodedActionHarvest;
+    w.writeU16(a.tileX);
+    w.writeU16(a.tileY);
+  } else if (action.action === ClientAction.UseItemAt) {
+    const a = action as DecodedActionUseItemAt;
+    w.writeU16(a.itemId);
+    w.writeU16(a.tileX);
+    w.writeU16(a.tileY);
   }
   return w.getBuffer();
 }
@@ -528,6 +540,10 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action, itemId: r.readU16() };
     case ClientAction.Craft:
       return { action, recipeId: r.readU16() };
+    case ClientAction.Harvest:
+      return { action, tileX: r.readU16(), tileY: r.readU16() };
+    case ClientAction.UseItemAt:
+      return { action, itemId: r.readU16(), tileX: r.readU16(), tileY: r.readU16() };
     default:
       throw new Error(`Unknown client action: 0x${(action as number).toString(16)}`);
   }
