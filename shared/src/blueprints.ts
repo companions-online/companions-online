@@ -125,10 +125,10 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.Bandage,    name: 'Bandage',     category: 'item', sprite: 'band',  stackable: true, maxStack: 10, weight: 1, consumeHeal: 30, consumeTicks: 10 },
 
   // --- Placeables ---
-  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  weight: 4 },
-  { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', weight: 4, collides: true, maxHp: 30 },
-  { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', weight: 5, collides: true, maxHp: 30 },
-  { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', weight: 6, collides: true, maxHp: 50 },
+  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  weight: 4, equipSlot: 'hand' },
+  { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
+  { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
+  { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },
 
   // --- World objects ---
   { id: BlueprintType.Tree,     name: 'Tree',      category: 'creature', sprite: 'tree', maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
