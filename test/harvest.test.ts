@@ -48,14 +48,8 @@ function createTree(x: number, y: number): number {
   return eid;
 }
 
-function createHillRock(x: number, y: number): number {
-  const eid = em.create();
-  em.position.set(eid, { tileX: x, tileY: y });
-  em.blueprintId.set(eid, { blueprintId: BlueprintType.HillRock });
-  em.health.set(eid, { currentHp: 999, maxHp: 999 });
-  em.statusEffects.set(eid, { effects: 0 });
-  occ.set(x, y, eid);
-  return eid;
+function setRockTerrain(x: number, y: number): void {
+  map.setTerrain(x, y, Terrain.Rock);
 }
 
 beforeEach(() => {
@@ -139,7 +133,7 @@ describe('Harvest system', () => {
 
   it('mines hill rock for rock', () => {
     const player = createPlayer(10, 10);
-    createHillRock(11, 10);
+    setRockTerrain(11, 10);
     em.clearDirty();
 
     startHarvest(player, 11, 10, em, map, occ, inv);

@@ -20,8 +20,7 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
       if (bp.category === 'item' || bp.category === 'resource') {
         return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
       }
-      if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree ||
-          ctx.entityAtTarget.blueprintId === BlueprintType.HillRock) {
+      if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) {
         return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
       }
     }
@@ -59,7 +58,7 @@ export function describeAction(action: DecodedAction | null, ctx?: ActionContext
     case ClientAction.Harvest: {
       if (ctx?.entityAtTarget) {
         if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) return 'chop';
-        if (ctx.entityAtTarget.blueprintId === BlueprintType.HillRock) return 'mine';
+        // HillRock removed — terrain-based mining handled below
       }
       if (ctx?.terrainType === Terrain.Rock) return 'mine';
       if (ctx?.terrainType === Terrain.Water || ctx?.terrainType === Terrain.River) return 'fish';

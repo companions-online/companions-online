@@ -67,7 +67,7 @@ export function blueprintChar(bp: BlueprintType): string {
     case BlueprintType.StorageChest: return '$';
     // World objects
     case BlueprintType.Tree:     return 'T';
-    case BlueprintType.HillRock: return '^';
+    // HillRock removed — Terrain.Rock handles mining directly
     // NPCs
     case BlueprintType.Hermit:   return 'H';
     case BlueprintType.Trader:   return 'M';

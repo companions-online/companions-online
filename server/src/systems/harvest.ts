@@ -42,15 +42,7 @@ function resolveHarvestContext(
         const tickCost = equippedBpId === BlueprintType.Axe ? 4 : 10;
         return { context: { yieldBlueprintId: BlueprintType.Wood, tickCost }, targetEntityId: targetEid };
       }
-      if (bpData.blueprintId === BlueprintType.HillRock) {
-        if (equippedBpId === BlueprintType.Pickaxe) {
-          return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 4, bonusChance: 0.3, bonusBlueprintId: BlueprintType.Iron } };
-        }
-        if (equippedBpId === BlueprintType.Axe) {
-          return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 6 } };
-        }
-        return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 10 } };
-      }
+      // HillRock removed — terrain-based mining handled below
     }
   }
 

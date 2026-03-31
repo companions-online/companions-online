@@ -73,7 +73,6 @@ export const enum BlueprintType {
 
   // World objects 80-89
   Tree     = 80,
-  HillRock = 81,
 
   // NPCs 90-99
   Hermit   = 90,
@@ -133,8 +132,6 @@ const BLUEPRINTS: Blueprint[] = [
 
   // --- World objects ---
   { id: BlueprintType.Tree,     name: 'Tree',      category: 'creature', sprite: 'tree', maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
-  { id: BlueprintType.HillRock, name: 'Hill Rock', category: 'creature', sprite: 'hill', maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
-
   // --- NPCs ---
   { id: BlueprintType.Hermit,   name: 'The Hermit',   category: 'npc', sprite: 'hermit',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
   { id: BlueprintType.Trader,   name: 'The Trader',   category: 'npc', sprite: 'trader',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },

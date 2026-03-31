@@ -14,7 +14,7 @@ import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedAc
 import { numberToEquipSlot, findItem } from '@shared/inventory.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { GameLoop } from './ecs/game-loop.js';
-import { setMoveTarget, clearMoveTarget, runMovement } from './systems/movement.js';
+import { setMoveTarget, clearMoveTarget, hasMoveTarget, runMovement } from './systems/movement.js';
 import { initCritterAI, runCritterAI } from './systems/critter-ai.js';
 import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
@@ -70,6 +70,9 @@ interface ClientSession {
   pendingAction: DecodedAction | null;
 }
 const sessions = new Map<WebSocket, ClientSession>();
+
+// Pending pickups: player walks to item, picks up on arrival
+const pendingPickups = new Map<number, { targetEntityId: number }>();
 
 // Simple RNG for spawn offsets
 let spawnRng = WORLD_SEED;
@@ -278,15 +281,22 @@ loop.start((tick, _dt) => {
       const targetPos = entities.position.get(a.entityId);
       const playerPos = entities.position.get(session.entityId);
       if (targetPos && playerPos) {
-        const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
         const bp = entities.blueprintId.get(a.entityId);
         const bpDef = bp ? getBlueprint(bp.blueprintId) : undefined;
-        if (dist <= 1 && bpDef && (bpDef.category === 'item' || bpDef.category === 'resource')) {
-          const result = inventoryMgr.addItem(session.entityId, bp!.blueprintId, 1);
-          if (result.success) {
-            occupancy.clear(targetPos.tileX, targetPos.tileY);
-            entities.destroy(a.entityId);
-            sendInventorySync(session);
+        if (bpDef && (bpDef.category === 'item' || bpDef.category === 'resource')) {
+          const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+          if (dist <= 1) {
+            // Adjacent — pick up immediately
+            const result = inventoryMgr.addItem(session.entityId, bp!.blueprintId, 1);
+            if (result.success) {
+              occupancy.clear(targetPos.tileX, targetPos.tileY);
+              entities.destroy(a.entityId);
+              sendInventorySync(session);
+            }
+          } else {
+            // Far away — pathfind to adjacent tile, pick up on arrival
+            pendingPickups.set(session.entityId, { targetEntityId: a.entityId });
+            setMoveTarget(session.entityId, targetPos.tileX, targetPos.tileY, entities, map, occupancy);
           }
         }
       }
@@ -332,6 +342,10 @@ loop.start((tick, _dt) => {
     if (action.action !== ClientAction.Harvest && isHarvesting(session.entityId)) {
       cancelHarvest(session.entityId, entities);
     }
+    // Any non-pickup action cancels pending pickup
+    if (action.action !== ClientAction.Pickup) {
+      pendingPickups.delete(session.entityId);
+    }
   }
 
   // 2. Critter AI
@@ -351,7 +365,33 @@ loop.start((tick, _dt) => {
   // 3. Run movement
   runMovement(entities, map, occupancy);
 
-  // 3. Broadcast
+  // 3.5 Resolve pending pickups (player arrived adjacent to item)
+  for (const [eid, pending] of pendingPickups) {
+    if (hasMoveTarget(eid)) continue; // still walking
+    const playerPos = entities.position.get(eid);
+    const targetPos = entities.position.get(pending.targetEntityId);
+    if (!playerPos || !targetPos || !entities.exists(pending.targetEntityId)) {
+      pendingPickups.delete(eid);
+      continue;
+    }
+    const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+    if (dist <= 1) {
+      const bp = entities.blueprintId.get(pending.targetEntityId);
+      if (bp) {
+        const result = inventoryMgr.addItem(eid, bp.blueprintId, 1);
+        if (result.success) {
+          occupancy.clear(targetPos.tileX, targetPos.tileY);
+          entities.destroy(pending.targetEntityId);
+          for (const [, s] of sessions) {
+            if (s.entityId === eid) { sendInventorySync(s); break; }
+          }
+        }
+      }
+    }
+    pendingPickups.delete(eid);
+  }
+
+  // 4. Broadcast
   broadcastTick(tick);
 
   // 4. Clear
@@ -419,6 +459,7 @@ wss.on('connection', (ws) => {
     if (pos) occupancy.clear(pos.tileX, pos.tileY);
     entities.destroy(entityId);
     clearMoveTarget(entityId);
+    pendingPickups.delete(entityId);
     inventoryMgr.destroy(entityId);
     sessions.delete(ws);
     console.log(`[server] client #${entityId} disconnected (total: ${sessions.size})`);
