@@ -4,7 +4,7 @@
 ```
 index.ts                 Barrel re-export of everything
 constants.ts             TICK_RATE=20, MAP_SIZE=128, CHUNK_SIZE=16, VIEW/INTEREST_RANGE, SPAWN
-actions.ts               ActionType enum (Idle..Attacking..Dead), ClientAction enum (Cancel..Trade)
+actions.ts               ActionType enum (Idle..Consuming), ClientAction enum (Cancel..Say, 17 total)
 blueprints.ts            Blueprint interface + ~35 types, blueprintToBuilding() mapping
 recipes.ts               17 crafting recipes (tools, weapons, armor, placeables, bandage)
 inventory.ts             InventoryItem/Inventory types, pure helpers (getWeight, canCraft, equipSlot conversions)
@@ -15,9 +15,9 @@ ascii.ts                 terrainChar, buildingChar, blueprintChar (with door ope
 components.ts            ComponentBit enum (7 synced components), wire data interfaces
 coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
-terrain.ts               Terrain/Building enums, isWalkable (Building.Door removed — doors are entities)
+terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open)
-protocol/opcodes.ts      Client/Server opcodes, DeltaSectionTag, TileFieldBit
+protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage
 protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types, DecodedAction union
 protocol/index.ts        Barrel re-export
 world/noise.ts           Seeded 2D Perlin noise (PerlinNoise class)
@@ -29,9 +29,9 @@ world/index.ts           Barrel re-export
 ## server/src/
 ```
 main.ts                  Thin entry: createDefaultWorld + GameLoop + WebSocket server (~65 lines)
-game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch
-system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/CritterState types
-player-connection.ts     PlayerConnection interface + TickDelta + GameWorldView
+game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch (switch → handlers)
+system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
+player-connection.ts     PlayerConnection interface (7 methods) + TickDelta + GameWorldView
 occupancy.ts             OccupancyGrid (Uint16Array tile→entityId)
 inventory-manager.ts     InventoryManager class (add/remove/equip/craft/drop/transfer)
 telemetry.ts             Telemetry class (per-phase timing, network bytes, rolling averages)
@@ -42,21 +42,22 @@ ecs/entity-manager.ts    EntityManager — entity lifecycle, 7 component stores,
 ecs/game-loop.ts         GameLoop — setTimeout with drift compensation
 systems/movement.ts      A* path-following, occupancy collision, wait-and-repath
 systems/harvest.ts       Channeled gathering (tree/rock/fish), auto-pathfind to adjacent, tree depletion
+systems/consumable.ts    Channeled healing (bandage/food), single-use, interruptible
 systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow fleeing targets
 systems/critter-ai.ts    Wander/flee/aggro/passive behaviors, Wanderer NPC roaming
 systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay)
 connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting)
-connections/headless-connection.ts HeadlessConnection (test spy, captures events)
+connections/headless-connection.ts HeadlessConnection (test spy, captures events incl chat)
 ```
 
 ## cli/
 ```
-client.ts       Entry point: WebSocket connect, wire modules
-state.ts        Shared mutable state object, type helpers for component extraction
-connection.ts   Server message handler (switch dispatch, state updates)
-render.ts       Main render function, viewport, status bar, cursor context
+client.ts       Entry point: WebSocket connect, wire modules (~30 lines)
+state.ts        Shared mutable state object, type helpers (getHp, getBpId, getEffects, getActionType)
+connection.ts   Server message handler (switch dispatch, state updates, chat log)
+render.ts       Main render function, viewport, status bar, cursor context, chat overlay
 panels.ts       Panel renderers (inventory, crafting, container, dialogue)
-input.ts        Keyboard handler, mode-specific dispatch, action execution
+input.ts        Keyboard handler, mode-specific dispatch, chat input mode, action execution
 ```
 
 ## scripts/
@@ -87,4 +88,6 @@ e2e/gather-craft.test.ts Full gameplay: harvest→craft→equip→drop→pickup�
 e2e/combat.test.ts       Attack→damage→death→loot, weapon damage, flee, aggro, player death+respawn
 e2e/building.test.ts     Wall placement, door toggle, pathfinding, container transfer
 e2e/npc.test.ts          NPC dialogue, trade, Hermit first-time gift
+e2e/consumable.test.ts   Bandage/food healing, interruption, HP cap
+e2e/chat.test.ts         Say broadcast, range filtering, non-interruption
 ```

@@ -6,7 +6,7 @@
 shared/src/     Shared types, constants, protocol codec, pathfinding, world gen, inventory logic
 server/src/     Game server: GameWorld, ECS, systems, connections, telemetry, NPC dialogues
 client/src/     Web client (esbuild, placeholder — CLI is primary client)
-cli/            CLI game client: state, rendering, input, panels, connection handler
+cli/            CLI game client: state, rendering, input, panels, connection handler (6 modules)
 scripts/        Dev tools: map viewer, map stats
 test/           Unit tests + test/e2e/ for behavioral E2E tests
 docs/           Design seed documents (may be outdated — code is authoritative)
@@ -19,7 +19,7 @@ memory/         These orientation docs
 
 ```
 GameWorld implements SystemState {
-  map: WorldMap              // terrain, buildings (tile layers)
+  map: WorldMap              // terrain, buildings (tile layers with dirty tracking)
   entities: EntityManager    // ECS components
   occupancy: OccupancyGrid   // tile → entityId (Uint16Array)
   inventoryMgr: InventoryManager
@@ -27,7 +27,7 @@ GameWorld implements SystemState {
   telemetry: Telemetry       // per-phase CPU timing + network bytes
 
   // System state Maps
-  moveStates, harvestStates, combatStates, critterStates
+  moveStates, harvestStates, combatStates, consumableStates, critterStates
   treeResources, respawnQueue, playerRespawnTimers
 
   // Pending async actions (walk-to-then-do)
@@ -35,7 +35,7 @@ GameWorld implements SystemState {
 
   addPlayer(connection: PlayerConnection): entityId
   removePlayer(entityId)
-  setAction(entityId, action)
+  setAction(entityId, action)  // → processAction switch dispatch
   runTick() / runTicks(n)
 }
 ```
@@ -56,10 +56,11 @@ interface PlayerConnection {
   onChunkNeeded(chunkX, chunkY, world)
   onContainerOpen(entityId, containerEntityId, world)
   onDialogueOpen(entityId, npcEntityId, dialogue)
+  onChatMessage(entityId, senderEntityId, message)
 }
 ```
 
-Four implementations:
+Three implementations:
 - **WebSocketConnection** (`connections/ws-connection.ts`) — binary protocol encoding
 - **HeadlessConnection** (`connections/headless-connection.ts`) — test spy, captures events
 - **MCP Connection** — future, pull-based
@@ -72,9 +73,10 @@ Four implementations:
 
 ```
 0. Process player respawns (dead → alive after 5s timer)
-1. Process pending player actions (switch dispatch → handler methods)
+1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions, iterates world.players for nearest-player)
 3. Run harvest (channeled gathering, yields on timer)
+3.5. Run consumables (channeled healing, single-use completion)
 4. Run respawns (depleted trees respawn after 30s)
 5. Run movement (A* pathfinding, occupancy collision, wait-and-repath)
 6. Run combat (damage, death detection — players get death state, critters get destroyed)
@@ -86,6 +88,15 @@ Four implementations:
 
 20Hz tick rate (50ms budget).
 
+## Action System (17 actions)
+
+`processAction` uses a switch/dispatch to handler methods:
+- **World**: MoveTo, Cancel, Attack, Harvest, Pickup, UseItemAt, Interact, Say
+- **Inventory**: Equip, Unequip, Drop, UseConsumable, Craft, Transfer
+- **NPC**: DialogueSelect, Trade
+
+Say is instant and does NOT cancel other actions (can chat while harvesting).
+
 ## ECS
 
 - `ComponentStore<T>` — generic Map<entityId, T> with auto-dirty on set()
@@ -95,8 +106,8 @@ Four implementations:
 ## Binary Protocol
 
 Custom compact binary over WebSocket. Opcodes:
-- Client→Server: Action (variable payload for 14 action types), Ping
-- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen
+- Client→Server: Action (variable payload for 17 action types), Ping
+- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen, ChatMessage
 - Component bitmask delta compression — only changed components sent
 - RLE chunk compression for terrain
 - Chunk streaming: only viewport chunks on connect, stream as player moves
@@ -110,8 +121,15 @@ NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams wit
 ## Building Layer vs Entities
 
 Static structures (WoodenWall) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas.
-Interactive placeables (Door, Campfire, StorageChest) → entities with components (health, statusEffects).
-Doors use `StatusEffect.Open` bit for open/closed state, toggle occupancy on interact.
+Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health).
+- Doors use `StatusEffect.Open` bit for open/closed state, toggle occupancy on interact.
+- Campfire has `collides: true` (occupancy registered). Cooking finds it via `occupancy.get()`.
+- StorageChest gets its own inventory (`inventoryMgr.create`) on placement.
+- Ground items (from Drop) have only position+blueprintId — distinguished from placed entities by absence of statusEffects component.
+
+## Player Death + Respawn
+
+Players don't get destroyed on death. Instead: `ActionType.Dead` set, equipped items dropped as ground entities, occupancy cleared, 100-tick respawn timer. On respawn: teleport to spawn, HP restored, action set to Idle.
 
 ## Telemetry
 
