@@ -7,15 +7,17 @@ import { findItem } from '@shared/inventory.js';
 import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack } from '@shared/protocol/codec.js';
+import { getLootTable } from '@shared/loot-tables.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
 import type { PlayerConnection, TickDelta } from './player-connection.js';
-import type { SystemState, MovementState, HarvestState, CritterState } from './system-state.js';
+import type { SystemState, MovementState, HarvestState, CritterState, CombatState } from './system-state.js';
 import { setMoveTarget, clearMoveTarget, hasMoveTarget, runMovement } from './systems/movement.js';
 import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems/harvest.js';
-import { initCritterAI, runCritterAI } from './systems/critter-ai.js';
+import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
+import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/combat.js';
 import { initTreeResource, runRespawns } from './systems/resources.js';
 
 export interface PlayerSlot {
@@ -35,6 +37,7 @@ export class GameWorld implements SystemState {
 
   readonly moveStates = new Map<number, MovementState>();
   readonly harvestStates = new Map<number, HarvestState>();
+  readonly combatStates = new Map<number, CombatState>();
   readonly critterStates = new Map<number, CritterState>();
   readonly treeResources = new Map<number, number>();
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
@@ -149,7 +152,23 @@ export class GameWorld implements SystemState {
     // 3. Run movement
     runMovement(this);
 
-    // 3.5 Resolve pending pickups
+    // 4. Run combat (damage, death detection)
+    const deaths = runCombat(this);
+
+    // 4.5 Notify critter AI of damage dealt (for flee/aggro reactions)
+    for (const [attackerId, state] of this.combatStates) {
+      const targetState = this.critterStates.get(state.targetEntityId);
+      if (targetState) {
+        notifyCritterAttacked(state.targetEntityId, attackerId, this);
+      }
+    }
+
+    // 5. Process deaths → loot drops
+    for (const death of deaths) {
+      this.processEntityDeath(death.entityId, death.killerEntityId);
+    }
+
+    // 5.5 Resolve pending pickups
     for (const [eid, pending] of this.pendingPickups) {
       if (hasMoveTarget(eid, this)) continue;
       const playerPos = this.entities.position.get(eid);
@@ -192,6 +211,10 @@ export class GameWorld implements SystemState {
     // Cancel harvest on any non-harvest action
     if (action.action !== ClientAction.Harvest && isHarvesting(eid, this)) {
       cancelHarvest(eid, this);
+    }
+    // Cancel combat on any non-attack action
+    if (action.action !== ClientAction.Attack && isInCombat(eid, this)) {
+      cancelCombat(eid, this);
     }
     // Cancel pending pickup on any non-pickup action
     if (action.action !== ClientAction.Pickup) {
@@ -262,7 +285,38 @@ export class GameWorld implements SystemState {
     } else if (action.action === ClientAction.UseItemAt) {
       const a = action as DecodedActionUseItemAt;
       this.handleUseItemAt(eid, slot, a.itemId, a.tileX, a.tileY);
+    } else if (action.action === ClientAction.Attack) {
+      const a = action as DecodedActionAttack;
+      clearMoveTarget(eid, this);
+      startAttack(eid, a.entityId, this);
     }
+  }
+
+  private processEntityDeath(entityId: number, _killerEntityId: number): void {
+    const pos = this.entities.position.get(entityId);
+    const bp = this.entities.blueprintId.get(entityId);
+    if (!pos || !bp) return;
+
+    // Spawn loot drops
+    const drops = getLootTable(bp.blueprintId);
+    let rng = (entityId * 2654435761) >>> 0;
+    for (const drop of drops) {
+      if (drop.chance !== undefined) {
+        rng = (rng * 1664525 + 1013904223) >>> 0;
+        if ((rng >>> 0) / 0x100000000 >= drop.chance) continue;
+      }
+      for (let q = 0; q < drop.quantity; q++) {
+        const groundEid = this.entities.create();
+        this.entities.position.set(groundEid, { tileX: pos.tileX, tileY: pos.tileY });
+        this.entities.blueprintId.set(groundEid, { blueprintId: drop.blueprintId });
+      }
+    }
+
+    // Cleanup
+    this.occupancy.clear(pos.tileX, pos.tileY);
+    this.critterStates.delete(entityId);
+    this.combatStates.delete(entityId);
+    this.entities.destroy(entityId);
   }
 
   private handleUseItemAt(eid: number, slot: PlayerSlot, itemId: number, tileX: number, tileY: number): void {

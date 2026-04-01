@@ -19,6 +19,10 @@ export function generateWorld(seed: number): WorldGenResult {
   const map = new WorldMap(MAP_SIZE, MAP_SIZE);
   const spawns: EntitySpawn[] = [];
 
+  // Auto-scale factor: all noise frequencies and distance-based zones
+  // scale relative to the reference map size of 128
+  const scale = MAP_SIZE / 128;
+
   const elevation = new PerlinNoise(seed);
   const river     = new PerlinNoise(seed + 1);
   const forest    = new PerlinNoise(seed + 2);
@@ -35,6 +39,16 @@ export function generateWorld(seed: number): WorldGenResult {
     return (rng >>> 0) / 0x100000000;
   }
 
+  // Scaled noise frequencies (inverse of scale — larger map = lower frequency)
+  const elevFreq = 0.03 / scale;
+  const riverFreq = 0.05 / scale;
+  const forestFreq = 0.08 / scale;
+  const critterFreq = 0.3 / scale;
+
+  // Scaled distance zones
+  const critterClearDist = Math.round(10 * scale) ** 2;
+  const skeletonClearDist = Math.round(20 * scale) ** 2;
+
   // --- Pass 1: Terrain ---
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
@@ -43,10 +57,7 @@ export function generateWorld(seed: number): WorldGenResult {
       const dist = Math.sqrt(dx * dx + dy * dy);
       const mask = Math.max(0, 1 - Math.pow(dist / maxDist, 2));
 
-      // Normalize perlin from -1..1 to 0..1, then subtract distance penalty
-      // Center (mask=1): e = raw (0..1, land)
-      // Edges (mask=0): e = raw - 1 (-1..0, water)
-      const raw = (elevation.octave2d(x * 0.03, y * 0.03, 4, 0.5) + 1) / 2;
+      const raw = (elevation.octave2d(x * elevFreq, y * elevFreq, 4, 0.5) + 1) / 2;
       const e = raw - (1 - mask);
 
       let t: Terrain;
@@ -65,7 +76,7 @@ export function generateWorld(seed: number): WorldGenResult {
     for (let x = 0; x < MAP_SIZE; x++) {
       const t = map.getTerrain(x, y);
       if (t !== Terrain.Grass && t !== Terrain.Dirt) continue;
-      const rv = river.noise2d(x * 0.05, y * 0.05);
+      const rv = river.noise2d(x * riverFreq, y * riverFreq);
       if (Math.abs(rv) < 0.03) {
         map.setTerrain(x, y, Terrain.River);
       }
@@ -88,7 +99,6 @@ export function generateWorld(seed: number): WorldGenResult {
   }
 
   // --- Pass 3: Trees ---
-  // Track tree positions for spacing check
   const treeSet = new Set<number>();
   const key = (x: number, y: number) => y * MAP_SIZE + x;
 
@@ -96,19 +106,17 @@ export function generateWorld(seed: number): WorldGenResult {
     for (let x = 0; x < MAP_SIZE; x++) {
       if (map.getTerrain(x, y) !== Terrain.Grass) continue;
 
-      const f = forest.octave2d(x * 0.08, y * 0.08, 3, 0.5);
+      const f = forest.octave2d(x * forestFreq, y * forestFreq, 3, 0.5);
       if (f < 0.2) continue;
 
-      // Spacing: skip if any cardinal neighbor has a tree
       if (treeSet.has(key(x - 1, y)) ||
           treeSet.has(key(x + 1, y)) ||
           treeSet.has(key(x, y - 1)) ||
           treeSet.has(key(x, y + 1))) continue;
 
-      // Clear zone around spawn
       const sdx = x - SPAWN_X;
       const sdy = y - SPAWN_Y;
-      if (sdx * sdx + sdy * sdy < 25) continue; // radius 5 clear
+      if (sdx * sdx + sdy * sdy < 25) continue; // spawn clear zone (fixed 5 tiles)
 
       treeSet.add(key(x, y));
       spawns.push({ x, y, blueprint: BlueprintType.Tree });
@@ -120,7 +128,6 @@ export function generateWorld(seed: number): WorldGenResult {
     for (let x = 1; x < MAP_SIZE - 1; x++) {
       if (map.getTerrain(x, y) !== Terrain.Dirt) continue;
 
-      // Adjacent to Rock terrain?
       const adjRock =
         map.getTerrain(x - 1, y) === Terrain.Rock ||
         map.getTerrain(x + 1, y) === Terrain.Rock ||
@@ -140,27 +147,46 @@ export function generateWorld(seed: number): WorldGenResult {
       if (map.getTerrain(x, y) !== Terrain.Grass) continue;
       if (treeSet.has(key(x, y))) continue;
 
-      // Away from spawn
       const sdx = x - SPAWN_X;
       const sdy = y - SPAWN_Y;
-      if (sdx * sdx + sdy * sdy < 100) continue; // radius 10
+      if (sdx * sdx + sdy * sdy < critterClearDist) continue;
 
-      const cv = critter.noise2d(x * 0.3, y * 0.3);
+      const cv = critter.noise2d(x * critterFreq, y * critterFreq);
 
-      // ~1% chance per eligible tile, biased by noise
       if (rand() > 0.01) continue;
 
-      const f = forest.octave2d(x * 0.08, y * 0.08, 3, 0.5);
+      const f = forest.octave2d(x * forestFreq, y * forestFreq, 3, 0.5);
       let bp: BlueprintType;
       if (f > 0.15) {
-        // Forested areas: predators
-        bp = cv > 0 ? BlueprintType.Fox : BlueprintType.Wolf;
+        if (cv > 0.7 && rand() < 0.3) bp = BlueprintType.Bear;
+        else bp = cv > 0 ? BlueprintType.Fox : BlueprintType.Wolf;
       } else {
-        // Open areas: prey
         bp = cv > 0 ? BlueprintType.Deer : BlueprintType.Rabbit;
       }
 
       spawns.push({ x, y, blueprint: bp });
+    }
+  }
+
+  // --- Pass 6: Skeletons near mountains ---
+  for (let y = 1; y < MAP_SIZE - 1; y++) {
+    for (let x = 1; x < MAP_SIZE - 1; x++) {
+      if (map.getTerrain(x, y) !== Terrain.Dirt) continue;
+      if (treeSet.has(key(x, y))) continue;
+
+      const sdx = x - SPAWN_X;
+      const sdy = y - SPAWN_Y;
+      if (sdx * sdx + sdy * sdy < skeletonClearDist) continue;
+      if (rand() > 0.002) continue;
+
+      const adjRock =
+        map.getTerrain(x - 1, y) === Terrain.Rock ||
+        map.getTerrain(x + 1, y) === Terrain.Rock ||
+        map.getTerrain(x, y - 1) === Terrain.Rock ||
+        map.getTerrain(x, y + 1) === Terrain.Rock;
+      if (adjRock) {
+        spawns.push({ x, y, blueprint: BlueprintType.Skeleton });
+      }
     }
   }
 

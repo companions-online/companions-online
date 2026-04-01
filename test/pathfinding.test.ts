@@ -113,6 +113,7 @@ describe('Occupancy + movement collision', () => {
       inventoryMgr: new InventoryManager(),
       moveStates: new Map(),
       harvestStates: new Map(),
+      combatStates: new Map(),
       critterStates: new Map(),
       treeResources: new Map(),
       respawnQueue: [],

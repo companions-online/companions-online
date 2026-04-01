@@ -23,6 +23,10 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
       if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) {
         return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
       }
+      // Living creature (not tree, not player) → Attack
+      if (bp.category === 'creature' && ctx.entityAtTarget.blueprintId !== BlueprintType.Player) {
+        return { action: ClientAction.Attack, entityId: ctx.entityAtTarget.entityId };
+      }
     }
   }
 
@@ -63,6 +67,13 @@ export function describeAction(action: DecodedAction | null, ctx?: ActionContext
       if (ctx?.terrainType === Terrain.Rock) return 'mine';
       if (ctx?.terrainType === Terrain.Water || ctx?.terrainType === Terrain.River) return 'fish';
       return 'harvest';
+    }
+    case ClientAction.Attack: {
+      if (ctx?.entityAtTarget) {
+        const bp = getBlueprint(ctx.entityAtTarget.blueprintId);
+        if (bp) return `attack ${bp.name}`;
+      }
+      return 'attack';
     }
     case ClientAction.Cancel: return 'cancel';
     default: return 'act';

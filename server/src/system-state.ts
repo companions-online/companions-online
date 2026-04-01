@@ -32,10 +32,20 @@ export interface HarvestContext {
   bonusBlueprintId?: number;
 }
 
+// Per-entity combat state
+export interface CombatState {
+  targetEntityId: number;
+  ticksRemaining: number;
+  attackSpeed: number;
+  damage: number;
+}
+
 // Per-critter AI state
 export interface CritterState {
   idleTicksRemaining: number;
   rng: number;
+  behavior: 'wander' | 'flee' | 'aggro' | 'passive';
+  targetEntityId?: number;
 }
 
 /** All mutable game state needed by systems. GameWorld implements this. */
@@ -47,6 +57,7 @@ export interface SystemState {
 
   readonly moveStates: Map<number, MovementState>;
   readonly harvestStates: Map<number, HarvestState>;
+  readonly combatStates: Map<number, CombatState>;
   readonly critterStates: Map<number, CritterState>;
   readonly treeResources: Map<number, number>;
   readonly respawnQueue: { tick: number; blueprintType: number }[];

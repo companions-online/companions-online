@@ -11,6 +11,6 @@ export type {
   DecodedEntityUpdate, DecodedTileUpdate, DecodedWorldDelta,
   DecodedEntityFullState, DecodedChunk, DecodedAction,
   DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
-  DecodedActionHarvest, DecodedActionUseItemAt,
+  DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack,
   DecodedServerMessage, DecodedClientMessage,
 } from './codec.js';

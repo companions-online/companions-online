@@ -1,19 +1,24 @@
 import { BlueprintType } from '@shared/blueprints.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import type { SystemState, CritterState } from '../system-state.js';
-import { setMoveTarget, hasMoveTarget } from './movement.js';
+import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
+import { startAttack, isInCombat, cancelCombat } from './combat.js';
 
-interface WanderConfig {
-  radius: number;
+interface BehaviorConfig {
+  wanderRadius: number;
   idleMin: number;
   idleMax: number;
+  fleeRange?: number;    // flee when player within this range
+  aggroRange?: number;   // aggro when player within this range
 }
 
-const WANDER_CONFIGS: Partial<Record<number, WanderConfig>> = {
-  [BlueprintType.Deer]:   { radius: 8,  idleMin: 40,  idleMax: 120 },
-  [BlueprintType.Rabbit]: { radius: 6,  idleMin: 20,  idleMax: 60 },
-  [BlueprintType.Fox]:    { radius: 10, idleMin: 60,  idleMax: 160 },
-  [BlueprintType.Wolf]:   { radius: 12, idleMin: 80,  idleMax: 200 },
+const BEHAVIOR_CONFIGS: Partial<Record<number, BehaviorConfig>> = {
+  [BlueprintType.Deer]:     { wanderRadius: 8,  idleMin: 40,  idleMax: 120 },
+  [BlueprintType.Rabbit]:   { wanderRadius: 6,  idleMin: 20,  idleMax: 60,  fleeRange: 3 },
+  [BlueprintType.Fox]:      { wanderRadius: 10, idleMin: 60,  idleMax: 160, fleeRange: 5 },
+  [BlueprintType.Wolf]:     { wanderRadius: 12, idleMin: 80,  idleMax: 200, aggroRange: 5 },
+  [BlueprintType.Bear]:     { wanderRadius: 6,  idleMin: 80,  idleMax: 200, aggroRange: 4 },
+  [BlueprintType.Skeleton]: { wanderRadius: 8,  idleMin: 60,  idleMax: 160, aggroRange: 8 },
 };
 
 function lcgNext(state: number): number {
@@ -29,57 +34,193 @@ export function initCritterAI(world: SystemState): void {
   for (const eid of world.entities.getAllEntities()) {
     const bp = world.entities.blueprintId.get(eid);
     if (!bp) continue;
-    const config = WANDER_CONFIGS[bp.blueprintId];
+    const config = BEHAVIOR_CONFIGS[bp.blueprintId];
     if (!config) continue;
 
-    const state: CritterState = { idleTicksRemaining: 0, rng: eid * 2654435761 };
+    const state: CritterState = { idleTicksRemaining: 0, rng: eid * 2654435761, behavior: 'wander' };
     state.idleTicksRemaining = randRange(state, 1, config.idleMax);
     world.critterStates.set(eid, state);
   }
 }
 
+/** Called when a critter takes damage — triggers flee or aggro response. */
+export function notifyCritterAttacked(entityId: number, attackerEntityId: number, world: SystemState): void {
+  const state = world.critterStates.get(entityId);
+  if (!state) return;
+  const bp = world.entities.blueprintId.get(entityId);
+  if (!bp) return;
+  const config = BEHAVIOR_CONFIGS[bp.blueprintId];
+  if (!config) return;
+
+  if (config.fleeRange) {
+    // Flee from attacker
+    state.behavior = 'flee';
+    state.targetEntityId = attackerEntityId;
+    clearMoveTarget(entityId, world);
+  } else if (config.aggroRange) {
+    // Fight back
+    state.behavior = 'aggro';
+    state.targetEntityId = attackerEntityId;
+    if (!isInCombat(entityId, world)) {
+      startAttack(entityId, attackerEntityId, world);
+    }
+  }
+  // Deer: passive — no behavior change
+}
+
 export function runCritterAI(world: SystemState): void {
   for (const [eid, state] of world.critterStates) {
-    if (hasMoveTarget(eid, world)) continue;
-
     if (!world.entities.exists(eid)) {
       world.critterStates.delete(eid);
       continue;
     }
 
-    if (state.idleTicksRemaining > 0) {
-      state.idleTicksRemaining--;
-      continue;
-    }
-
-    const pos = world.entities.position.get(eid);
     const bp = world.entities.blueprintId.get(eid);
-    if (!pos || !bp) continue;
-
-    const config = WANDER_CONFIGS[bp.blueprintId];
+    if (!bp) continue;
+    const config = BEHAVIOR_CONFIGS[bp.blueprintId];
     if (!config) continue;
 
-    let found = false;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const dx = randRange(state, -config.radius, config.radius);
-      const dy = randRange(state, -config.radius, config.radius);
-      const tx = pos.tileX + dx;
-      const ty = pos.tileY + dy;
+    const pos = world.entities.position.get(eid);
+    if (!pos) continue;
 
-      if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
-      if (!world.map.isWalkable(tx, ty)) continue;
-      if (world.occupancy.isOccupied(tx, ty)) continue;
-      if (tx === pos.tileX && ty === pos.tileY) continue;
-
-      setMoveTarget(eid, tx, ty, world);
-      found = true;
-      break;
+    // Find nearest player
+    let nearestPlayerId: number | undefined;
+    let nearestDist = Infinity;
+    for (const otherEid of world.entities.getAllEntities()) {
+      const otherBp = world.entities.blueprintId.get(otherEid);
+      if (!otherBp || otherBp.blueprintId !== BlueprintType.Player) continue;
+      const otherPos = world.entities.position.get(otherEid);
+      if (!otherPos) continue;
+      const dist = Math.max(Math.abs(pos.tileX - otherPos.tileX), Math.abs(pos.tileY - otherPos.tileY));
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestPlayerId = otherEid;
+      }
     }
 
-    if (!found) {
-      state.idleTicksRemaining = randRange(state, 10, 30);
-    } else {
-      state.idleTicksRemaining = randRange(state, config.idleMin, config.idleMax);
+    // Behavior decision (unless already reacting to being attacked)
+    if (state.behavior === 'wander') {
+      if (config.fleeRange && nearestPlayerId !== undefined && nearestDist <= config.fleeRange) {
+        state.behavior = 'flee';
+        state.targetEntityId = nearestPlayerId;
+        clearMoveTarget(eid, world);
+      } else if (config.aggroRange && nearestPlayerId !== undefined && nearestDist <= config.aggroRange) {
+        state.behavior = 'aggro';
+        state.targetEntityId = nearestPlayerId;
+      }
+    }
+
+    // If fleeing/aggro target is gone or out of range, return to wander
+    if ((state.behavior === 'flee' || state.behavior === 'aggro') && state.targetEntityId !== undefined) {
+      if (!world.entities.exists(state.targetEntityId)) {
+        state.behavior = 'wander';
+        state.targetEntityId = undefined;
+        cancelCombat(eid, world);
+      } else {
+        const targetPos = world.entities.position.get(state.targetEntityId);
+        if (targetPos) {
+          const dist = Math.max(Math.abs(pos.tileX - targetPos.tileX), Math.abs(pos.tileY - targetPos.tileY));
+          const range = config.fleeRange ?? config.aggroRange ?? 10;
+          if (dist > range * 2) {
+            // Lost interest — target too far
+            state.behavior = 'wander';
+            state.targetEntityId = undefined;
+            cancelCombat(eid, world);
+          }
+        }
+      }
+    }
+
+    // Execute behavior
+    switch (state.behavior) {
+      case 'flee':
+        executeFlee(eid, state, world);
+        break;
+      case 'aggro':
+        executeAggro(eid, state, world);
+        break;
+      case 'wander':
+        executeWander(eid, state, config, world);
+        break;
+      // 'passive': do nothing
     }
   }
+}
+
+function executeFlee(eid: number, state: CritterState, world: SystemState): void {
+  if (hasMoveTarget(eid, world)) return; // already running
+
+  // Brief pause between flee segments to prevent super-speed appearance
+  if (state.idleTicksRemaining > 0) {
+    state.idleTicksRemaining--;
+    return;
+  }
+
+  const pos = world.entities.position.get(eid);
+  const targetPos = state.targetEntityId !== undefined ? world.entities.position.get(state.targetEntityId) : undefined;
+  if (!pos || !targetPos) return;
+
+  // Run in opposite direction from threat
+  const dx = pos.tileX - targetPos.tileX;
+  const dy = pos.tileY - targetPos.tileY;
+  const dist = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
+  const fleeX = Math.max(1, Math.min(MAP_SIZE - 2, pos.tileX + Math.round(dx / dist * 8)));
+  const fleeY = Math.max(1, Math.min(MAP_SIZE - 2, pos.tileY + Math.round(dy / dist * 8)));
+
+  let fled = false;
+  if (world.map.isWalkable(fleeX, fleeY)) {
+    setMoveTarget(eid, fleeX, fleeY, world);
+    fled = true;
+  } else {
+    // Try random nearby tile
+    const rx = Math.max(1, Math.min(MAP_SIZE - 2, pos.tileX + randRange(state, -6, 6)));
+    const ry = Math.max(1, Math.min(MAP_SIZE - 2, pos.tileY + randRange(state, -6, 6)));
+    if (world.map.isWalkable(rx, ry)) {
+      setMoveTarget(eid, rx, ry, world);
+      fled = true;
+    }
+  }
+
+  // Pause before next flee decision (prevents non-stop sprinting)
+  state.idleTicksRemaining = fled ? 10 : 5; // 0.5s after run, 0.25s after fail
+}
+
+function executeAggro(eid: number, state: CritterState, world: SystemState): void {
+  if (state.targetEntityId === undefined) return;
+  if (!isInCombat(eid, world)) {
+    startAttack(eid, state.targetEntityId, world);
+  }
+}
+
+function executeWander(eid: number, state: CritterState, config: BehaviorConfig, world: SystemState): void {
+  if (hasMoveTarget(eid, world) || isInCombat(eid, world)) return;
+
+  if (state.idleTicksRemaining > 0) {
+    state.idleTicksRemaining--;
+    return;
+  }
+
+  const pos = world.entities.position.get(eid);
+  if (!pos) return;
+
+  let found = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const dx = randRange(state, -config.wanderRadius, config.wanderRadius);
+    const dy = randRange(state, -config.wanderRadius, config.wanderRadius);
+    const tx = pos.tileX + dx;
+    const ty = pos.tileY + dy;
+
+    if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
+    if (!world.map.isWalkable(tx, ty)) continue;
+    if (world.occupancy.isOccupied(tx, ty)) continue;
+    if (tx === pos.tileX && ty === pos.tileY) continue;
+
+    setMoveTarget(eid, tx, ty, world);
+    found = true;
+    break;
+  }
+
+  state.idleTicksRemaining = found
+    ? randRange(state, config.idleMin, config.idleMax)
+    : randRange(state, 10, 30);
 }

@@ -142,11 +142,12 @@ export interface DecodedActionDrop { action: number; itemId: number; }
 export interface DecodedActionCraft { action: number; recipeId: number; }
 export interface DecodedActionHarvest { action: number; tileX: number; tileY: number; }
 export interface DecodedActionUseItemAt { action: number; itemId: number; tileX: number; tileY: number; }
+export interface DecodedActionAttack { action: number; entityId: number; }
 
 export type DecodedAction =
   | DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild
   | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft
-  | DecodedActionHarvest | DecodedActionUseItemAt;
+  | DecodedActionHarvest | DecodedActionUseItemAt | DecodedActionAttack;
 
 export interface SyncedInventoryItem {
   itemId: number;
@@ -204,6 +205,7 @@ function encodeCurrentAction(w: BufferWriter, action: CurrentActionData) {
   switch (action.actionType) {
     case ActionType.Interacting:
     case ActionType.Harvesting:
+    case ActionType.Attacking:
       w.writeU16(action.targetEntity!);
       break;
     case ActionType.Building:
@@ -247,6 +249,7 @@ function decodeCurrentAction(r: BufferReader): CurrentActionData {
   switch (actionType) {
     case ActionType.Interacting:
     case ActionType.Harvesting:
+    case ActionType.Attacking:
       return { actionType, targetEntity: r.readU16() };
     case ActionType.Building:
       return { actionType, targetTileX: r.readU16(), targetTileY: r.readU16() };
@@ -324,6 +327,8 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     w.writeU16(a.itemId);
     w.writeU16(a.tileX);
     w.writeU16(a.tileY);
+  } else if (action.action === ClientAction.Attack) {
+    w.writeU16((action as DecodedActionAttack).entityId);
   }
   return w.getBuffer();
 }
@@ -544,6 +549,8 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action, tileX: r.readU16(), tileY: r.readU16() };
     case ClientAction.UseItemAt:
       return { action, itemId: r.readU16(), tileX: r.readU16(), tileY: r.readU16() };
+    case ClientAction.Attack:
+      return { action, entityId: r.readU16() };
     default:
       throw new Error(`Unknown client action: 0x${(action as number).toString(16)}`);
   }

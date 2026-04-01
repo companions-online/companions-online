@@ -272,12 +272,33 @@ function render() {
   const cursorAction = cursorCtx ? resolveAction(cursorCtx) : null;
   const actionLabel = describeAction(cursorAction, cursorCtx ?? undefined);
 
-  // Harvest progress indicator
-  const myAction = myEntity?.currentAction;
-  const isCurrentlyHarvesting = myAction && 'actionType' in myAction && myAction.actionType === ActionType.Harvesting;
-  const harvestStatus = harvestCount > 0 ? ` | +${harvestCount} ${harvestItemName}` : isCurrentlyHarvesting ? ' | Harvesting...' : '';
+  // Health display
+  const myHp = myEntity?.health;
+  const hpStr = myHp ? `HP:${(myHp as any).currentHp}/${(myHp as any).maxHp}` : 'HP:?';
 
-  const status1 = ` (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${entityMap.size} T:${lastTick} W:${wt}/50${harvestStatus}`;
+  // Activity status
+  const myAction = myEntity?.currentAction;
+  const actionType = myAction && 'actionType' in myAction ? (myAction as any).actionType : undefined;
+  const isCurrentlyHarvesting = actionType === ActionType.Harvesting;
+  const isCurrentlyAttacking = actionType === ActionType.Attacking;
+
+  let activityStatus = '';
+  if (harvestCount > 0) {
+    activityStatus = ` | +${harvestCount} ${harvestItemName}`;
+  } else if (isCurrentlyHarvesting) {
+    activityStatus = ' | Harvesting...';
+  } else if (isCurrentlyAttacking && myAction && 'targetEntity' in myAction) {
+    const targetEid = (myAction as any).targetEntity;
+    const targetComp = entityMap.get(targetEid);
+    const targetBpId = targetComp?.blueprintId;
+    const bpId = targetBpId && typeof targetBpId !== 'number' ? (targetBpId as any).blueprintId : targetBpId;
+    const targetBp = bpId !== undefined ? getBlueprint(bpId) : undefined;
+    const targetHp = targetComp?.health;
+    const thpStr = targetHp ? `${(targetHp as any).currentHp}/${(targetHp as any).maxHp}` : '';
+    activityStatus = ` | Attacking ${targetBp?.name ?? '?'} ${thpStr}`;
+  }
+
+  const status1 = ` ${hpStr} (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${entityMap.size} T:${lastTick} W:${wt}/50${activityStatus}`;
   const keys = panelMode === 'none'
     ? ` [arrows]move [enter]${actionLabel} [u]se [i]nv [d]ebug [q]uit`
     : panelMode === 'inventory'
