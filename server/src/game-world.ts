@@ -19,6 +19,7 @@ import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems
 import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
 import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/combat.js';
 import { initTreeResource, runRespawns } from './systems/resources.js';
+import { Telemetry } from './telemetry.js';
 
 export interface PlayerSlot {
   entityId: number;
@@ -41,6 +42,8 @@ export class GameWorld implements SystemState {
   readonly critterStates = new Map<number, CritterState>();
   readonly treeResources = new Map<number, number>();
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
+
+  readonly telemetry = new Telemetry();
 
   private _tick = 0;
   private spawnRng: number;
@@ -127,48 +130,58 @@ export class GameWorld implements SystemState {
 
   runTick(): void {
     this._tick++;
+    const t = this.telemetry;
 
     // 1. Process pending actions
+    t.beginPhase('actions');
     for (const [eid, slot] of this.players) {
       const action = slot.pendingAction;
       if (!action) continue;
       slot.pendingAction = null;
       this.processAction(eid, slot, action);
     }
+    t.endPhase('actions');
 
     // 2. Critter AI
+    t.beginPhase('critterAI');
     runCritterAI(this);
+    t.endPhase('critterAI');
 
-    // 2.5 Run harvest
+    // 3. Harvest
+    t.beginPhase('harvest');
     const harvestYielded = runHarvest(this);
     for (const eid of harvestYielded) {
       const slot = this.players.get(eid);
       if (slot) slot.connection.onInventoryChanged(eid, this);
     }
+    t.endPhase('harvest');
 
-    // 2.6 Run respawns
+    // 4. Respawns
+    t.beginPhase('respawns');
     runRespawns(this);
+    t.endPhase('respawns');
 
-    // 3. Run movement
+    // 5. Movement
+    t.beginPhase('movement');
     runMovement(this);
+    t.endPhase('movement');
 
-    // 4. Run combat (damage, death detection)
+    // 6. Combat
+    t.beginPhase('combat');
     const deaths = runCombat(this);
-
-    // 4.5 Notify critter AI of damage dealt (for flee/aggro reactions)
     for (const [attackerId, state] of this.combatStates) {
       const targetState = this.critterStates.get(state.targetEntityId);
       if (targetState) {
         notifyCritterAttacked(state.targetEntityId, attackerId, this);
       }
     }
-
-    // 5. Process deaths → loot drops
     for (const death of deaths) {
       this.processEntityDeath(death.entityId, death.killerEntityId);
     }
+    t.endPhase('combat');
 
-    // 5.5 Resolve pending pickups
+    // 7. Pickups
+    t.beginPhase('pickups');
     for (const [eid, pending] of this.pendingPickups) {
       if (hasMoveTarget(eid, this)) continue;
       const playerPos = this.entities.position.get(eid);
@@ -192,13 +205,23 @@ export class GameWorld implements SystemState {
       }
       this.pendingPickups.delete(eid);
     }
+    t.endPhase('pickups');
 
-    // 4. Per-player visibility + broadcast
+    // 8. Broadcast
+    t.beginPhase('broadcast');
     this.broadcastTick();
+    t.endPhase('broadcast');
 
-    // 5. Clear
+    // 9. Cleanup
+    t.beginPhase('cleanup');
     this.entities.clearDirty();
     this.entities.clearDestroyed();
+    t.endPhase('cleanup');
+
+    t.tick = this._tick;
+    t.entityCount = this.entities.getEntityCount();
+    t.playerCount = this.players.size;
+    t.endTick();
   }
 
   runTicks(n: number): void {
