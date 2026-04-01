@@ -5,6 +5,7 @@ export class WorldMap {
   readonly terrain: Uint8Array;
   readonly buildings: Uint8Array;
   readonly buildingMeta: Uint8Array;
+  readonly dirtyTiles = new Set<number>();
 
   constructor(readonly width: number, readonly height: number) {
     const size = width * height;
@@ -26,7 +27,9 @@ export class WorldMap {
   }
 
   setTerrain(x: number, y: number, t: Terrain): void {
-    this.terrain[this.idx(x, y)] = t;
+    const i = this.idx(x, y);
+    this.terrain[i] = t;
+    this.dirtyTiles.add(i);
   }
 
   getBuilding(x: number, y: number): Building {
@@ -34,7 +37,13 @@ export class WorldMap {
   }
 
   setBuilding(x: number, y: number, b: Building): void {
-    this.buildings[this.idx(x, y)] = b;
+    const i = this.idx(x, y);
+    this.buildings[i] = b;
+    this.dirtyTiles.add(i);
+  }
+
+  clearDirtyTiles(): void {
+    this.dirtyTiles.clear();
   }
 
   isWalkable(x: number, y: number): boolean {

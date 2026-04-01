@@ -3,7 +3,7 @@ import { createTestWorld, addTestPlayer, placeTree, placeGroundItem } from './he
 import { ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { getAllRecipes } from '@shared/recipes.js';
-import { Terrain } from '@shared/terrain.js';
+import { Terrain, Building } from '@shared/terrain.js';
 
 describe('E2E: Gather & Craft', () => {
   it('player walks to tree, harvests wood, tree depletes', () => {
@@ -143,8 +143,9 @@ describe('E2E: Gather & Craft', () => {
     world.setAction(player, { action: ClientAction.UseItemAt, itemId: wallItem.itemId, tileX: 5, tileY: 7 });
     world.runTicks(1);
 
-    // Wall entity should exist and block
-    expect(world.occupancy.isOccupied(5, 7)).toBe(true);
+    // Wall should be in building layer and block movement
+    expect(world.map.getBuilding(5, 7)).toBe(Building.Wall);
+    expect(world.map.isWalkable(5, 7)).toBe(false);
     expect(world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.WoodenWall)).toBeUndefined();
   });
 });

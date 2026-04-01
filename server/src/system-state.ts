@@ -61,6 +61,7 @@ export interface SystemState {
   readonly critterStates: Map<number, CritterState>;
   readonly treeResources: Map<number, number>;
   readonly respawnQueue: { tick: number; blueprintType: number }[];
+  readonly players: ReadonlyMap<number, { entityId: number }>;
 
   respawnRng: number;
   currentTick: number;

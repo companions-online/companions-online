@@ -1,5 +1,5 @@
 import type { WorldMap } from '@shared/world/world-map.js';
-import type { DecodedEntityUpdate } from '@shared/protocol/codec.js';
+import type { DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
 import type { EntityManager } from './ecs/entity-manager.js';
 import type { InventoryManager } from './inventory-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
@@ -9,6 +9,7 @@ export interface TickDelta {
   entered: number[];
   left: number[];
   updated: DecodedEntityUpdate[];
+  tileUpdates: DecodedTileUpdate[];
 }
 
 export interface GameWorldView {
@@ -22,4 +23,5 @@ export interface PlayerConnection {
   onInitialState(entityId: number, world: GameWorldView): void;
   onInventoryChanged(entityId: number, world: GameWorldView): void;
   onTick(entityId: number, world: GameWorldView, delta: TickDelta): void;
+  onChunkNeeded(chunkX: number, chunkY: number, world: GameWorldView): void;
 }

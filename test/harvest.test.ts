@@ -29,6 +29,7 @@ function makeWorld(): SystemState {
     critterStates: new Map(),
     treeResources: new Map(),
     respawnQueue: [],
+    players: new Map(),
     respawnRng: 12345,
     currentTick: 0,
   };

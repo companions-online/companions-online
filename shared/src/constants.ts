@@ -1,7 +1,7 @@
 export const TICK_RATE = 20;
 export const TICK_MS = 1000 / TICK_RATE;
 
-export const MAP_SIZE = 512;
+export const MAP_SIZE = 128;
 export const CHUNK_SIZE = 16;
 
 export const VIEW_RANGE = 24;

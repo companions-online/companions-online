@@ -22,4 +22,8 @@ export class HeadlessConnection implements PlayerConnection {
       this.events.push({ type: 'tick', entityId, data: delta });
     }
   }
+
+  onChunkNeeded(_chunkX: number, _chunkY: number, _world: GameWorldView): void {
+    // no-op for tests
+  }
 }

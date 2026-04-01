@@ -1,13 +1,14 @@
-import { SPAWN_X, SPAWN_Y, MAP_SIZE, INTEREST_RANGE } from '@shared/constants.js';
+import { SPAWN_X, SPAWN_Y, MAP_SIZE, CHUNK_SIZE, INTEREST_RANGE } from '@shared/constants.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
-import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
+import { BlueprintType, getBlueprint, blueprintToBuilding } from '@shared/blueprints.js';
+import { Building } from '@shared/terrain.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { findItem } from '@shared/inventory.js';
 import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack } from '@shared/protocol/codec.js';
 import { getLootTable } from '@shared/loot-tables.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
@@ -21,10 +22,29 @@ import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/comb
 import { initTreeResource, runRespawns } from './systems/resources.js';
 import { Telemetry } from './telemetry.js';
 
+const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
+
+function chunkKey(cx: number, cy: number): number {
+  return cy * chunksPerSide + cx;
+}
+
+function getNeededChunks(tileX: number, tileY: number): [number, number][] {
+  const minCx = Math.max(0, Math.floor((tileX - INTEREST_RANGE) / CHUNK_SIZE));
+  const maxCx = Math.min(chunksPerSide - 1, Math.floor((tileX + INTEREST_RANGE) / CHUNK_SIZE));
+  const minCy = Math.max(0, Math.floor((tileY - INTEREST_RANGE) / CHUNK_SIZE));
+  const maxCy = Math.min(chunksPerSide - 1, Math.floor((tileY + INTEREST_RANGE) / CHUNK_SIZE));
+  const result: [number, number][] = [];
+  for (let cy = minCy; cy <= maxCy; cy++)
+    for (let cx = minCx; cx <= maxCx; cx++)
+      result.push([cx, cy]);
+  return result;
+}
+
 export interface PlayerSlot {
   entityId: number;
   connection: PlayerConnection;
   knownEntities: Set<number>;
+  sentChunks: Set<number>;
   pendingAction: DecodedAction | null;
 }
 
@@ -89,11 +109,17 @@ export class GameWorld implements SystemState {
       entityId: eid,
       connection,
       knownEntities: new Set(),
+      sentChunks: new Set(),
       pendingAction: null,
     };
     this.players.set(eid, slot);
 
-    // Send initial state
+    // Send nearby chunks, then initial state
+    const needed = getNeededChunks(sx, sy);
+    for (const [cx, cy] of needed) {
+      connection.onChunkNeeded(cx, cy, this);
+      slot.sentChunks.add(chunkKey(cx, cy));
+    }
     connection.onInitialState(eid, this);
 
     // Notify other players about this new entity
@@ -216,6 +242,7 @@ export class GameWorld implements SystemState {
     t.beginPhase('cleanup');
     this.entities.clearDirty();
     this.entities.clearDestroyed();
+    this.map.clearDirtyTiles();
     t.endPhase('cleanup');
 
     t.tick = this._tick;
@@ -258,7 +285,7 @@ export class GameWorld implements SystemState {
       if (targetPos && playerPos) {
         const bp = this.entities.blueprintId.get(a.entityId);
         const bpDef = bp ? getBlueprint(bp.blueprintId) : undefined;
-        if (bpDef && (bpDef.category === 'item' || bpDef.category === 'resource')) {
+        if (bpDef && (bpDef.category === 'item' || bpDef.category === 'resource' || bpDef.category === 'placeable')) {
           const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
           if (dist <= 1) {
             const result = this.inventoryMgr.addItem(eid, bp!.blueprintId, 1);
@@ -375,14 +402,21 @@ export class GameWorld implements SystemState {
       if (!playerPos) return;
       if (Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) > 2) return;
 
-      this.inventoryMgr.removeItem(eid, itemId, 1);
-
-      const newEid = this.entities.create();
-      this.entities.position.set(newEid, { tileX, tileY });
-      this.entities.blueprintId.set(newEid, { blueprintId: item.blueprintId });
-      if (bp.maxHp) this.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-      if (bp.collides) this.occupancy.set(tileX, tileY, newEid);
-
+      const buildingType = blueprintToBuilding(item.blueprintId);
+      if (buildingType !== null) {
+        // Static building tile (walls) — write to map layer
+        if (this.map.getBuilding(tileX, tileY) !== Building.None) return;
+        this.inventoryMgr.removeItem(eid, itemId, 1);
+        this.map.setBuilding(tileX, tileY, buildingType);
+      } else {
+        // Interactive placeables (campfire, door, chest) — remain entities
+        this.inventoryMgr.removeItem(eid, itemId, 1);
+        const newEid = this.entities.create();
+        this.entities.position.set(newEid, { tileX, tileY });
+        this.entities.blueprintId.set(newEid, { blueprintId: item.blueprintId });
+        if (bp.maxHp) this.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
+        if (bp.collides) this.occupancy.set(tileX, tileY, newEid);
+      }
       slot.connection.onInventoryChanged(eid, this);
     }
   }
@@ -391,9 +425,27 @@ export class GameWorld implements SystemState {
     const dirty = this.entities.getDirtyEntities();
     const destroyed = this.entities.getDestroyed();
 
+    // Collect dirty tiles once (shared across all players)
+    const mapDirtyTiles: DecodedTileUpdate[] = [];
+    for (const idx of this.map.dirtyTiles) {
+      const tileX = idx % this.map.width;
+      const tileY = Math.floor(idx / this.map.width);
+      mapDirtyTiles.push({ tileX, tileY, building: this.map.buildings[idx] });
+    }
+
     for (const [eid, slot] of this.players) {
       const playerPos = this.entities.position.get(eid);
       if (!playerPos) continue;
+
+      // Stream any unsent chunks now in range
+      const needed = getNeededChunks(playerPos.tileX, playerPos.tileY);
+      for (const [cx, cy] of needed) {
+        const key = chunkKey(cx, cy);
+        if (!slot.sentChunks.has(key)) {
+          slot.connection.onChunkNeeded(cx, cy, this);
+          slot.sentChunks.add(key);
+        }
+      }
 
       const entered: number[] = [];
       const left: number[] = [];
@@ -427,7 +479,14 @@ export class GameWorld implements SystemState {
         }
       }
 
-      const delta: TickDelta = { tick: this._tick, entered, left, updated: updates };
+      // Filter tile updates to chunks this player has received
+      const tileUpdates = mapDirtyTiles.filter(tu => {
+        const cx = Math.floor(tu.tileX / CHUNK_SIZE);
+        const cy = Math.floor(tu.tileY / CHUNK_SIZE);
+        return slot.sentChunks.has(chunkKey(cx, cy));
+      });
+
+      const delta: TickDelta = { tick: this._tick, entered, left, updated: updates, tileUpdates };
       slot.connection.onTick(eid, this, delta);
     }
   }

@@ -117,6 +117,7 @@ describe('Occupancy + movement collision', () => {
       critterStates: new Map(),
       treeResources: new Map(),
       respawnQueue: [],
+      players: new Map(),
       respawnRng: 0,
       currentTick: 0,
     };

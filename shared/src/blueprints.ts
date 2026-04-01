@@ -149,3 +149,12 @@ for (const bp of BLUEPRINTS) {
 export function getBlueprint(id: number): Blueprint | undefined {
   return blueprintMap.get(id);
 }
+
+import { Building } from './terrain.js';
+
+export function blueprintToBuilding(bp: BlueprintType): Building | null {
+  switch (bp) {
+    case BlueprintType.WoodenWall: return Building.Wall;
+    default: return null;
+  }
+}

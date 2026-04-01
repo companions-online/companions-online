@@ -86,15 +86,13 @@ export function runCritterAI(world: SystemState): void {
     // Find nearest player
     let nearestPlayerId: number | undefined;
     let nearestDist = Infinity;
-    for (const otherEid of world.entities.getAllEntities()) {
-      const otherBp = world.entities.blueprintId.get(otherEid);
-      if (!otherBp || otherBp.blueprintId !== BlueprintType.Player) continue;
-      const otherPos = world.entities.position.get(otherEid);
+    for (const [playerEid] of world.players) {
+      const otherPos = world.entities.position.get(playerEid);
       if (!otherPos) continue;
       const dist = Math.max(Math.abs(pos.tileX - otherPos.tileX), Math.abs(pos.tileY - otherPos.tileY));
       if (dist < nearestDist) {
         nearestDist = dist;
-        nearestPlayerId = otherEid;
+        nearestPlayerId = playerEid;
       }
     }
 

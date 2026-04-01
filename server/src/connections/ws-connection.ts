@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { MAP_SIZE, CHUNK_SIZE, INTEREST_RANGE } from '@shared/constants.js';
+import { INTEREST_RANGE } from '@shared/constants.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
   encodeWorldDelta, encodeInventorySync,
@@ -15,24 +15,22 @@ export class WebSocketConnection implements PlayerConnection {
     this.telemetry.recordBytesSent('ws', buf.byteLength);
   }
 
+  onChunkNeeded(chunkX: number, chunkY: number, world: GameWorldView): void {
+    this.send(encodeChunk(
+      chunkX, chunkY,
+      world.map.getChunkTerrain(chunkX, chunkY),
+      world.map.getChunkBuildings(chunkX, chunkY),
+      world.map.getChunkBuildingMeta(chunkX, chunkY),
+    ));
+  }
+
   onInitialState(entityId: number, world: GameWorldView): void {
     const playerPos = world.entities.position.get(entityId);
     if (!playerPos) return;
 
     this.send(encodeWelcome(entityId));
 
-    // Send all chunks
-    const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
-    for (let cy = 0; cy < chunksPerSide; cy++) {
-      for (let cx = 0; cx < chunksPerSide; cx++) {
-        this.send(encodeChunk(
-          cx, cy,
-          world.map.getChunkTerrain(cx, cy),
-          world.map.getChunkBuildings(cx, cy),
-          world.map.getChunkBuildingMeta(cx, cy),
-        ));
-      }
-    }
+    // Chunks are sent by GameWorld via onChunkNeeded before this call
 
     // Send EntityFullState for entities in interest range
     for (const eid of world.entities.getAllEntities()) {
@@ -61,9 +59,9 @@ export class WebSocketConnection implements PlayerConnection {
       this.send(encodeEntityFullState(eid, components, speed));
     }
 
-    // Send WorldDelta with updates + removals
-    if (delta.updated.length > 0 || delta.left.length > 0) {
-      this.send(encodeWorldDelta(delta.tick, delta.updated, delta.left, []));
+    // Send WorldDelta with updates, removals, and tile changes
+    if (delta.updated.length > 0 || delta.left.length > 0 || delta.tileUpdates.length > 0) {
+      this.send(encodeWorldDelta(delta.tick, delta.updated, delta.left, delta.tileUpdates));
     }
   }
 }

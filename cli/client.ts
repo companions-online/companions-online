@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { MAP_SIZE, CHUNK_SIZE, VIEW_RANGE } from '../shared/src/constants.js';
+import { MAP_SIZE, CHUNK_SIZE, VIEW_RANGE, INTEREST_RANGE } from '../shared/src/constants.js';
 import { Terrain, Building } from '../shared/src/terrain.js';
 import { tileChar } from '../shared/src/ascii.js';
 import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
@@ -100,7 +100,12 @@ ws.on('message', (data) => {
       for (const rid of d.entityRemovals) {
         entityMap.delete(rid);
       }
-      dbg(`← Delta t=${d.tick} upd=${d.entityUpdates.length} rem=${d.entityRemovals.length}`);
+      for (const tu of d.tileUpdates) {
+        const gi = tu.tileY * MAP_SIZE + tu.tileX;
+        if (tu.terrain !== undefined) terrainGrid[gi] = tu.terrain;
+        if (tu.building !== undefined) buildingsGrid[gi] = tu.building;
+      }
+      dbg(`← Delta t=${d.tick} upd=${d.entityUpdates.length} rem=${d.entityRemovals.length} tiles=${d.tileUpdates.length}`);
       break;
     }
 
@@ -225,7 +230,8 @@ function render() {
       const isCursor = panelMode === 'none' && dx === cursorDX && dy === cursorDY;
 
       let ch: string;
-      if (wx < 0 || wx >= MAP_SIZE || wy < 0 || wy >= MAP_SIZE) {
+      if (wx < 0 || wx >= MAP_SIZE || wy < 0 || wy >= MAP_SIZE ||
+          Math.abs(wx - playerX) > INTEREST_RANGE || Math.abs(wy - playerY) > INTEREST_RANGE) {
         ch = ' ';
       } else {
         const gi = wy * MAP_SIZE + wx;
