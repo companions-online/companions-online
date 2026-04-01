@@ -24,4 +24,6 @@ export interface PlayerConnection {
   onInventoryChanged(entityId: number, world: GameWorldView): void;
   onTick(entityId: number, world: GameWorldView, delta: TickDelta): void;
   onChunkNeeded(chunkX: number, chunkY: number, world: GameWorldView): void;
+  onContainerOpen(entityId: number, containerEntityId: number, world: GameWorldView): void;
+  onDialogueOpen(entityId: number, npcEntityId: number, dialogue: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] }): void;
 }

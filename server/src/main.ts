@@ -7,7 +7,7 @@ import { WebSocketConnection } from './connections/ws-connection.js';
 import type { TelemetrySnapshot } from './telemetry.js';
 
 const PORT = 3001;
-const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 44;
+const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 42;
 const TICK_BUDGET_MS = 1000 / TICK_RATE;
 
 // --- Create world ---

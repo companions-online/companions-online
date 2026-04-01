@@ -1,5 +1,6 @@
 import { Terrain, Building } from './terrain.js';
 import { BlueprintType } from './blueprints.js';
+import { StatusEffect } from './status-effects.js';
 
 export function terrainChar(t: Terrain): string {
   switch (t) {
@@ -24,7 +25,8 @@ export function buildingChar(b: Building): string {
   }
 }
 
-export function blueprintChar(bp: BlueprintType): string {
+export function blueprintChar(bp: BlueprintType, effects?: number): string {
+  if (bp === BlueprintType.WoodenDoor && effects !== undefined && (effects & StatusEffect.Open)) return '/';
   switch (bp) {
     // Creatures
     case BlueprintType.Player:   return '@';
@@ -79,8 +81,8 @@ export function blueprintChar(bp: BlueprintType): string {
 }
 
 /** Covering priority: entity > building > ground */
-export function tileChar(terrain: Terrain, building: Building, entity?: BlueprintType): string {
-  if (entity !== undefined) return blueprintChar(entity);
+export function tileChar(terrain: Terrain, building: Building, entity?: BlueprintType, effects?: number): string {
+  if (entity !== undefined) return blueprintChar(entity, effects);
   const bc = buildingChar(building);
   if (bc) return bc;
   return terrainChar(terrain);

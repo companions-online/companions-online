@@ -8,7 +8,9 @@ import { findItem } from '@shared/inventory.js';
 import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack } from '@shared/protocol/codec.js';
+import { StatusEffect } from '@shared/status-effects.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade } from '@shared/protocol/codec.js';
+import { getDialogue } from './npc-dialogues.js';
 import { getLootTable } from '@shared/loot-tables.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
@@ -45,6 +47,7 @@ export interface PlayerSlot {
   connection: PlayerConnection;
   knownEntities: Set<number>;
   sentChunks: Set<number>;
+  playerFlags: Set<string>;
   pendingAction: DecodedAction | null;
 }
 
@@ -55,6 +58,7 @@ export class GameWorld implements SystemState {
 
   readonly players = new Map<number, PlayerSlot>();
   readonly pendingPickups = new Map<number, { targetEntityId: number }>();
+  readonly pendingInteracts = new Map<number, { targetEntityId: number }>();
 
   readonly moveStates = new Map<number, MovementState>();
   readonly harvestStates = new Map<number, HarvestState>();
@@ -110,6 +114,7 @@ export class GameWorld implements SystemState {
       connection,
       knownEntities: new Set(),
       sentChunks: new Set(),
+      playerFlags: new Set(),
       pendingAction: null,
     };
     this.players.set(eid, slot);
@@ -143,6 +148,7 @@ export class GameWorld implements SystemState {
     this.entities.destroy(entityId);
     clearMoveTarget(entityId, this);
     this.pendingPickups.delete(entityId);
+    this.pendingInteracts.delete(entityId);
     this.inventoryMgr.destroy(entityId);
     this.players.delete(entityId);
   }
@@ -231,6 +237,23 @@ export class GameWorld implements SystemState {
       }
       this.pendingPickups.delete(eid);
     }
+
+    // 7b. Resolve pending interacts (walk-to then interact)
+    for (const [eid, pending] of this.pendingInteracts) {
+      if (hasMoveTarget(eid, this)) continue;
+      const playerPos = this.entities.position.get(eid);
+      const targetPos = this.entities.position.get(pending.targetEntityId);
+      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
+        this.pendingInteracts.delete(eid);
+        continue;
+      }
+      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+      if (dist <= 1) {
+        const slot = this.players.get(eid);
+        if (slot) this.executeInteract(eid, slot, pending.targetEntityId);
+      }
+      this.pendingInteracts.delete(eid);
+    }
     t.endPhase('pickups');
 
     // 8. Broadcast
@@ -269,6 +292,10 @@ export class GameWorld implements SystemState {
     // Cancel pending pickup on any non-pickup action
     if (action.action !== ClientAction.Pickup) {
       this.pendingPickups.delete(eid);
+    }
+    // Cancel pending interact on any non-interact action
+    if (action.action !== ClientAction.Interact) {
+      this.pendingInteracts.delete(eid);
     }
 
     if (action.action === ClientAction.MoveTo) {
@@ -339,6 +366,124 @@ export class GameWorld implements SystemState {
       const a = action as DecodedActionAttack;
       clearMoveTarget(eid, this);
       startAttack(eid, a.entityId, this);
+    } else if (action.action === ClientAction.Interact) {
+      const a = action as DecodedActionInteract;
+      const targetPos = this.entities.position.get(a.entityId);
+      const playerPos = this.entities.position.get(eid);
+      if (targetPos && playerPos) {
+        const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
+                              Math.abs(targetPos.tileY - playerPos.tileY));
+        if (dist <= 1) {
+          this.executeInteract(eid, slot, a.entityId);
+        } else {
+          this.pendingInteracts.set(eid, { targetEntityId: a.entityId });
+          setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
+        }
+      }
+    } else if (action.action === ClientAction.Transfer) {
+      const a = action as DecodedActionTransfer;
+      const containerPos = this.entities.position.get(a.containerId);
+      const playerPos = this.entities.position.get(eid);
+      if (containerPos && playerPos) {
+        const dist = Math.max(Math.abs(containerPos.tileX - playerPos.tileX),
+                              Math.abs(containerPos.tileY - playerPos.tileY));
+        if (dist <= 1) {
+          const bp = this.entities.blueprintId.get(a.containerId);
+          if (bp && bp.blueprintId === BlueprintType.StorageChest) {
+            let ok: boolean;
+            if (a.direction === 0) {
+              ok = this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId);
+            } else {
+              ok = this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId);
+            }
+            if (ok) {
+              slot.connection.onInventoryChanged(eid, this);
+              slot.connection.onContainerOpen(eid, a.containerId, this);
+            }
+          }
+        }
+      }
+    } else if (action.action === ClientAction.DialogueSelect) {
+      const a = action as DecodedActionDialogueSelect;
+      const npcPos = this.entities.position.get(a.npcEntityId);
+      const playerPos = this.entities.position.get(eid);
+      if (npcPos && playerPos) {
+        const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
+        if (dist <= 1) {
+          const npcBp = this.entities.blueprintId.get(a.npcEntityId);
+          if (npcBp) {
+            const dialogue = getDialogue(npcBp.blueprintId);
+            if (dialogue) {
+              const option = dialogue.options.find(o => o.optionId === a.optionId);
+              if (option) {
+                if (option.type === 'talk' && option.response) {
+                  slot.connection.onDialogueOpen(eid, a.npcEntityId, {
+                    greeting: option.response,
+                    options: dialogue.options,
+                  });
+                } else if (option.type === 'trade' && option.trades) {
+                  slot.connection.onDialogueOpen(eid, a.npcEntityId, {
+                    greeting: dialogue.greeting,
+                    options: [{ ...option }],
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    } else if (action.action === ClientAction.Trade) {
+      const a = action as DecodedActionTrade;
+      const npcPos = this.entities.position.get(a.npcEntityId);
+      const playerPos = this.entities.position.get(eid);
+      if (npcPos && playerPos) {
+        const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
+        if (dist <= 1) {
+          const npcBp = this.entities.blueprintId.get(a.npcEntityId);
+          if (npcBp) {
+            const dialogue = getDialogue(npcBp.blueprintId);
+            if (dialogue) {
+              // Find the trade across all options
+              let trade: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number } | undefined;
+              for (const opt of dialogue.options) {
+                if (opt.trades) trade = opt.trades.find(t => t.tradeId === a.tradeId);
+                if (trade) break;
+              }
+              if (trade) {
+                // Hermit first-time free gift check
+                if (npcBp.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
+                  if (slot.playerFlags.has('hermit_gift')) return; // already claimed
+                  this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
+                  slot.playerFlags.add('hermit_gift');
+                  slot.connection.onInventoryChanged(eid, this);
+                  return;
+                }
+                // Normal trade: check player has the required items
+                if (trade.wantsBlueprint > 0) {
+                  const inv = this.inventoryMgr.get(eid);
+                  if (!inv) return;
+                  let have = 0;
+                  for (const item of inv.items) {
+                    if (item.blueprintId === trade.wantsBlueprint) have += item.quantity;
+                  }
+                  if (have < trade.wantsQty) return;
+                  // Consume wants, give gives
+                  let remaining = trade.wantsQty;
+                  for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {
+                    if (inv.items[i].blueprintId === trade.wantsBlueprint) {
+                      const take = Math.min(inv.items[i].quantity, remaining);
+                      this.inventoryMgr.removeItem(eid, inv.items[i].itemId, take);
+                      remaining -= take;
+                    }
+                  }
+                  this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
+                  slot.connection.onInventoryChanged(eid, this);
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -414,10 +559,50 @@ export class GameWorld implements SystemState {
         const newEid = this.entities.create();
         this.entities.position.set(newEid, { tileX, tileY });
         this.entities.blueprintId.set(newEid, { blueprintId: item.blueprintId });
+        this.entities.statusEffects.set(newEid, { effects: 0 });
         if (bp.maxHp) this.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
         if (bp.collides) this.occupancy.set(tileX, tileY, newEid);
+        if (item.blueprintId === BlueprintType.StorageChest) this.inventoryMgr.create(newEid, 100);
       }
       slot.connection.onInventoryChanged(eid, this);
+    }
+  }
+
+  private executeInteract(eid: number, slot: PlayerSlot, targetEntityId: number): void {
+    const bp = this.entities.blueprintId.get(targetEntityId);
+    if (!bp) return;
+    switch (bp.blueprintId) {
+      case BlueprintType.WoodenDoor:
+        this.toggleDoor(targetEntityId);
+        break;
+      case BlueprintType.StorageChest:
+        slot.connection.onContainerOpen(eid, targetEntityId, this);
+        break;
+      case BlueprintType.Hermit:
+      case BlueprintType.Trader:
+      case BlueprintType.Wanderer: {
+        const npcBp = this.entities.blueprintId.get(targetEntityId);
+        if (npcBp) {
+          const dialogue = getDialogue(npcBp.blueprintId);
+          if (dialogue) slot.connection.onDialogueOpen(eid, targetEntityId, dialogue);
+        }
+        break;
+      }
+    }
+  }
+
+  private toggleDoor(doorEntityId: number): void {
+    const pos = this.entities.position.get(doorEntityId);
+    const effects = this.entities.statusEffects.get(doorEntityId);
+    if (!pos || !effects) return;
+
+    const isOpen = (effects.effects & StatusEffect.Open) !== 0;
+    if (isOpen) {
+      this.occupancy.set(pos.tileX, pos.tileY, doorEntityId);
+      this.entities.statusEffects.set(doorEntityId, { effects: effects.effects & ~StatusEffect.Open });
+    } else {
+      this.occupancy.clear(pos.tileX, pos.tileY);
+      this.entities.statusEffects.set(doorEntityId, { effects: effects.effects | StatusEffect.Open });
     }
   }
 

@@ -190,5 +190,29 @@ export function generateWorld(seed: number): WorldGenResult {
     }
   }
 
+  // --- Pass 7: NPCs ---
+  function findNpcTile(minDist: number, maxDist: number): { x: number; y: number } | null {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = minDist + rand() * (maxDist - minDist);
+      const x = Math.round(SPAWN_X + Math.cos(angle) * dist);
+      const y = Math.round(SPAWN_Y + Math.sin(angle) * dist);
+      if (x < 1 || x >= MAP_SIZE - 1 || y < 1 || y >= MAP_SIZE - 1) continue;
+      if (map.getTerrain(x, y) !== Terrain.Grass) continue;
+      if (treeSet.has(key(x, y))) continue;
+      return { x, y };
+    }
+    return null;
+  }
+
+  const hermitPos = findNpcTile(8, 15 * scale);
+  if (hermitPos) spawns.push({ ...hermitPos, blueprint: BlueprintType.Hermit });
+
+  const traderPos = findNpcTile(10, 20 * scale);
+  if (traderPos) spawns.push({ ...traderPos, blueprint: BlueprintType.Trader });
+
+  const wandererPos = findNpcTile(30 * scale, 45 * scale);
+  if (wandererPos) spawns.push({ ...wandererPos, blueprint: BlueprintType.Wanderer });
+
   return { map, entitySpawns: spawns };
 }

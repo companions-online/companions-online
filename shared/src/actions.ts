@@ -24,5 +24,8 @@ export const enum ClientAction {
   Craft      = 0x08,
   Harvest    = 0x09,
   UseItemAt  = 0x0A,
-  Attack     = 0x0B,
+  Attack          = 0x0B,
+  Transfer        = 0x0C,
+  DialogueSelect  = 0x0D,
+  Trade           = 0x0E,
 }

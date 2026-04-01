@@ -23,7 +23,7 @@ let myEntityId = 0;
 let cursorDX = 0;
 let cursorDY = 0;
 let lastTick = 0;
-let panelMode: 'none' | 'debug' | 'inventory' | 'crafting' = 'none';
+let panelMode: 'none' | 'debug' | 'inventory' | 'crafting' | 'container' | 'dialogue' = 'none';
 let invCursor = 0;
 let inventory: SyncedInventoryItem[] = [];
 let prevInventory: SyncedInventoryItem[] = [];
@@ -31,6 +31,16 @@ let harvestCount = 0;
 let harvestItemName = '';
 const debugLog: string[] = [];
 const DEBUG_MAX = 200;
+
+// Container state
+let containerEntityId = 0;
+let containerItems: SyncedInventoryItem[] = [];
+let containerCursor = 0;
+let containerSide: 'player' | 'chest' = 'chest';
+
+// Dialogue state
+let dialogueNpcId = 0;
+let dialogueData: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] } | null = null;
 
 function dbg(line: string) {
   debugLog.push(line);
@@ -134,6 +144,30 @@ ws.on('message', (data) => {
       break;
     }
 
+    case 'containerOpen': {
+      containerEntityId = msg.containerEntityId;
+      containerItems = msg.items;
+      containerCursor = 0;
+      containerSide = 'chest';
+      if (panelMode !== 'container') {
+        panelMode = 'container';
+        process.stdout.write('\x1b[2J');
+      }
+      dbg(`← Container #${msg.containerEntityId} ${msg.items.length} items`);
+      break;
+    }
+
+    case 'dialogueOpen': {
+      dialogueNpcId = msg.npcEntityId;
+      dialogueData = msg.dialogue as typeof dialogueData;
+      if (panelMode !== 'dialogue') {
+        panelMode = 'dialogue';
+        process.stdout.write('\x1b[2J');
+      }
+      dbg(`← Dialogue NPC #${msg.npcEntityId}`);
+      break;
+    }
+
     case 'pong':
       break;
   }
@@ -207,13 +241,16 @@ function render() {
   const halfH = Math.floor(mapRows / 2);
 
   // Build entity position lookup
-  const entityAtTile = new Map<number, number>();
+  const entityAtTile = new Map<number, { bp: number; effects: number }>();
   for (const [, comp] of entityMap) {
     if (comp.position && comp.blueprintId !== undefined) {
       const bpId = typeof comp.blueprintId === 'number'
         ? comp.blueprintId
         : (comp.blueprintId as { blueprintId: number }).blueprintId;
-      entityAtTile.set(comp.position.tileY * MAP_SIZE + comp.position.tileX, bpId);
+      const effects = comp.statusEffects
+        ? (typeof comp.statusEffects === 'number' ? comp.statusEffects : (comp.statusEffects as { effects: number }).effects)
+        : 0;
+      entityAtTile.set(comp.position.tileY * MAP_SIZE + comp.position.tileX, { bp: bpId, effects });
     }
   }
 
@@ -237,8 +274,8 @@ function render() {
         const gi = wy * MAP_SIZE + wx;
         const t = terrainGrid[gi] as Terrain;
         const b = buildingsGrid[gi] as Building;
-        const ent = entityAtTile.get(gi) as BlueprintType | undefined;
-        ch = tileChar(t, b, ent);
+        const entData = entityAtTile.get(gi);
+        ch = tileChar(t, b, entData?.bp as BlueprintType | undefined, entData?.effects);
       }
 
       if (isCursor) {
@@ -261,6 +298,10 @@ function render() {
         panelLine = renderInventoryLine(vy, mapRows, pw);
       } else if (panelMode === 'crafting') {
         panelLine = renderCraftingLine(vy, mapRows, pw);
+      } else if (panelMode === 'container') {
+        panelLine = renderContainerLine(vy, mapRows, pw);
+      } else if (panelMode === 'dialogue') {
+        panelLine = renderDialogueLine(vy, mapRows, pw);
       }
 
       line += panelLine.slice(0, pw).padEnd(pw);
@@ -311,6 +352,10 @@ function render() {
     ? ' [↑↓]select [e]quip [g]drop [c]raft [i]close'
     : panelMode === 'crafting'
     ? ' [↑↓]select [enter]craft [c]back [i]close'
+    : panelMode === 'container'
+    ? ' [↑↓]select [tab]side [enter]transfer [esc]close'
+    : panelMode === 'dialogue'
+    ? ' [1-9]select [esc]close'
     : ' [d]close [q]uit';
 
   out += `\x1b[7m${status1.padEnd(cols)}\x1b[0m\n`;
@@ -371,6 +416,92 @@ function renderCraftingLine(vy: number, totalRows: number, maxW: number): string
     if (!craftable) return `\x1b[90m${text}\x1b[0m`;
     return selected ? `\x1b[7m${text}\x1b[0m` : text;
   }
+  return '';
+}
+
+function renderContainerLine(vy: number, _totalRows: number, _maxW: number): string {
+  const chestHeader = 0;
+  const chestStart = 1;
+  const chestEnd = chestStart + containerItems.length;
+  const sep = chestEnd + 1;
+  const invHeader = sep + 1;
+  const invStart = invHeader + 1;
+
+  if (vy === chestHeader) return '\x1b[1mCHEST\x1b[0m';
+  if (vy >= chestStart && vy < chestEnd) {
+    const idx = vy - chestStart;
+    const item = containerItems[idx];
+    const bp = getBlueprint(item.blueprintId);
+    const name = bp?.name ?? `#${item.blueprintId}`;
+    const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
+    const sel = containerSide === 'chest' && idx === containerCursor;
+    const text = `${sel ? '>' : ' '} ${name}${qty}`;
+    return sel ? `\x1b[7m${text}\x1b[0m` : text;
+  }
+  if (vy === sep) return '\x1b[90m────────────────────\x1b[0m';
+  if (vy === invHeader) return '\x1b[1mYOUR INVENTORY\x1b[0m';
+  const invIdx = vy - invStart;
+  if (invIdx >= 0 && invIdx < inventory.length) {
+    const item = inventory[invIdx];
+    const bp = getBlueprint(item.blueprintId);
+    const name = bp?.name ?? `#${item.blueprintId}`;
+    const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
+    const sel = containerSide === 'player' && invIdx === containerCursor;
+    const text = `${sel ? '>' : ' '} ${name}${qty}`;
+    return sel ? `\x1b[7m${text}\x1b[0m` : text;
+  }
+  return '';
+}
+
+function renderDialogueLine(vy: number, _totalRows: number, _maxW: number): string {
+  if (!dialogueData) return '';
+  if (vy === 0) {
+    const npcComp = entityMap.get(dialogueNpcId);
+    const bpId = npcComp?.blueprintId;
+    const id = bpId && typeof bpId !== 'number' ? (bpId as { blueprintId: number }).blueprintId : bpId as number;
+    const name = id !== undefined ? getBlueprint(id)?.name ?? 'NPC' : 'NPC';
+    return `\x1b[1m${name}\x1b[0m`;
+  }
+  if (vy === 1) return `"${dialogueData.greeting}"`;
+  if (vy === 2) return '';
+
+  const optIdx = vy - 3;
+  if (optIdx >= 0 && optIdx < dialogueData.options.length) {
+    const opt = dialogueData.options[optIdx];
+    if (opt.trades && opt.trades.length > 0) {
+      // Show trade list inline
+      const lines: string[] = [];
+      for (const t of opt.trades) {
+        const giveBp = getBlueprint(t.givesBlueprint);
+        const wantBp = getBlueprint(t.wantsBlueprint);
+        if (t.wantsBlueprint === 0) {
+          lines.push(`  [${t.tradeId}] FREE: ${t.givesQty} ${giveBp?.name ?? '?'}`);
+        } else {
+          lines.push(`  [${t.tradeId}] ${t.wantsQty} ${wantBp?.name ?? '?'} -> ${t.givesQty} ${giveBp?.name ?? '?'}`);
+        }
+      }
+      // For simplicity, show option label + first trade on this line
+      if (optIdx === 0) return `[${opt.optionId}] ${opt.label}`;
+      return lines[optIdx - 1] ?? '';
+    }
+    return `[${opt.optionId}] ${opt.label}`;
+  }
+
+  // Show trade offers if the first option has trades (trade view)
+  if (dialogueData.options.length === 1 && dialogueData.options[0].trades) {
+    const trades = dialogueData.options[0].trades;
+    const tradeIdx = vy - 3 - 1; // after the option label
+    if (tradeIdx >= 0 && tradeIdx < trades.length) {
+      const t = trades[tradeIdx];
+      const giveBp = getBlueprint(t.givesBlueprint);
+      const wantBp = getBlueprint(t.wantsBlueprint);
+      if (t.wantsBlueprint === 0) {
+        return ` [${t.tradeId}] FREE: ${t.givesQty} ${giveBp?.name ?? '?'}`;
+      }
+      return ` [${t.tradeId}] ${t.wantsQty} ${wantBp?.name ?? '?'} -> ${t.givesQty} ${giveBp?.name ?? '?'}`;
+    }
+  }
+
   return '';
 }
 
@@ -459,6 +590,69 @@ process.stdin.on('data', (key: string) => {
     else if (key === 'c' || (key === '\x1b' && key.length === 1)) {
       panelMode = 'inventory';
       invCursor = 0;
+      process.stdout.write('\x1b[2J');
+    }
+    render();
+    return;
+  }
+
+  // --- Container mode ---
+  if (panelMode === 'container') {
+    const items = containerSide === 'chest' ? containerItems : inventory;
+    if (key === '\x1b[A') { containerCursor = Math.max(0, containerCursor - 1); }
+    else if (key === '\x1b[B') { containerCursor = Math.min(items.length - 1, containerCursor + 1); }
+    else if (key === '\t') {
+      containerSide = containerSide === 'chest' ? 'player' : 'chest';
+      containerCursor = 0;
+    }
+    else if (key === '\r' || key === '\n') {
+      if (items.length > 0 && containerCursor < items.length) {
+        const item = items[containerCursor];
+        const dir = containerSide === 'player' ? 0 : 1;
+        sendAction({ action: ClientAction.Transfer, itemId: item.itemId, containerId: containerEntityId, direction: dir });
+        dbg(`→ Transfer ${containerSide === 'player' ? '→chest' : '→player'} itemId=${item.itemId}`);
+      }
+    }
+    else if (key === '\x1b' && key.length === 1) {
+      panelMode = 'none';
+      process.stdout.write('\x1b[2J');
+    }
+    render();
+    return;
+  }
+
+  // --- Dialogue mode ---
+  if (panelMode === 'dialogue') {
+    if (key >= '1' && key <= '9') {
+      const num = parseInt(key);
+      if (dialogueData) {
+        // Check if it's a trade number or option number
+        const opt = dialogueData.options.find(o => o.optionId === num);
+        if (opt) {
+          if (opt.type === 'trade' && opt.trades) {
+            // Send dialogue select to show trades
+            sendAction({ action: ClientAction.DialogueSelect, npcEntityId: dialogueNpcId, optionId: num });
+            dbg(`→ DialogueSelect option=${num}`);
+          } else {
+            sendAction({ action: ClientAction.DialogueSelect, npcEntityId: dialogueNpcId, optionId: num });
+            dbg(`→ DialogueSelect option=${num}`);
+          }
+        } else {
+          // Maybe it's a trade ID
+          for (const o of dialogueData.options) {
+            const trade = o.trades?.find(t => t.tradeId === num);
+            if (trade) {
+              sendAction({ action: ClientAction.Trade, npcEntityId: dialogueNpcId, tradeId: num });
+              dbg(`→ Trade tradeId=${num}`);
+              break;
+            }
+          }
+        }
+      }
+    }
+    else if (key === '\x1b' && key.length === 1) {
+      panelMode = 'none';
+      dialogueData = null;
       process.stdout.write('\x1b[2J');
     }
     render();

@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import { INTEREST_RANGE } from '@shared/constants.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
-  encodeWorldDelta, encodeInventorySync,
+  encodeWorldDelta, encodeInventorySync, encodeContainerOpen, encodeDialogueOpen,
 } from '@shared/protocol/codec.js';
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { Telemetry } from '../telemetry.js';
@@ -63,5 +63,13 @@ export class WebSocketConnection implements PlayerConnection {
     if (delta.updated.length > 0 || delta.left.length > 0 || delta.tileUpdates.length > 0) {
       this.send(encodeWorldDelta(delta.tick, delta.updated, delta.left, delta.tileUpdates));
     }
+  }
+
+  onContainerOpen(entityId: number, containerEntityId: number, world: GameWorldView): void {
+    this.send(encodeContainerOpen(containerEntityId, world.inventoryMgr.getSyncData(containerEntityId)));
+  }
+
+  onDialogueOpen(_entityId: number, npcEntityId: number, dialogue: Parameters<PlayerConnection['onDialogueOpen']>[2]): void {
+    this.send(encodeDialogueOpen(npcEntityId, JSON.stringify(dialogue)));
   }
 }

@@ -3,6 +3,7 @@ import { createTestWorld, addTestPlayer } from './helpers.js';
 import { ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { Building } from '@shared/terrain.js';
+import { StatusEffect } from '@shared/status-effects.js';
 
 describe('E2E: Building placement', () => {
   it('place 3 walls, tile updates received, pathfinding routes around', () => {
@@ -103,5 +104,151 @@ describe('E2E: Building placement', () => {
 
     // Ground entity should be destroyed
     expect(world.entities.exists(groundEid!)).toBe(false);
+  });
+});
+
+function placeDoor(world: ReturnType<typeof createTestWorld>, x: number, y: number): number {
+  const eid = world.entities.create();
+  world.entities.position.set(eid, { tileX: x, tileY: y });
+  world.entities.blueprintId.set(eid, { blueprintId: BlueprintType.WoodenDoor });
+  world.entities.statusEffects.set(eid, { effects: 0 });
+  world.entities.health.set(eid, { currentHp: 30, maxHp: 30 });
+  world.occupancy.set(x, y, eid);
+  return eid;
+}
+
+describe('E2E: Door toggle', () => {
+  it('interact toggles door open and closed', () => {
+    const world = createTestWorld();
+    const { entityId: player } = addTestPlayer(world, 10, 10);
+    const doorEid = placeDoor(world, 11, 10);
+    world.entities.clearDirty();
+
+    // Door starts closed — occupancy set
+    expect(world.occupancy.isOccupied(11, 10)).toBe(true);
+
+    // Interact to open
+    world.setAction(player, { action: ClientAction.Interact, entityId: doorEid });
+    world.runTicks(1);
+
+    // Door should be open — occupancy cleared, StatusEffect.Open set
+    expect(world.occupancy.isOccupied(11, 10)).toBe(false);
+    const effects1 = world.entities.statusEffects.get(doorEid)!;
+    expect(effects1.effects & StatusEffect.Open).toBeTruthy();
+
+    // Interact again to close
+    world.setAction(player, { action: ClientAction.Interact, entityId: doorEid });
+    world.runTicks(1);
+
+    // Door should be closed again
+    expect(world.occupancy.isOccupied(11, 10)).toBe(true);
+    const effects2 = world.entities.statusEffects.get(doorEid)!;
+    expect(effects2.effects & StatusEffect.Open).toBeFalsy();
+  });
+
+  it('pathfinding routes through open door, blocked by closed door', () => {
+    const world = createTestWorld();
+    const { entityId: player } = addTestPlayer(world, 10, 10);
+
+    // Build a wall line with a door gap: walls at (12,9), (12,11), door at (12,10)
+    world.map.setBuilding(12, 9, Building.Wall);
+    world.map.setBuilding(12, 11, Building.Wall);
+    const doorEid = placeDoor(world, 12, 10);
+    world.entities.clearDirty();
+
+    // Try to move to (14, 10) — door is closed, must route around
+    world.setAction(player, { action: ClientAction.MoveTo, tileX: 14, tileY: 10 });
+    world.runTicks(60);
+    const pos1 = world.entities.position.get(player)!;
+    expect(pos1.tileX).toBe(14);
+    expect(pos1.tileY).toBe(10);
+
+    // Move back
+    world.setAction(player, { action: ClientAction.MoveTo, tileX: 10, tileY: 10 });
+    world.runTicks(60);
+
+    // Open the door
+    world.setAction(player, { action: ClientAction.Interact, entityId: doorEid });
+    world.runTicks(1);
+
+    // Now move to (14, 10) — door is open, can go through
+    world.setAction(player, { action: ClientAction.MoveTo, tileX: 14, tileY: 10 });
+    world.runTicks(40);
+    const pos2 = world.entities.position.get(player)!;
+    expect(pos2.tileX).toBe(14);
+    expect(pos2.tileY).toBe(10);
+  });
+});
+
+function placeChest(world: ReturnType<typeof createTestWorld>, x: number, y: number): number {
+  const eid = world.entities.create();
+  world.entities.position.set(eid, { tileX: x, tileY: y });
+  world.entities.blueprintId.set(eid, { blueprintId: BlueprintType.StorageChest });
+  world.entities.statusEffects.set(eid, { effects: 0 });
+  world.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
+  world.occupancy.set(x, y, eid);
+  world.inventoryMgr.create(eid, 100);
+  return eid;
+}
+
+describe('E2E: Container system', () => {
+  it('interact with chest triggers containerOpen event', () => {
+    const world = createTestWorld();
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    const chestEid = placeChest(world, 11, 10);
+    world.entities.clearDirty();
+
+    world.setAction(player, { action: ClientAction.Interact, entityId: chestEid });
+    world.runTicks(1);
+
+    const containerEvents = connection.events.filter(e => e.type === 'containerOpen');
+    expect(containerEvents.length).toBe(1);
+    expect(containerEvents[0].containerEntityId).toBe(chestEid);
+  });
+
+  it('transfer items to and from chest', () => {
+    const world = createTestWorld();
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    const chestEid = placeChest(world, 11, 10);
+    world.entities.clearDirty();
+
+    // Give player some wood
+    world.inventoryMgr.addItem(player, BlueprintType.Wood, 5);
+    const woodItem = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood)!;
+
+    // Transfer wood to chest (direction 0 = player→chest)
+    world.setAction(player, { action: ClientAction.Transfer, itemId: woodItem.itemId, containerId: chestEid, direction: 0 });
+    world.runTicks(1);
+
+    // Player should have less wood, chest should have some
+    const playerWood = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    const chestWood = world.inventoryMgr.get(chestEid)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    expect(chestWood).toBeDefined();
+    expect(chestWood!.quantity).toBe(1);
+
+    // Transfer back (direction 1 = chest→player)
+    world.setAction(player, { action: ClientAction.Transfer, itemId: chestWood!.itemId, containerId: chestEid, direction: 1 });
+    world.runTicks(1);
+
+    // Chest should be empty, player should have it back
+    expect(world.inventoryMgr.get(chestEid)!.items.find(i => i.blueprintId === BlueprintType.Wood)).toBeUndefined();
+  });
+
+  it('transfer rejected when not adjacent to chest', () => {
+    const world = createTestWorld();
+    const { entityId: player } = addTestPlayer(world, 10, 10);
+    const chestEid = placeChest(world, 15, 15); // far away
+    world.entities.clearDirty();
+
+    world.inventoryMgr.addItem(player, BlueprintType.Wood, 5);
+    const woodItem = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood)!;
+
+    world.setAction(player, { action: ClientAction.Transfer, itemId: woodItem.itemId, containerId: chestEid, direction: 0 });
+    world.runTicks(1);
+
+    // Transfer should have been rejected — wood count unchanged
+    const woodBefore = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood)!.quantity;
+    expect(woodBefore).toBe(7); // 2 starting + 5 added
+    expect(world.inventoryMgr.get(chestEid)!.items.length).toBe(0);
   });
 });

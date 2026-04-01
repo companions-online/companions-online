@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cli:map": "tsx cli/view-map.ts",
-    "cli:play": "tsx cli/client.ts"
+    "cli:map": "tsx scripts/view-map.ts",
+    "cli:play": "tsx cli/client.ts",
+    "cli:stats": "tsx scripts/map-stats.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

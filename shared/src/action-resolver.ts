@@ -27,6 +27,15 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
       if (bp.category === 'creature' && ctx.entityAtTarget.blueprintId !== BlueprintType.Player) {
         return { action: ClientAction.Attack, entityId: ctx.entityAtTarget.entityId };
       }
+      // Interactive placeables → Interact
+      if (ctx.entityAtTarget.blueprintId === BlueprintType.WoodenDoor ||
+          ctx.entityAtTarget.blueprintId === BlueprintType.StorageChest) {
+        return { action: ClientAction.Interact, entityId: ctx.entityAtTarget.entityId };
+      }
+      // NPCs → Interact
+      if (bp.category === 'npc') {
+        return { action: ClientAction.Interact, entityId: ctx.entityAtTarget.entityId };
+      }
     }
   }
 
@@ -74,6 +83,17 @@ export function describeAction(action: DecodedAction | null, ctx?: ActionContext
         if (bp) return `attack ${bp.name}`;
       }
       return 'attack';
+    }
+    case ClientAction.Interact: {
+      if (ctx?.entityAtTarget) {
+        const ibp = getBlueprint(ctx.entityAtTarget.blueprintId);
+        if (ibp) {
+          if (ctx.entityAtTarget.blueprintId === BlueprintType.WoodenDoor) return 'toggle door';
+          if (ctx.entityAtTarget.blueprintId === BlueprintType.StorageChest) return 'open chest';
+          if (ibp.category === 'npc') return `talk to ${ibp.name}`;
+        }
+      }
+      return 'interact';
     }
     case ClientAction.Cancel: return 'cancel';
     default: return 'act';

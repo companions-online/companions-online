@@ -12,6 +12,8 @@ export const enum ServerOpcode {
   Chunk           = 0x20,
   Welcome         = 0x30,
   InventorySync   = 0x31,
+  ContainerOpen   = 0x32,
+  DialogueOpen    = 0x33,
 }
 
 /** Section tags within a WorldDelta message */

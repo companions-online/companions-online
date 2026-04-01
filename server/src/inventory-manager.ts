@@ -156,6 +156,30 @@ export class InventoryManager {
     }));
   }
 
+  transferToContainer(playerEid: number, containerEid: number, itemId: number): boolean {
+    const playerInv = this.get(playerEid);
+    const containerInv = this.get(containerEid);
+    if (!playerInv || !containerInv) return false;
+    const item = findItem(playerInv, itemId);
+    if (!item) return false;
+    const result = this.addItem(containerEid, item.blueprintId, 1);
+    if (!result.success) return false;
+    this.removeItem(playerEid, itemId, 1);
+    return true;
+  }
+
+  transferFromContainer(playerEid: number, containerEid: number, itemId: number): boolean {
+    const containerInv = this.get(containerEid);
+    const playerInv = this.get(playerEid);
+    if (!containerInv || !playerInv) return false;
+    const item = findItem(containerInv, itemId);
+    if (!item) return false;
+    const result = this.addItem(playerEid, item.blueprintId, 1);
+    if (!result.success) return false;
+    this.removeItem(containerEid, itemId, 1);
+    return true;
+  }
+
   private consumeByBlueprint(inv: Inventory, blueprintId: number, quantity: number): void {
     let remaining = quantity;
     for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {

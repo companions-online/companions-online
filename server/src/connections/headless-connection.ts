@@ -1,9 +1,12 @@
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 
 export interface ConnectionEvent {
-  type: 'init' | 'inventory' | 'tick';
+  type: 'init' | 'inventory' | 'tick' | 'containerOpen' | 'dialogueOpen';
   entityId: number;
   data?: TickDelta;
+  containerEntityId?: number;
+  npcEntityId?: number;
+  dialogue?: unknown;
 }
 
 export class HeadlessConnection implements PlayerConnection {
@@ -25,5 +28,13 @@ export class HeadlessConnection implements PlayerConnection {
 
   onChunkNeeded(_chunkX: number, _chunkY: number, _world: GameWorldView): void {
     // no-op for tests
+  }
+
+  onContainerOpen(entityId: number, containerEntityId: number, _world: GameWorldView): void {
+    this.events.push({ type: 'containerOpen', entityId, containerEntityId });
+  }
+
+  onDialogueOpen(entityId: number, npcEntityId: number, dialogue: unknown): void {
+    this.events.push({ type: 'dialogueOpen', entityId, npcEntityId, dialogue });
   }
 }

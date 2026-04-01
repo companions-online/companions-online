@@ -4,4 +4,5 @@ export const enum StatusEffect {
   Slowed   = 1 << 1,
   Hasted   = 1 << 2,
   Stunned  = 1 << 3,
+  Open     = 1 << 4,
 }

@@ -19,6 +19,7 @@ const BEHAVIOR_CONFIGS: Partial<Record<number, BehaviorConfig>> = {
   [BlueprintType.Wolf]:     { wanderRadius: 12, idleMin: 80,  idleMax: 200, aggroRange: 5 },
   [BlueprintType.Bear]:     { wanderRadius: 6,  idleMin: 80,  idleMax: 200, aggroRange: 4 },
   [BlueprintType.Skeleton]: { wanderRadius: 8,  idleMin: 60,  idleMax: 160, aggroRange: 8 },
+  [BlueprintType.Wanderer]: { wanderRadius: 20, idleMin: 200, idleMax: 600 },
 };
 
 function lcgNext(state: number): number {
