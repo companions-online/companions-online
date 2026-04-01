@@ -216,7 +216,7 @@ function buildCursorContext(playerX: number, playerY: number, dx: number, dy: nu
   };
 }
 
-function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprintId: number } | undefined {
+function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprintId: number; isGroundItem?: boolean } | undefined {
   const key = wy * MAP_SIZE + wx;
   for (const [eid, comp] of entityMap) {
     if (!comp.position || comp.blueprintId === undefined) continue;
@@ -224,7 +224,9 @@ function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprin
       ? comp.blueprintId
       : (comp.blueprintId as { blueprintId: number }).blueprintId;
     if (comp.position.tileY * MAP_SIZE + comp.position.tileX === key && eid !== myEntityId) {
-      return { entityId: eid, blueprintId: bpId };
+      // Ground items have no health component — placed structures do
+      const isGroundItem = !comp.health;
+      return { entityId: eid, blueprintId: bpId, isGroundItem };
     }
   }
   return undefined;

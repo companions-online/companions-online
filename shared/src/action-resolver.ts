@@ -8,7 +8,7 @@ export interface ActionContext {
   targetY: number;
   isWalkable: boolean;
   terrainType?: Terrain;
-  entityAtTarget?: { entityId: number; blueprintId: number };
+  entityAtTarget?: { entityId: number; blueprintId: number; isGroundItem?: boolean };
   equippedHandBlueprintId?: number;
 }
 
@@ -17,7 +17,7 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
   if (ctx.entityAtTarget) {
     const bp = getBlueprint(ctx.entityAtTarget.blueprintId);
     if (bp) {
-      if (bp.category === 'item' || bp.category === 'resource') {
+      if (bp.category === 'item' || bp.category === 'resource' || (bp.category === 'placeable' && ctx.entityAtTarget.isGroundItem)) {
         return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
       }
       if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) {
