@@ -170,4 +170,74 @@ describe('E2E: Combat', () => {
     expect(world.combatStates.has(player)).toBe(false);
     expect(world.entities.exists(deer)).toBe(true); // deer still alive
   });
+
+  it('player dies, drops equipped items, respawns after 100 ticks', () => {
+    const world = createTestWorld();
+    const { entityId: player } = addTestPlayer(world, 10, 10);
+    world.entities.clearDirty();
+
+    // Give player a sword and equip it, plus some unequipped wood
+    world.inventoryMgr.addItem(player, BlueprintType.IronSword, 1);
+    world.inventoryMgr.addItem(player, BlueprintType.Wood, 5);
+    const swordItem = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.IronSword)!;
+    world.inventoryMgr.equip(player, swordItem.itemId);
+
+    // Set HP to 1 so next hit kills
+    world.entities.health.set(player, { currentHp: 1, maxHp: 100 });
+
+    // Place a wolf next to player — force the wolf to attack immediately
+    const wolf = placeCritter(world, BlueprintType.Wolf, 11, 10);
+    initCritterAI(world);
+    // Override wolf idle to 0 so it aggros immediately
+    const wolfState = world.critterStates.get(wolf);
+    if (wolfState) wolfState.idleTicksRemaining = 0;
+    world.entities.clearDirty();
+
+    // Run enough ticks for wolf to aggro and deal damage
+    world.runTicks(15);
+
+    // Player entity should still exist (not destroyed)
+    expect(world.entities.exists(player)).toBe(true);
+
+    // Player should be dead
+    const action = world.entities.currentAction.get(player);
+    expect(action?.actionType).toBe(ActionType.Dead);
+
+    // HP should be 0
+    const hp = world.entities.health.get(player);
+    expect(hp?.currentHp).toBe(0);
+
+    // Sword should be on the ground as an entity at death position
+    let swordOnGround = false;
+    for (const eid of world.entities.getAllEntities()) {
+      const bp = world.entities.blueprintId.get(eid);
+      const pos = world.entities.position.get(eid);
+      if (bp?.blueprintId === BlueprintType.IronSword && pos?.tileX === 10 && pos?.tileY === 10) {
+        swordOnGround = true;
+        break;
+      }
+    }
+    expect(swordOnGround).toBe(true);
+
+    // Sword should not be in player inventory
+    expect(world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.IronSword)).toBeUndefined();
+
+    // Non-equipped items (wood, starting items) should still be in inventory
+    expect(world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood)).toBeDefined();
+
+    // Actions should be blocked while dead
+    world.setAction(player, { action: ClientAction.MoveTo, tileX: 15, tileY: 15 });
+    world.runTicks(1);
+    const posStillDead = world.entities.position.get(player)!;
+    expect(posStillDead.tileX).toBe(10); // didn't move
+
+    // Wait for respawn (100 ticks from death)
+    world.runTicks(110);
+
+    // Player should be alive
+    const actionAfter = world.entities.currentAction.get(player);
+    expect(actionAfter?.actionType).toBe(ActionType.Idle);
+    const hpAfter = world.entities.health.get(player);
+    expect(hpAfter?.currentHp).toBe(100);
+  });
 });

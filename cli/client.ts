@@ -39,6 +39,8 @@ let containerCursor = 0;
 let containerSide: 'player' | 'chest' = 'chest';
 
 // Dialogue state
+let isDead = false;
+let deathTime = 0;
 let dialogueNpcId = 0;
 let dialogueData: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] } | null = null;
 
@@ -101,6 +103,12 @@ ws.on('message', (data) => {
         // Clear harvest tracking when my entity stops harvesting
         if (eu.entityId === myEntityId && eu.components.currentAction) {
           const at = eu.components.currentAction.actionType;
+          if (at === ActionType.Dead && !isDead) {
+            isDead = true;
+            deathTime = Date.now();
+          } else if (at !== ActionType.Dead && isDead) {
+            isDead = false;
+          }
           if (at !== ActionType.Harvesting && harvestCount > 0) {
             // Keep the display for one more render, then clear
             setTimeout(() => { harvestCount = 0; harvestItemName = ''; render(); }, 1500);
@@ -241,7 +249,7 @@ function render() {
   const halfH = Math.floor(mapRows / 2);
 
   // Build entity position lookup
-  const entityAtTile = new Map<number, { bp: number; effects: number }>();
+  const entityAtTile = new Map<number, { bp: number; effects: number; dead: boolean }>();
   for (const [, comp] of entityMap) {
     if (comp.position && comp.blueprintId !== undefined) {
       const bpId = typeof comp.blueprintId === 'number'
@@ -250,7 +258,10 @@ function render() {
       const effects = comp.statusEffects
         ? (typeof comp.statusEffects === 'number' ? comp.statusEffects : (comp.statusEffects as { effects: number }).effects)
         : 0;
-      entityAtTile.set(comp.position.tileY * MAP_SIZE + comp.position.tileX, { bp: bpId, effects });
+      const dead = comp.currentAction !== undefined &&
+        typeof comp.currentAction !== 'number' &&
+        (comp.currentAction as { actionType: number }).actionType === ActionType.Dead;
+      entityAtTile.set(comp.position.tileY * MAP_SIZE + comp.position.tileX, { bp: bpId, effects, dead });
     }
   }
 
@@ -275,7 +286,11 @@ function render() {
         const t = terrainGrid[gi] as Terrain;
         const b = buildingsGrid[gi] as Building;
         const entData = entityAtTile.get(gi);
-        ch = tileChar(t, b, entData?.bp as BlueprintType | undefined, entData?.effects);
+        if (entData?.dead) {
+          ch = 'X';
+        } else {
+          ch = tileChar(t, b, entData?.bp as BlueprintType | undefined, entData?.effects);
+        }
       }
 
       if (isCursor) {
@@ -330,7 +345,11 @@ function render() {
   const isCurrentlyAttacking = actionType === ActionType.Attacking;
 
   let activityStatus = '';
-  if (harvestCount > 0) {
+  if (isDead) {
+    const elapsed = (Date.now() - deathTime) / 1000;
+    const remaining = Math.max(0, Math.ceil(5 - elapsed));
+    activityStatus = ` | DEAD - Respawning in ${remaining}s...`;
+  } else if (harvestCount > 0) {
     activityStatus = ` | +${harvestCount} ${harvestItemName}`;
   } else if (isCurrentlyHarvesting) {
     activityStatus = ' | Harvesting...';
@@ -518,6 +537,12 @@ process.stdin.on('data', (key: string) => {
     cleanup();
     ws.close();
     process.exit(0);
+  }
+
+  // Block all actions while dead (except quit)
+  if (isDead) {
+    render();
+    return;
   }
 
   // Panel toggles

@@ -66,6 +66,7 @@ export class GameWorld implements SystemState {
   readonly critterStates = new Map<number, CritterState>();
   readonly treeResources = new Map<number, number>();
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
+  readonly playerRespawnTimers = new Map<number, number>();
 
   readonly telemetry = new Telemetry();
 
@@ -164,6 +165,14 @@ export class GameWorld implements SystemState {
     this._tick++;
     const t = this.telemetry;
 
+    // 0. Process player respawns
+    for (const [eid, respawnTick] of this.playerRespawnTimers) {
+      if (this._tick >= respawnTick) {
+        this.respawnPlayer(eid);
+        this.playerRespawnTimers.delete(eid);
+      }
+    }
+
     // 1. Process pending actions
     t.beginPhase('actions');
     for (const [eid, slot] of this.players) {
@@ -208,7 +217,11 @@ export class GameWorld implements SystemState {
       }
     }
     for (const death of deaths) {
-      this.processEntityDeath(death.entityId, death.killerEntityId);
+      if (this.players.has(death.entityId)) {
+        this.handlePlayerDeath(death.entityId);
+      } else {
+        this.processEntityDeath(death.entityId, death.killerEntityId);
+      }
     }
     t.endPhase('combat');
 
@@ -281,6 +294,10 @@ export class GameWorld implements SystemState {
   // --- Private ---
 
   private processAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    // Dead players can't act
+    const ca = this.entities.currentAction.get(eid);
+    if (ca && ca.actionType === ActionType.Dead) return;
+
     // Cancel harvest on any non-harvest action
     if (action.action !== ClientAction.Harvest && isHarvesting(eid, this)) {
       cancelHarvest(eid, this);
@@ -604,6 +621,69 @@ export class GameWorld implements SystemState {
       this.occupancy.clear(pos.tileX, pos.tileY);
       this.entities.statusEffects.set(doorEntityId, { effects: effects.effects | StatusEffect.Open });
     }
+  }
+
+  private handlePlayerDeath(entityId: number): void {
+    // Don't re-process if already dead
+    const ca = this.entities.currentAction.get(entityId);
+    if (ca && ca.actionType === ActionType.Dead) return;
+
+    const pos = this.entities.position.get(entityId);
+    if (!pos) return;
+    const slot = this.players.get(entityId);
+
+    // Drop equipped items as ground entities
+    const inv = this.inventoryMgr.get(entityId);
+    if (inv) {
+      for (const item of [...inv.items]) {
+        if (item.equippedSlot) {
+          this.inventoryMgr.unequip(entityId, item.equippedSlot);
+          for (let q = 0; q < item.quantity; q++) {
+            const groundEid = this.entities.create();
+            this.entities.position.set(groundEid, { tileX: pos.tileX, tileY: pos.tileY });
+            this.entities.blueprintId.set(groundEid, { blueprintId: item.blueprintId });
+          }
+          this.inventoryMgr.removeItem(entityId, item.itemId, item.quantity);
+        }
+      }
+    }
+
+    // Clear occupancy — corpse is walk-through
+    this.occupancy.clear(pos.tileX, pos.tileY);
+
+    // Cancel all active states
+    clearMoveTarget(entityId, this);
+    cancelHarvest(entityId, this);
+    cancelCombat(entityId, this);
+    this.pendingPickups.delete(entityId);
+    this.pendingInteracts.delete(entityId);
+
+    // Set dead state
+    this.entities.currentAction.set(entityId, { actionType: ActionType.Dead });
+    this.entities.health.set(entityId, { currentHp: 0, maxHp: 100 });
+
+    // Schedule respawn in 5 seconds (100 ticks at 20Hz)
+    this.playerRespawnTimers.set(entityId, this._tick + 100);
+
+    if (slot) slot.connection.onInventoryChanged(entityId, this);
+  }
+
+  private respawnPlayer(entityId: number): void {
+    let sx = SPAWN_X + this.nextSpawnOffset();
+    let sy = SPAWN_Y + this.nextSpawnOffset();
+    for (let attempts = 0; attempts < 20; attempts++) {
+      if (this.map.isWalkable(sx, sy) && !this.occupancy.isOccupied(sx, sy)) break;
+      sx = SPAWN_X + this.nextSpawnOffset();
+      sy = SPAWN_Y + this.nextSpawnOffset();
+    }
+
+    this.entities.position.set(entityId, { tileX: sx, tileY: sy });
+    this.occupancy.set(sx, sy, entityId);
+    this.entities.health.set(entityId, { currentHp: 100, maxHp: 100 });
+    this.entities.currentAction.set(entityId, { actionType: ActionType.Idle });
+
+    const slot = this.players.get(entityId);
+    if (slot) slot.connection.onInventoryChanged(entityId, this);
   }
 
   private broadcastTick(): void {
