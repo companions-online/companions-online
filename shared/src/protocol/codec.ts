@@ -146,12 +146,15 @@ export interface DecodedActionAttack { action: number; entityId: number; }
 export interface DecodedActionTransfer { action: number; itemId: number; containerId: number; direction: number; }
 export interface DecodedActionDialogueSelect { action: number; npcEntityId: number; optionId: number; }
 export interface DecodedActionTrade { action: number; npcEntityId: number; tradeId: number; }
+export interface DecodedActionUseConsumable { action: number; itemId: number; }
+export interface DecodedActionSay { action: number; message: string; }
 
 export type DecodedAction =
   | DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild
   | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft
   | DecodedActionHarvest | DecodedActionUseItemAt | DecodedActionAttack
-  | DecodedActionTransfer | DecodedActionDialogueSelect | DecodedActionTrade;
+  | DecodedActionTransfer | DecodedActionDialogueSelect | DecodedActionTrade
+  | DecodedActionUseConsumable | DecodedActionSay;
 
 export interface SyncedInventoryItem {
   itemId: number;
@@ -346,6 +349,12 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     const a = action as DecodedActionTrade;
     w.writeU16(a.npcEntityId);
     w.writeU8(a.tradeId);
+  } else if (action.action === ClientAction.UseConsumable) {
+    w.writeU16((action as DecodedActionUseConsumable).itemId);
+  } else if (action.action === ClientAction.Say) {
+    const encoded = new TextEncoder().encode((action as DecodedActionSay).message);
+    w.writeU16(encoded.byteLength);
+    for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
   }
   return w.getBuffer();
 }
@@ -411,6 +420,16 @@ export function encodeDialogueOpen(npcEntityId: number, dialogueJson: string): A
   const w = new BufferWriter(3 + 2 + encoded.byteLength);
   w.writeU8(ServerOpcode.DialogueOpen);
   w.writeU16(npcEntityId);
+  w.writeU16(encoded.byteLength);
+  for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
+  return w.getBuffer();
+}
+
+export function encodeChatMessage(senderEntityId: number, message: string): ArrayBuffer {
+  const encoded = new TextEncoder().encode(message);
+  const w = new BufferWriter(3 + 2 + encoded.byteLength);
+  w.writeU8(ServerOpcode.ChatMessage);
+  w.writeU16(senderEntityId);
   w.writeU16(encoded.byteLength);
   for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
   return w.getBuffer();
@@ -512,7 +531,8 @@ export type DecodedServerMessage =
   | { type: 'chunk'; data: DecodedChunk }
   | { type: 'inventorySync'; items: SyncedInventoryItem[] }
   | { type: 'containerOpen'; containerEntityId: number; items: SyncedInventoryItem[] }
-  | { type: 'dialogueOpen'; npcEntityId: number; dialogue: unknown };
+  | { type: 'dialogueOpen'; npcEntityId: number; dialogue: unknown }
+  | { type: 'chatMessage'; senderEntityId: number; message: string };
 
 export type DecodedClientMessage =
   | { type: 'action'; data: DecodedAction }
@@ -553,6 +573,14 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
     case ServerOpcode.ContainerOpen: {
       const containerEntityId = r.readU16();
       return { type: 'containerOpen', containerEntityId, items: readItems(r, r.readU8()) };
+    }
+
+    case ServerOpcode.ChatMessage: {
+      const senderEntityId = r.readU16();
+      const len = r.readU16();
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = r.readU8();
+      return { type: 'chatMessage', senderEntityId, message: new TextDecoder().decode(bytes) };
     }
 
     default:
@@ -609,6 +637,14 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action, npcEntityId: r.readU16(), optionId: r.readU8() };
     case ClientAction.Trade:
       return { action, npcEntityId: r.readU16(), tradeId: r.readU8() };
+    case ClientAction.UseConsumable:
+      return { action, itemId: r.readU16() };
+    case ClientAction.Say: {
+      const len = r.readU16();
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = r.readU8();
+      return { action, message: new TextDecoder().decode(bytes) };
+    }
     default:
       throw new Error(`Unknown client action: 0x${(action as number).toString(16)}`);
   }

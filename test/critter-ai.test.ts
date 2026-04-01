@@ -29,6 +29,7 @@ function makeWorld(): SystemState {
     moveStates: new Map(),
     harvestStates: new Map(),
     combatStates: new Map(),
+    consumableStates: new Map(),
     critterStates: new Map(),
     treeResources: new Map(),
     respawnQueue: [],

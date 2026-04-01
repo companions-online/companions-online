@@ -2,6 +2,7 @@ import type { WorldMap } from '@shared/world/world-map.js';
 import type { EntityManager } from './ecs/entity-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
 import type { InventoryManager } from './inventory-manager.js';
+import type { ConsumableState } from './systems/consumable.js';
 
 // Per-entity movement path state
 export interface MovementState {
@@ -58,6 +59,7 @@ export interface SystemState {
   readonly moveStates: Map<number, MovementState>;
   readonly harvestStates: Map<number, HarvestState>;
   readonly combatStates: Map<number, CombatState>;
+  readonly consumableStates: Map<number, ConsumableState>;
   readonly critterStates: Map<number, CritterState>;
   readonly treeResources: Map<number, number>;
   readonly respawnQueue: { tick: number; blueprintType: number }[];

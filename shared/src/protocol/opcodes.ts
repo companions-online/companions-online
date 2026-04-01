@@ -14,6 +14,7 @@ export const enum ServerOpcode {
   InventorySync   = 0x31,
   ContainerOpen   = 0x32,
   DialogueOpen    = 0x33,
+  ChatMessage     = 0x34,
 }
 
 /** Section tags within a WorldDelta message */

@@ -9,6 +9,7 @@ export const enum ActionType {
   PickingUp   = 0x06,
   Crafting    = 0x07,
   Attacking   = 0x08,
+  Consuming   = 0x09,
 }
 
 /** What the client sends as player intent */
@@ -28,4 +29,6 @@ export const enum ClientAction {
   Transfer        = 0x0C,
   DialogueSelect  = 0x0D,
   Trade           = 0x0E,
+  UseConsumable   = 0x0F,
+  Say             = 0x10,
 }

@@ -15,7 +15,8 @@ export function entityAtWorldTile(wx: number, wy: number): { entityId: number; b
     const bpId = getBpId(comp.blueprintId);
     if (bpId === undefined) continue;
     if (comp.position.tileY * MAP_SIZE + comp.position.tileX === key && eid !== state.myEntityId) {
-      const isGroundItem = !comp.health;
+      // Ground items (from Drop) have only position+blueprintId; placed entities always have statusEffects
+      const isGroundItem = !comp.statusEffects;
       return { entityId: eid, blueprintId: bpId, isGroundItem };
     }
   }
@@ -75,6 +76,12 @@ export function render() {
     }
   }
 
+  // Recent chat messages (last 5 seconds, up to 3)
+  const now = Date.now();
+  const recentChat = state.chatLog
+    .filter(c => now - c.time < 5000)
+    .slice(-3);
+
   let out = '\x1b[H';
 
   for (let vy = 0; vy < mapRows; vy++) {
@@ -132,6 +139,20 @@ export function render() {
       line += panelLine.slice(0, pw).padEnd(pw);
     }
 
+    // Overlay chat messages on the bottom rows of the map area
+    const chatRowOffset = mapRows - recentChat.length;
+    if (vy >= chatRowOffset && vy < mapRows) {
+      const chatIdx = vy - chatRowOffset;
+      if (chatIdx < recentChat.length) {
+        const c = recentChat[chatIdx];
+        const senderComp = state.entityMap.get(c.senderEid);
+        const senderBpId = getBpId(senderComp?.blueprintId);
+        const senderName = senderBpId !== undefined ? (getBlueprint(senderBpId)?.name ?? `Player#${c.senderEid}`) : `Player#${c.senderEid}`;
+        const chatText = `${senderName}: ${c.message}`;
+        line = `\x1b[93m${chatText.slice(0, mapCols).padEnd(mapCols)}\x1b[0m` + line.slice(mapCols);
+      }
+    }
+
     out += line + '\n';
   }
 
@@ -160,6 +181,8 @@ export function render() {
     activityStatus = ` | DEAD - Respawning in ${remaining}s...`;
   } else if (state.harvestCount > 0) {
     activityStatus = ` | +${state.harvestCount} ${state.harvestItemName}`;
+  } else if (actionType === ActionType.Consuming) {
+    activityStatus = ' | Eating...';
   } else if (isCurrentlyHarvesting) {
     activityStatus = ' | Harvesting...';
   } else if (isCurrentlyAttacking && myEntity?.currentAction && 'targetEntity' in myEntity.currentAction) {
@@ -172,11 +195,15 @@ export function render() {
     activityStatus = ` | Attacking ${targetBp?.name ?? '?'} ${thpStr}`;
   }
 
-  const status1 = ` ${hpStr} (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${state.entityMap.size} T:${state.lastTick} W:${wt}/50${activityStatus}`;
-  const keys = state.panelMode === 'none'
-    ? ` [arrows]move [enter]${actionLabel} [u]se [i]nv [d]ebug [q]uit`
+  const status1 = state.chatMode
+    ? ` Chat: ${state.chatInput}_`
+    : ` ${hpStr} (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${state.entityMap.size} T:${state.lastTick} W:${wt}/50${activityStatus}`;
+  const keys = state.chatMode
+    ? ' [enter]send [esc]cancel'
+    : state.panelMode === 'none'
+    ? ` [arrows]move [enter]${actionLabel} [u]se [t]alk [i]nv [d]ebug [q]uit`
     : state.panelMode === 'inventory'
-    ? ' [↑↓]select [e]quip [g]drop [c]raft [i]close'
+    ? ' [↑↓]select [e]quip [u]se [g]drop [c]raft [i]close'
     : state.panelMode === 'crafting'
     ? ' [↑↓]select [enter]craft [c]back [i]close'
     : state.panelMode === 'container'

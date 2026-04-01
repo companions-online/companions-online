@@ -98,8 +98,8 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.Rock,    name: 'Rock',     category: 'resource', sprite: 'rock_i',   stackable: true, maxStack: 99, weight: 2 },
   { id: BlueprintType.Iron,    name: 'Iron',     category: 'resource', sprite: 'iron',     stackable: true, maxStack: 99, weight: 3 },
   { id: BlueprintType.Hide,    name: 'Hide',     category: 'resource', sprite: 'hide',     stackable: true, maxStack: 99, weight: 1 },
-  { id: BlueprintType.RawMeat, name: 'Raw Meat', category: 'resource', sprite: 'rawmeat',  stackable: true, maxStack: 99, weight: 1 },
-  { id: BlueprintType.RawFish, name: 'Raw Fish', category: 'resource', sprite: 'rawfish',  stackable: true, maxStack: 99, weight: 1 },
+  { id: BlueprintType.RawMeat, name: 'Raw Meat', category: 'resource', sprite: 'rawmeat',  stackable: true, maxStack: 99, weight: 1, equipSlot: 'hand' },
+  { id: BlueprintType.RawFish, name: 'Raw Fish', category: 'resource', sprite: 'rawfish',  stackable: true, maxStack: 99, weight: 1, equipSlot: 'hand' },
 
   // --- Tools ---
   { id: BlueprintType.Axe,        name: 'Axe',         category: 'item', sprite: 'axe',     stackable: true, maxStack: 10, weight: 3, equipSlot: 'hand', weaponDamage: 3, weaponSpeed: 4 },
@@ -125,7 +125,7 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.Bandage,    name: 'Bandage',     category: 'item', sprite: 'band',  stackable: true, maxStack: 10, weight: 1, consumeHeal: 30, consumeTicks: 10 },
 
   // --- Placeables ---
-  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand' },
+  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true },
   { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', stackable: true, maxStack: 10, weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },

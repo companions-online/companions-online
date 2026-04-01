@@ -18,8 +18,9 @@ export function renderInventoryLine(vy: number, totalRows: number, maxW: number)
     else if (item.equippedSlot === 2) slotPrefix = '[B] ';
     else if (item.equippedSlot === 3) slotPrefix = '[^] ';
 
+    const consumeHint = bp?.consumeHeal ? ` +${bp.consumeHeal}hp` : '';
     const selected = itemIdx === state.invCursor;
-    const text = `${selected ? '>' : ' '} ${slotPrefix}${name}${qty}`;
+    const text = `${selected ? '>' : ' '} ${slotPrefix}${name}${qty}${consumeHint}`;
     return selected ? `\x1b[7m${text}\x1b[0m` : text;
   }
 

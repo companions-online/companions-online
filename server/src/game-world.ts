@@ -9,7 +9,7 @@ import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import { StatusEffect } from '@shared/status-effects.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade, DecodedActionUseConsumable, DecodedActionSay } from '@shared/protocol/codec.js';
 import { getDialogue } from './npc-dialogues.js';
 import { getLootTable } from '@shared/loot-tables.js';
 import { EntityManager } from './ecs/entity-manager.js';
@@ -21,6 +21,7 @@ import { setMoveTarget, clearMoveTarget, hasMoveTarget, runMovement } from './sy
 import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems/harvest.js';
 import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
 import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/combat.js';
+import { startConsume, cancelConsume, isConsuming, runConsume, type ConsumableState } from './systems/consumable.js';
 import { initTreeResource, runRespawns } from './systems/resources.js';
 import { Telemetry } from './telemetry.js';
 
@@ -63,6 +64,7 @@ export class GameWorld implements SystemState {
   readonly moveStates = new Map<number, MovementState>();
   readonly harvestStates = new Map<number, HarvestState>();
   readonly combatStates = new Map<number, CombatState>();
+  readonly consumableStates = new Map<number, ConsumableState>();
   readonly critterStates = new Map<number, CritterState>();
   readonly treeResources = new Map<number, number>();
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
@@ -197,6 +199,13 @@ export class GameWorld implements SystemState {
     }
     t.endPhase('harvest');
 
+    // 3.5 Run consumable channels
+    const consumeFinished = runConsume(this);
+    for (const eid of consumeFinished) {
+      const slot = this.players.get(eid);
+      if (slot) slot.connection.onInventoryChanged(eid, this);
+    }
+
     // 4. Respawns
     t.beginPhase('respawns');
     runRespawns(this);
@@ -298,6 +307,12 @@ export class GameWorld implements SystemState {
     const ca = this.entities.currentAction.get(eid);
     if (ca && ca.actionType === ActionType.Dead) return;
 
+    // Say is instant and must not cancel other actions
+    if (action.action === ClientAction.Say) {
+      this.handleSay(eid, slot, action);
+      return;
+    }
+
     this.cancelConflictingStates(eid, action);
 
     switch (action.action) {
@@ -319,6 +334,7 @@ export class GameWorld implements SystemState {
       case ClientAction.Transfer:        this.handleTransfer(eid, slot, action); break;
       case ClientAction.DialogueSelect:  this.handleDialogueSelect(eid, slot, action); break;
       case ClientAction.Trade:           this.handleTrade(eid, slot, action); break;
+      case ClientAction.UseConsumable:   this.handleUseConsumable(eid, slot, action); break;
     }
   }
 
@@ -334,6 +350,9 @@ export class GameWorld implements SystemState {
     }
     if (action.action !== ClientAction.Interact) {
       this.pendingInteracts.delete(eid);
+    }
+    if (action.action !== ClientAction.UseConsumable && isConsuming(eid, this)) {
+      cancelConsume(eid, this);
     }
   }
 
@@ -414,13 +433,34 @@ export class GameWorld implements SystemState {
     startHarvest(eid, a.tileX, a.tileY, this);
   }
 
+  private handleUseConsumable(eid: number, _slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionUseConsumable;
+    clearMoveTarget(eid, this);
+    startConsume(eid, a.itemId, this);
+  }
+
   private handleAttack(eid: number, action: DecodedAction): void {
     const a = action as DecodedActionAttack;
     clearMoveTarget(eid, this);
     startAttack(eid, a.entityId, this);
   }
 
-  private handleInteractAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+  private handleSay(eid: number, _slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionSay;
+    const msg = a.message.slice(0, 200);
+    const pos = this.entities.position.get(eid);
+    if (!pos) return;
+    for (const [otherEid, otherSlot] of this.players) {
+      const otherPos = this.entities.position.get(otherEid);
+      if (!otherPos) continue;
+      if (Math.abs(pos.tileX - otherPos.tileX) <= INTEREST_RANGE &&
+          Math.abs(pos.tileY - otherPos.tileY) <= INTEREST_RANGE) {
+        otherSlot.connection.onChatMessage(otherEid, eid, msg);
+      }
+    }
+  }
+
+    private handleInteractAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
     const a = action as DecodedActionInteract;
     const targetPos = this.entities.position.get(a.entityId);
     const playerPos = this.entities.position.get(eid);
@@ -695,6 +735,7 @@ export class GameWorld implements SystemState {
     clearMoveTarget(entityId, this);
     cancelHarvest(entityId, this);
     cancelCombat(entityId, this);
+    cancelConsume(entityId, this);
     this.pendingPickups.delete(entityId);
     this.pendingInteracts.delete(entityId);
 

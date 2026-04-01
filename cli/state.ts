@@ -90,6 +90,11 @@ export const state = {
   dialogueNpcId: 0,
   dialogueData: null as DialogueData | null,
 
+  // Chat
+  chatLog: [] as { senderEid: number; message: string; time: number }[],
+  chatInput: '' as string,
+  chatMode: false as boolean,
+
   // Debug log
   debugLog: [] as string[],
 };

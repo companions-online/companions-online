@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { MAP_SIZE, VIEW_RANGE } from '../shared/src/constants.js';
 import { ClientAction } from '../shared/src/actions.js';
+import { getBlueprint } from '../shared/src/blueprints.js';
 import { getAllRecipes } from '../shared/src/recipes.js';
 import { encodeAction } from '../shared/src/protocol/codec.js';
 import type { DecodedAction } from '../shared/src/protocol/codec.js';
@@ -73,6 +74,27 @@ export function setupInput(ws: WebSocket, renderFn: () => void): void {
       return;
     }
 
+    // --- Chat mode ---
+    if (state.chatMode) {
+      if (key === '\r' || key === '\n') {
+        if (state.chatInput.length > 0) {
+          sendAction(ws, { action: ClientAction.Say, message: state.chatInput } as DecodedAction);
+          dbg(`-> Say: ${state.chatInput}`);
+        }
+        state.chatInput = '';
+        state.chatMode = false;
+      } else if (key === '\x1b' && key.length === 1) {
+        state.chatInput = '';
+        state.chatMode = false;
+      } else if (key === '\x7f' || key === '\b') {
+        state.chatInput = state.chatInput.slice(0, -1);
+      } else if (key.length === 1 && key >= ' ') {
+        state.chatInput += key;
+      }
+      renderFn();
+      return;
+    }
+
     // Panel toggles
     if (key === 'd' && state.panelMode !== 'inventory' && state.panelMode !== 'crafting') {
       state.panelMode = state.panelMode === 'debug' ? 'none' : 'debug';
@@ -114,6 +136,16 @@ export function setupInput(ws: WebSocket, renderFn: () => void): void {
         if (item) {
           sendAction(ws, { action: ClientAction.Drop, itemId: item.itemId });
           dbg(`→ Drop itemId=${item.itemId}`);
+        }
+      }
+      else if (key === 'u' && state.inventory.length > 0) {
+        const item = state.inventory[state.invCursor];
+        if (item) {
+          const bp = getBlueprint(item.blueprintId);
+          if (bp?.consumeHeal) {
+            sendAction(ws, { action: ClientAction.UseConsumable, itemId: item.itemId });
+            dbg(`→ UseConsumable itemId=${item.itemId} (${bp.name})`);
+          }
         }
       }
       else if (key === 'c') {
@@ -217,6 +249,12 @@ export function setupInput(ws: WebSocket, renderFn: () => void): void {
     }
     else if (key === 'u') {
       doUseItemAt(ws, renderFn);
+      return;
+    }
+    else if (key === 't') {
+      state.chatMode = true;
+      state.chatInput = '';
+      renderFn();
       return;
     }
     else return;

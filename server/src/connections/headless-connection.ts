@@ -1,12 +1,14 @@
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 
 export interface ConnectionEvent {
-  type: 'init' | 'inventory' | 'tick' | 'containerOpen' | 'dialogueOpen';
+  type: 'init' | 'inventory' | 'tick' | 'containerOpen' | 'dialogueOpen' | 'chatMessage';
   entityId: number;
   data?: TickDelta;
   containerEntityId?: number;
   npcEntityId?: number;
   dialogue?: unknown;
+  senderEntityId?: number;
+  chatMessage?: string;
 }
 
 export class HeadlessConnection implements PlayerConnection {
@@ -36,5 +38,9 @@ export class HeadlessConnection implements PlayerConnection {
 
   onDialogueOpen(entityId: number, npcEntityId: number, dialogue: unknown): void {
     this.events.push({ type: 'dialogueOpen', entityId, npcEntityId, dialogue });
+  }
+
+  onChatMessage(entityId: number, senderEntityId: number, message: string): void {
+    this.events.push({ type: 'chatMessage', entityId, senderEntityId, chatMessage: message });
   }
 }

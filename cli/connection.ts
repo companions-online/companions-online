@@ -131,6 +131,13 @@ export function handleServerMessage(data: ArrayBuffer | Buffer, renderFn: () => 
       break;
     }
 
+    case 'chatMessage': {
+      state.chatLog.push({ senderEid: msg.senderEntityId, message: msg.message, time: Date.now() });
+      if (state.chatLog.length > 50) state.chatLog.shift();
+      dbg(`[chat] #${msg.senderEntityId}: ${msg.message}`);
+      break;
+    }
+
     case 'pong':
       break;
   }
