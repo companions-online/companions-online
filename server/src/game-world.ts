@@ -298,209 +298,249 @@ export class GameWorld implements SystemState {
     const ca = this.entities.currentAction.get(eid);
     if (ca && ca.actionType === ActionType.Dead) return;
 
-    // Cancel harvest on any non-harvest action
+    this.cancelConflictingStates(eid, action);
+
+    switch (action.action) {
+      case ClientAction.MoveTo:    this.handleMoveTo(eid, action); break;
+      case ClientAction.Cancel:    this.handleCancel(eid); break;
+      case ClientAction.Pickup:    this.handlePickup(eid, slot, action); break;
+      case ClientAction.Equip:     this.handleEquip(eid, slot, action); break;
+      case ClientAction.Unequip:   this.handleUnequip(eid, slot, action); break;
+      case ClientAction.Drop:      this.handleDrop(eid, slot, action); break;
+      case ClientAction.Craft:     this.handleCraft(eid, slot, action); break;
+      case ClientAction.Harvest:   this.handleHarvest(eid, action); break;
+      case ClientAction.UseItemAt: {
+        const a = action as DecodedActionUseItemAt;
+        this.handleUseItemAt(eid, slot, a.itemId, a.tileX, a.tileY);
+        break;
+      }
+      case ClientAction.Attack:          this.handleAttack(eid, action); break;
+      case ClientAction.Interact:        this.handleInteractAction(eid, slot, action); break;
+      case ClientAction.Transfer:        this.handleTransfer(eid, slot, action); break;
+      case ClientAction.DialogueSelect:  this.handleDialogueSelect(eid, slot, action); break;
+      case ClientAction.Trade:           this.handleTrade(eid, slot, action); break;
+    }
+  }
+
+  private cancelConflictingStates(eid: number, action: DecodedAction): void {
     if (action.action !== ClientAction.Harvest && isHarvesting(eid, this)) {
       cancelHarvest(eid, this);
     }
-    // Cancel combat on any non-attack action
     if (action.action !== ClientAction.Attack && isInCombat(eid, this)) {
       cancelCombat(eid, this);
     }
-    // Cancel pending pickup on any non-pickup action
     if (action.action !== ClientAction.Pickup) {
       this.pendingPickups.delete(eid);
     }
-    // Cancel pending interact on any non-interact action
     if (action.action !== ClientAction.Interact) {
       this.pendingInteracts.delete(eid);
     }
+  }
 
-    if (action.action === ClientAction.MoveTo) {
-      const a = action as { action: number; tileX: number; tileY: number };
-      if (this.map.isWalkable(a.tileX, a.tileY)) {
-        setMoveTarget(eid, a.tileX, a.tileY, this);
-      }
-    } else if (action.action === ClientAction.Cancel) {
-      clearMoveTarget(eid, this);
-    } else if (action.action === ClientAction.Pickup) {
-      const a = action as DecodedActionPickup;
-      const targetPos = this.entities.position.get(a.entityId);
-      const playerPos = this.entities.position.get(eid);
-      if (targetPos && playerPos) {
-        const bp = this.entities.blueprintId.get(a.entityId);
-        const bpDef = bp ? getBlueprint(bp.blueprintId) : undefined;
-        if (bpDef && (bpDef.category === 'item' || bpDef.category === 'resource' || bpDef.category === 'placeable')) {
-          const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-          if (dist <= 1) {
-            const result = this.inventoryMgr.addItem(eid, bp!.blueprintId, 1);
-            if (result.success) {
-              this.occupancy.clear(targetPos.tileX, targetPos.tileY);
-              this.entities.destroy(a.entityId);
-              slot.connection.onInventoryChanged(eid, this);
-            }
-          } else {
-            this.pendingPickups.set(eid, { targetEntityId: a.entityId });
-            setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
-          }
-        }
-      }
-    } else if (action.action === ClientAction.Equip) {
-      const a = action as DecodedActionEquip;
-      if (this.inventoryMgr.equip(eid, a.itemId)) {
+  private handleMoveTo(eid: number, action: DecodedAction): void {
+    const a = action as { action: number; tileX: number; tileY: number };
+    if (this.map.isWalkable(a.tileX, a.tileY)) {
+      setMoveTarget(eid, a.tileX, a.tileY, this);
+    }
+  }
+
+  private handleCancel(eid: number): void {
+    clearMoveTarget(eid, this);
+  }
+
+  private handlePickup(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionPickup;
+    const targetPos = this.entities.position.get(a.entityId);
+    const playerPos = this.entities.position.get(eid);
+    if (!targetPos || !playerPos) return;
+
+    const bp = this.entities.blueprintId.get(a.entityId);
+    const bpDef = bp ? getBlueprint(bp.blueprintId) : undefined;
+    if (!bpDef || (bpDef.category !== 'item' && bpDef.category !== 'resource' && bpDef.category !== 'placeable')) return;
+
+    const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+    if (dist <= 1) {
+      const result = this.inventoryMgr.addItem(eid, bp!.blueprintId, 1);
+      if (result.success) {
+        this.occupancy.clear(targetPos.tileX, targetPos.tileY);
+        this.entities.destroy(a.entityId);
         slot.connection.onInventoryChanged(eid, this);
       }
-    } else if (action.action === ClientAction.Unequip) {
-      const a = action as DecodedActionUnequip;
-      const eqSlot = numberToEquipSlot(a.slot);
-      if (eqSlot && this.inventoryMgr.unequip(eid, eqSlot)) {
-        slot.connection.onInventoryChanged(eid, this);
-      }
-    } else if (action.action === ClientAction.Drop) {
-      const a = action as DecodedActionDrop;
-      const dropped = this.inventoryMgr.drop(eid, a.itemId);
-      if (dropped) {
-        const playerPos = this.entities.position.get(eid);
-        if (playerPos) {
-          const groundEid = this.entities.create();
-          this.entities.position.set(groundEid, { tileX: playerPos.tileX, tileY: playerPos.tileY });
-          this.entities.blueprintId.set(groundEid, { blueprintId: dropped.blueprintId });
-        }
-        slot.connection.onInventoryChanged(eid, this);
-      }
-    } else if (action.action === ClientAction.Craft) {
-      const a = action as DecodedActionCraft;
-      if (this.inventoryMgr.craft(eid, a.recipeId)) {
-        slot.connection.onInventoryChanged(eid, this);
-      }
-    } else if (action.action === ClientAction.Harvest) {
-      const a = action as DecodedActionHarvest;
-      clearMoveTarget(eid, this);
-      startHarvest(eid, a.tileX, a.tileY, this);
-    } else if (action.action === ClientAction.UseItemAt) {
-      const a = action as DecodedActionUseItemAt;
-      this.handleUseItemAt(eid, slot, a.itemId, a.tileX, a.tileY);
-    } else if (action.action === ClientAction.Attack) {
-      const a = action as DecodedActionAttack;
-      clearMoveTarget(eid, this);
-      startAttack(eid, a.entityId, this);
-    } else if (action.action === ClientAction.Interact) {
-      const a = action as DecodedActionInteract;
-      const targetPos = this.entities.position.get(a.entityId);
+    } else {
+      this.pendingPickups.set(eid, { targetEntityId: a.entityId });
+      setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
+    }
+  }
+
+  private handleEquip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionEquip;
+    if (this.inventoryMgr.equip(eid, a.itemId)) {
+      slot.connection.onInventoryChanged(eid, this);
+    }
+  }
+
+  private handleUnequip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionUnequip;
+    const eqSlot = numberToEquipSlot(a.slot);
+    if (eqSlot && this.inventoryMgr.unequip(eid, eqSlot)) {
+      slot.connection.onInventoryChanged(eid, this);
+    }
+  }
+
+  private handleDrop(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionDrop;
+    const dropped = this.inventoryMgr.drop(eid, a.itemId);
+    if (dropped) {
       const playerPos = this.entities.position.get(eid);
-      if (targetPos && playerPos) {
-        const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
-                              Math.abs(targetPos.tileY - playerPos.tileY));
-        if (dist <= 1) {
-          this.executeInteract(eid, slot, a.entityId);
-        } else {
-          this.pendingInteracts.set(eid, { targetEntityId: a.entityId });
-          setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
+      if (playerPos) {
+        const groundEid = this.entities.create();
+        this.entities.position.set(groundEid, { tileX: playerPos.tileX, tileY: playerPos.tileY });
+        this.entities.blueprintId.set(groundEid, { blueprintId: dropped.blueprintId });
+      }
+      slot.connection.onInventoryChanged(eid, this);
+    }
+  }
+
+  private handleCraft(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionCraft;
+    if (this.inventoryMgr.craft(eid, a.recipeId)) {
+      slot.connection.onInventoryChanged(eid, this);
+    }
+  }
+
+  private handleHarvest(eid: number, action: DecodedAction): void {
+    const a = action as DecodedActionHarvest;
+    clearMoveTarget(eid, this);
+    startHarvest(eid, a.tileX, a.tileY, this);
+  }
+
+  private handleAttack(eid: number, action: DecodedAction): void {
+    const a = action as DecodedActionAttack;
+    clearMoveTarget(eid, this);
+    startAttack(eid, a.entityId, this);
+  }
+
+  private handleInteractAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionInteract;
+    const targetPos = this.entities.position.get(a.entityId);
+    const playerPos = this.entities.position.get(eid);
+    if (!targetPos || !playerPos) return;
+
+    const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
+                          Math.abs(targetPos.tileY - playerPos.tileY));
+    if (dist <= 1) {
+      this.executeInteract(eid, slot, a.entityId);
+    } else {
+      this.pendingInteracts.set(eid, { targetEntityId: a.entityId });
+      setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
+    }
+  }
+
+  private handleTransfer(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionTransfer;
+    const containerPos = this.entities.position.get(a.containerId);
+    const playerPos = this.entities.position.get(eid);
+    if (!containerPos || !playerPos) return;
+
+    const dist = Math.max(Math.abs(containerPos.tileX - playerPos.tileX),
+                          Math.abs(containerPos.tileY - playerPos.tileY));
+    if (dist > 1) return;
+
+    const bp = this.entities.blueprintId.get(a.containerId);
+    if (!bp || bp.blueprintId !== BlueprintType.StorageChest) return;
+
+    const ok = a.direction === 0
+      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId)
+      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId);
+    if (ok) {
+      slot.connection.onInventoryChanged(eid, this);
+      slot.connection.onContainerOpen(eid, a.containerId, this);
+    }
+  }
+
+  private handleDialogueSelect(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionDialogueSelect;
+    const npcPos = this.entities.position.get(a.npcEntityId);
+    const playerPos = this.entities.position.get(eid);
+    if (!npcPos || !playerPos) return;
+
+    const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
+    if (dist > 1) return;
+
+    const npcBp = this.entities.blueprintId.get(a.npcEntityId);
+    if (!npcBp) return;
+
+    const dialogue = getDialogue(npcBp.blueprintId);
+    if (!dialogue) return;
+
+    const option = dialogue.options.find(o => o.optionId === a.optionId);
+    if (!option) return;
+
+    if (option.type === 'talk' && option.response) {
+      slot.connection.onDialogueOpen(eid, a.npcEntityId, {
+        greeting: option.response,
+        options: dialogue.options,
+      });
+    } else if (option.type === 'trade' && option.trades) {
+      slot.connection.onDialogueOpen(eid, a.npcEntityId, {
+        greeting: dialogue.greeting,
+        options: [{ ...option }],
+      });
+    }
+  }
+
+  private handleTrade(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionTrade;
+    const npcPos = this.entities.position.get(a.npcEntityId);
+    const playerPos = this.entities.position.get(eid);
+    if (!npcPos || !playerPos) return;
+
+    const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
+    if (dist > 1) return;
+
+    const npcBp = this.entities.blueprintId.get(a.npcEntityId);
+    if (!npcBp) return;
+
+    const dialogue = getDialogue(npcBp.blueprintId);
+    if (!dialogue) return;
+
+    // Find the trade across all options
+    let trade: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number } | undefined;
+    for (const opt of dialogue.options) {
+      if (opt.trades) trade = opt.trades.find(t => t.tradeId === a.tradeId);
+      if (trade) break;
+    }
+    if (!trade) return;
+
+    // Hermit first-time free gift check
+    if (npcBp.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
+      if (slot.playerFlags.has('hermit_gift')) return; // already claimed
+      this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
+      slot.playerFlags.add('hermit_gift');
+      slot.connection.onInventoryChanged(eid, this);
+      return;
+    }
+
+    // Normal trade: check player has the required items
+    if (trade.wantsBlueprint > 0) {
+      const inv = this.inventoryMgr.get(eid);
+      if (!inv) return;
+      let have = 0;
+      for (const item of inv.items) {
+        if (item.blueprintId === trade.wantsBlueprint) have += item.quantity;
+      }
+      if (have < trade.wantsQty) return;
+      // Consume wants, give gives
+      let remaining = trade.wantsQty;
+      for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {
+        if (inv.items[i].blueprintId === trade.wantsBlueprint) {
+          const take = Math.min(inv.items[i].quantity, remaining);
+          this.inventoryMgr.removeItem(eid, inv.items[i].itemId, take);
+          remaining -= take;
         }
       }
-    } else if (action.action === ClientAction.Transfer) {
-      const a = action as DecodedActionTransfer;
-      const containerPos = this.entities.position.get(a.containerId);
-      const playerPos = this.entities.position.get(eid);
-      if (containerPos && playerPos) {
-        const dist = Math.max(Math.abs(containerPos.tileX - playerPos.tileX),
-                              Math.abs(containerPos.tileY - playerPos.tileY));
-        if (dist <= 1) {
-          const bp = this.entities.blueprintId.get(a.containerId);
-          if (bp && bp.blueprintId === BlueprintType.StorageChest) {
-            let ok: boolean;
-            if (a.direction === 0) {
-              ok = this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId);
-            } else {
-              ok = this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId);
-            }
-            if (ok) {
-              slot.connection.onInventoryChanged(eid, this);
-              slot.connection.onContainerOpen(eid, a.containerId, this);
-            }
-          }
-        }
-      }
-    } else if (action.action === ClientAction.DialogueSelect) {
-      const a = action as DecodedActionDialogueSelect;
-      const npcPos = this.entities.position.get(a.npcEntityId);
-      const playerPos = this.entities.position.get(eid);
-      if (npcPos && playerPos) {
-        const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
-        if (dist <= 1) {
-          const npcBp = this.entities.blueprintId.get(a.npcEntityId);
-          if (npcBp) {
-            const dialogue = getDialogue(npcBp.blueprintId);
-            if (dialogue) {
-              const option = dialogue.options.find(o => o.optionId === a.optionId);
-              if (option) {
-                if (option.type === 'talk' && option.response) {
-                  slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-                    greeting: option.response,
-                    options: dialogue.options,
-                  });
-                } else if (option.type === 'trade' && option.trades) {
-                  slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-                    greeting: dialogue.greeting,
-                    options: [{ ...option }],
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-    } else if (action.action === ClientAction.Trade) {
-      const a = action as DecodedActionTrade;
-      const npcPos = this.entities.position.get(a.npcEntityId);
-      const playerPos = this.entities.position.get(eid);
-      if (npcPos && playerPos) {
-        const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
-        if (dist <= 1) {
-          const npcBp = this.entities.blueprintId.get(a.npcEntityId);
-          if (npcBp) {
-            const dialogue = getDialogue(npcBp.blueprintId);
-            if (dialogue) {
-              // Find the trade across all options
-              let trade: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number } | undefined;
-              for (const opt of dialogue.options) {
-                if (opt.trades) trade = opt.trades.find(t => t.tradeId === a.tradeId);
-                if (trade) break;
-              }
-              if (trade) {
-                // Hermit first-time free gift check
-                if (npcBp.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
-                  if (slot.playerFlags.has('hermit_gift')) return; // already claimed
-                  this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
-                  slot.playerFlags.add('hermit_gift');
-                  slot.connection.onInventoryChanged(eid, this);
-                  return;
-                }
-                // Normal trade: check player has the required items
-                if (trade.wantsBlueprint > 0) {
-                  const inv = this.inventoryMgr.get(eid);
-                  if (!inv) return;
-                  let have = 0;
-                  for (const item of inv.items) {
-                    if (item.blueprintId === trade.wantsBlueprint) have += item.quantity;
-                  }
-                  if (have < trade.wantsQty) return;
-                  // Consume wants, give gives
-                  let remaining = trade.wantsQty;
-                  for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {
-                    if (inv.items[i].blueprintId === trade.wantsBlueprint) {
-                      const take = Math.min(inv.items[i].quantity, remaining);
-                      this.inventoryMgr.removeItem(eid, inv.items[i].itemId, take);
-                      remaining -= take;
-                    }
-                  }
-                  this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
-                  slot.connection.onInventoryChanged(eid, this);
-                }
-              }
-            }
-          }
-        }
-      }
+      this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
+      slot.connection.onInventoryChanged(eid, this);
     }
   }
 

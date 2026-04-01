@@ -373,9 +373,7 @@ export function encodeWelcome(entityId: number): ArrayBuffer {
   return w.getBuffer();
 }
 
-export function encodeInventorySync(items: SyncedInventoryItem[]): ArrayBuffer {
-  const w = new BufferWriter(2 + items.length * 6);
-  w.writeU8(ServerOpcode.InventorySync);
+function writeItems(w: BufferWriter, items: SyncedInventoryItem[]): void {
   w.writeU8(items.length);
   for (const item of items) {
     w.writeU16(item.itemId);
@@ -383,20 +381,28 @@ export function encodeInventorySync(items: SyncedInventoryItem[]): ArrayBuffer {
     w.writeU8(item.quantity);
     w.writeU8(item.equippedSlot);
   }
+}
+
+function readItems(r: BufferReader, count: number): SyncedInventoryItem[] {
+  const items: SyncedInventoryItem[] = [];
+  for (let i = 0; i < count; i++) {
+    items.push({ itemId: r.readU16(), blueprintId: r.readU16(), quantity: r.readU8(), equippedSlot: r.readU8() });
+  }
+  return items;
+}
+
+export function encodeInventorySync(items: SyncedInventoryItem[]): ArrayBuffer {
+  const w = new BufferWriter(2 + items.length * 6);
+  w.writeU8(ServerOpcode.InventorySync);
+  writeItems(w, items);
   return w.getBuffer();
 }
 
 export function encodeContainerOpen(containerEntityId: number, items: SyncedInventoryItem[]): ArrayBuffer {
-  const w = new BufferWriter(3 + items.length * 6);
+  const w = new BufferWriter(4 + items.length * 6);
   w.writeU8(ServerOpcode.ContainerOpen);
   w.writeU16(containerEntityId);
-  w.writeU8(items.length);
-  for (const item of items) {
-    w.writeU16(item.itemId);
-    w.writeU16(item.blueprintId);
-    w.writeU8(item.quantity);
-    w.writeU8(item.equippedSlot);
-  }
+  writeItems(w, items);
   return w.getBuffer();
 }
 
@@ -532,19 +538,8 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
     case ServerOpcode.Welcome:
       return { type: 'welcome', entityId: r.readU16() };
 
-    case ServerOpcode.InventorySync: {
-      const count = r.readU8();
-      const items: SyncedInventoryItem[] = [];
-      for (let i = 0; i < count; i++) {
-        items.push({
-          itemId: r.readU16(),
-          blueprintId: r.readU16(),
-          quantity: r.readU8(),
-          equippedSlot: r.readU8(),
-        });
-      }
-      return { type: 'inventorySync', items };
-    }
+    case ServerOpcode.InventorySync:
+      return { type: 'inventorySync', items: readItems(r, r.readU8()) };
 
     case ServerOpcode.DialogueOpen: {
       const npcEntityId = r.readU16();
@@ -557,17 +552,7 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
 
     case ServerOpcode.ContainerOpen: {
       const containerEntityId = r.readU16();
-      const count = r.readU8();
-      const items: SyncedInventoryItem[] = [];
-      for (let i = 0; i < count; i++) {
-        items.push({
-          itemId: r.readU16(),
-          blueprintId: r.readU16(),
-          quantity: r.readU8(),
-          equippedSlot: r.readU8(),
-        });
-      }
-      return { type: 'containerOpen', containerEntityId, items };
+      return { type: 'containerOpen', containerEntityId, items: readItems(r, r.readU8()) };
     }
 
     default:

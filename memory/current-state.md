@@ -1,50 +1,51 @@
-# Current State (2026-03-31)
+# Current State
 
 ## Completed
 - Scaffolding (esbuild, tsx, vitest, monorepo)
 - Shared foundations (types, enums, constants, direction, terrain, coordinates)
 - Binary protocol codec (all message types, round-trip tested)
-- World generation (Perlin island, auto-scaling with MAP_SIZE)
+- World generation (Perlin island, auto-scaling with MAP_SIZE, NPC placement)
 - Server ECS (ComponentStore, EntityManager, GameLoop)
 - A* pathfinding (8-dir, diagonal cost alternation, no corner cutting)
 - Occupancy grid + collision (wait-and-repath pattern)
-- CLI client (terminal rendering, cursor, keyboard, panels)
-- CLI map viewer (fullscreen ASCII static view)
+- CLI client (modular: state, connection, render, panels, input)
+- CLI map viewer + map stats scripts
 - Inventory system (add/remove/stack/weight/equip/unequip/drop)
 - Crafting (17 recipes, material+tool validation)
 - Harvest system (tree/rock/fish, channeled repeating, auto-pathfind to adjacent)
 - Tree depletion + respawn (5 wood per tree, 30s respawn)
-- UseItemAt (cooking at campfire, placing buildings)
+- UseItemAt (cooking at campfire, placing buildings/entities)
 - Combat (attack action, weapon damage/speed, auto-follow fleeing targets)
 - Death + loot drops (per-creature drop tables, probabilistic drops)
-- Critter AI behaviors (wander/flee/aggro/passive per blueprint)
-- Bear + Skeleton spawns in world gen
-- GameWorld refactor (all state encapsulated, no module globals)
-- PlayerConnection abstraction (WebSocket + Headless implementations)
+- Player death + respawn (5s dead state, drop equipped items, respawn at spawn)
+- Critter AI behaviors (wander/flee/aggro/passive per blueprint, optimized to iterate players)
+- Bear + Skeleton + NPC spawns in world gen
+- GameWorld refactor (all state encapsulated, processAction as switch/dispatch)
+- PlayerConnection abstraction (WebSocket + Headless + future MCP)
+- Chunk streaming (viewport-only on connect, stream as player moves)
+- Tile delta system (building changes propagated to nearby players)
+- Building layer for walls (static tiles, not entities)
+- Door toggle (entity-based, StatusEffect.Open, occupancy toggle)
+- Container system (chest placement, Transfer action, ContainerOpen opcode)
+- NPC dialogue + barter (Hermit/Trader/Wanderer, DialogueOpen opcode, Trade action)
+- Auto-action resolver (context-sensitive cursor: pickup/harvest/attack/interact/move)
+- Telemetry dashboard (per-phase CPU timing, network bytes, ANSI dashboard)
 - E2E test scaffold (GameWorld.runTicks, HeadlessConnection, test helpers)
-- 4x map size (512, auto-scaling world gen parameters)
-
-## Test Status
-122 tests, 9 test files, all passing. ~2s total runtime.
 
 ## Known Issues
-- Large maps (1024+) crawl — O(entities×clients) broadcast, O(critters×entities) AI
-- All chunks sent on connect (slow initial load on large maps)
-- Large maps feel empty (uniform spawn density thins out)
+- Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds
+- Large maps (1024+) still crawl on broadcastTick — O(entities×clients) visibility diff
+- All critter AI runs globally even for critters far from all players
 
-## Queued Work (approved plan exists but not yet implemented)
+## Queued Work
 
-### Scalability (3 items)
-1. **Terrain density**: Noise-driven clustering (critter herds, dense vs sparse areas) instead of uniform random
-2. **Chunk streaming**: Send only viewport chunks on connect, stream as player moves. Add sentChunks tracking + onChunkNeeded to PlayerConnection
-3. **Telemetry dashboard**: Per-phase CPU timing in runTick, bytes UL/DL by connection type, ANSI dashboard replacing console.log
+### Scalability
+1. **Terrain density**: Lower rock threshold OR noise-driven clustering
+2. **Broadcast optimization**: Spatial index for visibility diff (currently O(entities×clients))
+3. **Critter alive zones**: Only run AI for critters near players
 
-### Phase D: World Interaction (not yet planned in detail)
-- Placeables: Campfire burn timer, door toggle, storage chest
-- Container system (chest ↔ player inventory transfer)
-- NPC dialogue trees + barter trades (Hermit, Trader, Wanderer)
-
-### MCP Client (future)
-- PlayerConnection implementation for LLM players
-- Pull-based: accumulate state, serve on tool call
-- Uses shared ASCII map view for orientation
+### Deferred Features
+- UseConsumable action (bandage channeling, food healing)
+- Say action (chat broadcast to interest range)
+- MCP client (pull-based PlayerConnection for LLM players)
+- 2D asset pipeline (web client)

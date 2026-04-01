@@ -19,7 +19,6 @@ export function buildingChar(b: Building): string {
     case Building.None:  return '';
     case Building.Wall:  return '#';
     case Building.Floor: return '_';
-    case Building.Door:  return '+';
     case Building.Fence: return '|';
     default:             return '?';
   }

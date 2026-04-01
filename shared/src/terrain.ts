@@ -11,12 +11,11 @@ export const enum Building {
   None  = 0,
   Wall  = 1,
   Floor = 2,
-  Door  = 3,
   Fence = 4,
 }
 
 export function isWalkable(terrain: Terrain, building: Building): boolean {
   if (terrain === Terrain.Water || terrain === Terrain.Rock) return false;
-  if (building === Building.None || building === Building.Floor || building === Building.Door) return true;
+  if (building === Building.None || building === Building.Floor) return true;
   return false;
 }
