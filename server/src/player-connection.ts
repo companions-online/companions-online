@@ -3,6 +3,7 @@ import type { DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/co
 import type { EntityManager } from './ecs/entity-manager.js';
 import type { InventoryManager } from './inventory-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
+import type { GameEvent } from './events.js';
 
 export interface TickDelta {
   tick: number;
@@ -27,4 +28,5 @@ export interface PlayerConnection {
   onContainerOpen(entityId: number, containerEntityId: number, world: GameWorldView): void;
   onDialogueOpen(entityId: number, npcEntityId: number, dialogue: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] }): void;
   onChatMessage(entityId: number, senderEntityId: number, message: string): void;
+  onGameEvent(entityId: number, event: GameEvent): void;
 }

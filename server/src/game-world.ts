@@ -12,6 +12,7 @@ import { StatusEffect } from '@shared/status-effects.js';
 import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade, DecodedActionUseConsumable, DecodedActionSay } from '@shared/protocol/codec.js';
 import { getDialogue } from './npc-dialogues.js';
 import { getLootTable } from '@shared/loot-tables.js';
+import { getRecipe } from '@shared/recipes.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
@@ -24,6 +25,7 @@ import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/comb
 import { startConsume, cancelConsume, isConsuming, runConsume, type ConsumableState } from './systems/consumable.js';
 import { initTreeResource, runRespawns } from './systems/resources.js';
 import { Telemetry } from './telemetry.js';
+import { EventPriority, EVENT_PRIORITY, type GameEvent } from './events.js';
 
 const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
 
@@ -83,6 +85,28 @@ export class GameWorld implements SystemState {
   }
 
   get currentTick(): number { return this._tick; }
+
+  private emitEvent(entityId: number, event: GameEvent): void {
+    const slot = this.players.get(entityId);
+    if (slot) slot.connection.onGameEvent(entityId, event);
+  }
+
+  private makeEvent<T extends GameEvent['type']>(
+    type: T,
+    details: Extract<GameEvent, { type: T }>['details'],
+  ): GameEvent {
+    return {
+      type,
+      details,
+      priority: EVENT_PRIORITY[type],
+      tick: this._tick,
+      timestamp: Date.now(),
+    } as GameEvent;
+  }
+
+  private bpName(blueprintId: number): string {
+    return getBlueprint(blueprintId)?.name ?? 'Unknown';
+  }
 
   // --- Player lifecycle ---
 
@@ -187,23 +211,63 @@ export class GameWorld implements SystemState {
 
     // 2. Critter AI
     t.beginPhase('critterAI');
-    runCritterAI(this);
+    const critterChanges = runCritterAI(this);
+    for (const change of critterChanges) {
+      const bp = this.entities.blueprintId.get(change.creatureEntityId);
+      const creatureName = bp ? this.bpName(bp.blueprintId) : 'Unknown';
+      if (change.type === 'aggro') {
+        this.emitEvent(change.targetPlayerEntityId, this.makeEvent('creature_aggro', {
+          creatureEntityId: change.creatureEntityId,
+          creatureName,
+        }));
+      } else {
+        this.emitEvent(change.targetPlayerEntityId, this.makeEvent('creature_fleeing', {
+          creatureEntityId: change.creatureEntityId,
+          creatureName,
+        }));
+      }
+    }
     t.endPhase('critterAI');
 
     // 3. Harvest
     t.beginPhase('harvest');
-    const harvestYielded = runHarvest(this);
-    for (const eid of harvestYielded) {
-      const slot = this.players.get(eid);
-      if (slot) slot.connection.onInventoryChanged(eid, this);
+    const harvestEvents = runHarvest(this);
+    for (const he of harvestEvents) {
+      const slot = this.players.get(he.entityId);
+      if (slot) {
+        slot.connection.onInventoryChanged(he.entityId, this);
+        this.emitEvent(he.entityId, this.makeEvent('harvest_yield', {
+          blueprintId: he.yieldBlueprintId,
+          resourceName: this.bpName(he.yieldBlueprintId),
+          targetEntityId: he.targetEntityId,
+          targetName: he.targetEntityId !== undefined ? this.bpName(BlueprintType.Tree) : undefined,
+          remaining: he.remaining,
+        }));
+        if (he.depleted && he.targetEntityId !== undefined) {
+          this.emitEvent(he.entityId, this.makeEvent('resource_depleted', {
+            entityId: he.targetEntityId,
+            entityName: this.bpName(BlueprintType.Tree),
+            tileX: 0, tileY: 0, // position already cleared by system
+          }));
+        }
+      }
     }
     t.endPhase('harvest');
 
     // 3.5 Run consumable channels
-    const consumeFinished = runConsume(this);
-    for (const eid of consumeFinished) {
-      const slot = this.players.get(eid);
-      if (slot) slot.connection.onInventoryChanged(eid, this);
+    const consumeEvents = runConsume(this);
+    for (const ce of consumeEvents) {
+      const slot = this.players.get(ce.entityId);
+      if (slot) {
+        slot.connection.onInventoryChanged(ce.entityId, this);
+        this.emitEvent(ce.entityId, this.makeEvent('consume_complete', {
+          blueprintId: ce.blueprintId,
+          itemName: this.bpName(ce.blueprintId),
+          healAmount: ce.healAmount,
+          currentHp: ce.currentHp,
+          maxHp: ce.maxHp,
+        }));
+      }
     }
 
     // 4. Respawns
@@ -218,14 +282,51 @@ export class GameWorld implements SystemState {
 
     // 6. Combat
     t.beginPhase('combat');
-    const deaths = runCombat(this);
+    const combatResult = runCombat(this);
+    // Emit combat hit events
+    for (const hit of combatResult.hits) {
+      const targetBp = this.entities.blueprintId.get(hit.targetEntityId);
+      const attackerBp = this.entities.blueprintId.get(hit.attackerEntityId);
+      if (this.players.has(hit.attackerEntityId)) {
+        this.emitEvent(hit.attackerEntityId, this.makeEvent('combat_hit_dealt', {
+          targetEntityId: hit.targetEntityId,
+          targetName: targetBp ? this.bpName(targetBp.blueprintId) : 'Unknown',
+          damage: hit.damage,
+          targetCurrentHp: hit.targetCurrentHp,
+          targetMaxHp: hit.targetMaxHp,
+        }));
+      }
+      if (this.players.has(hit.targetEntityId)) {
+        this.emitEvent(hit.targetEntityId, this.makeEvent('combat_hit_received', {
+          attackerEntityId: hit.attackerEntityId,
+          attackerName: attackerBp ? this.bpName(attackerBp.blueprintId) : 'Unknown',
+          damage: hit.damage,
+          currentHp: hit.targetCurrentHp,
+          maxHp: hit.targetMaxHp,
+        }));
+      }
+    }
+    // Notify critters of being attacked
     for (const [attackerId, state] of this.combatStates) {
       const targetState = this.critterStates.get(state.targetEntityId);
       if (targetState) {
-        notifyCritterAttacked(state.targetEntityId, attackerId, this);
+        const change = notifyCritterAttacked(state.targetEntityId, attackerId, this);
+        if (change) {
+          const bp = this.entities.blueprintId.get(change.creatureEntityId);
+          const creatureName = bp ? this.bpName(bp.blueprintId) : 'Unknown';
+          if (change.type === 'aggro') {
+            this.emitEvent(change.targetPlayerEntityId, this.makeEvent('creature_aggro', {
+              creatureEntityId: change.creatureEntityId, creatureName,
+            }));
+          } else {
+            this.emitEvent(change.targetPlayerEntityId, this.makeEvent('creature_fleeing', {
+              creatureEntityId: change.creatureEntityId, creatureName,
+            }));
+          }
+        }
       }
     }
-    for (const death of deaths) {
+    for (const death of combatResult.deaths) {
       if (this.players.has(death.entityId)) {
         this.handlePlayerDeath(death.entityId);
       } else {
@@ -253,7 +354,12 @@ export class GameWorld implements SystemState {
             this.occupancy.clear(targetPos.tileX, targetPos.tileY);
             this.entities.destroy(pending.targetEntityId);
             const slot = this.players.get(eid);
-            if (slot) slot.connection.onInventoryChanged(eid, this);
+            if (slot) {
+              slot.connection.onInventoryChanged(eid, this);
+              this.emitEvent(eid, this.makeEvent('item_picked_up', {
+                blueprintId: bp.blueprintId, itemName: this.bpName(bp.blueprintId), quantity: 1,
+              }));
+            }
           }
         }
       }
@@ -340,9 +446,15 @@ export class GameWorld implements SystemState {
 
   private cancelConflictingStates(eid: number, action: DecodedAction): void {
     if (action.action !== ClientAction.Harvest && isHarvesting(eid, this)) {
+      this.emitEvent(eid, this.makeEvent('action_interrupted', {
+        interruptedAction: 'harvesting', reason: 'new action',
+      }));
       cancelHarvest(eid, this);
     }
     if (action.action !== ClientAction.Attack && isInCombat(eid, this)) {
+      this.emitEvent(eid, this.makeEvent('action_interrupted', {
+        interruptedAction: 'attacking', reason: 'new action',
+      }));
       cancelCombat(eid, this);
     }
     if (action.action !== ClientAction.Pickup) {
@@ -352,6 +464,9 @@ export class GameWorld implements SystemState {
       this.pendingInteracts.delete(eid);
     }
     if (action.action !== ClientAction.UseConsumable && isConsuming(eid, this)) {
+      this.emitEvent(eid, this.makeEvent('action_interrupted', {
+        interruptedAction: 'consuming', reason: 'new action',
+      }));
       cancelConsume(eid, this);
     }
   }
@@ -384,6 +499,9 @@ export class GameWorld implements SystemState {
         this.occupancy.clear(targetPos.tileX, targetPos.tileY);
         this.entities.destroy(a.entityId);
         slot.connection.onInventoryChanged(eid, this);
+        this.emitEvent(eid, this.makeEvent('item_picked_up', {
+          blueprintId: bp!.blueprintId, itemName: this.bpName(bp!.blueprintId), quantity: 1,
+        }));
       }
     } else {
       this.pendingPickups.set(eid, { targetEntityId: a.entityId });
@@ -424,6 +542,14 @@ export class GameWorld implements SystemState {
     const a = action as DecodedActionCraft;
     if (this.inventoryMgr.craft(eid, a.recipeId)) {
       slot.connection.onInventoryChanged(eid, this);
+      const recipe = getRecipe(a.recipeId);
+      if (recipe) {
+        this.emitEvent(eid, this.makeEvent('craft_complete', {
+          blueprintId: recipe.output.blueprintId,
+          itemName: this.bpName(recipe.output.blueprintId),
+          quantity: recipe.output.quantity,
+        }));
+      }
     }
   }
 
@@ -456,6 +582,9 @@ export class GameWorld implements SystemState {
       if (Math.abs(pos.tileX - otherPos.tileX) <= INTEREST_RANGE &&
           Math.abs(pos.tileY - otherPos.tileY) <= INTEREST_RANGE) {
         otherSlot.connection.onChatMessage(otherEid, eid, msg);
+        this.emitEvent(otherEid, this.makeEvent('player_say', {
+          senderEntityId: eid, senderName: 'Player', message: msg,
+        }));
       }
     }
   }
@@ -558,6 +687,12 @@ export class GameWorld implements SystemState {
       this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
       slot.playerFlags.add('hermit_gift');
       slot.connection.onInventoryChanged(eid, this);
+      this.emitEvent(eid, this.makeEvent('trade_complete', {
+        npcEntityId: a.npcEntityId, npcName: this.bpName(npcBp.blueprintId),
+        gaveBlueprintId: 0, gaveName: '', gaveQuantity: 0,
+        receivedBlueprintId: trade.givesBlueprint, receivedName: this.bpName(trade.givesBlueprint),
+        receivedQuantity: trade.givesQty,
+      }));
       return;
     }
 
@@ -581,26 +716,61 @@ export class GameWorld implements SystemState {
       }
       this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
       slot.connection.onInventoryChanged(eid, this);
+      this.emitEvent(eid, this.makeEvent('trade_complete', {
+        npcEntityId: a.npcEntityId, npcName: this.bpName(npcBp.blueprintId),
+        gaveBlueprintId: trade.wantsBlueprint, gaveName: this.bpName(trade.wantsBlueprint),
+        gaveQuantity: trade.wantsQty,
+        receivedBlueprintId: trade.givesBlueprint, receivedName: this.bpName(trade.givesBlueprint),
+        receivedQuantity: trade.givesQty,
+      }));
     }
   }
 
-  private processEntityDeath(entityId: number, _killerEntityId: number): void {
+  private processEntityDeath(entityId: number, killerEntityId: number): void {
     const pos = this.entities.position.get(entityId);
     const bp = this.entities.blueprintId.get(entityId);
     if (!pos || !bp) return;
 
-    // Spawn loot drops
+    // Spawn loot drops and collect for event
     const drops = getLootTable(bp.blueprintId);
+    const actualDrops: { blueprintId: number; name: string; quantity: number }[] = [];
     let rng = (entityId * 2654435761) >>> 0;
     for (const drop of drops) {
       if (drop.chance !== undefined) {
         rng = (rng * 1664525 + 1013904223) >>> 0;
         if ((rng >>> 0) / 0x100000000 >= drop.chance) continue;
       }
+      actualDrops.push({ blueprintId: drop.blueprintId, name: this.bpName(drop.blueprintId), quantity: drop.quantity });
       for (let q = 0; q < drop.quantity; q++) {
         const groundEid = this.entities.create();
         this.entities.position.set(groundEid, { tileX: pos.tileX, tileY: pos.tileY });
         this.entities.blueprintId.set(groundEid, { blueprintId: drop.blueprintId });
+      }
+    }
+
+    const entityName = this.bpName(bp.blueprintId);
+
+    // Emit entity_died to killer (if player)
+    if (this.players.has(killerEntityId)) {
+      this.emitEvent(killerEntityId, this.makeEvent('entity_died', {
+        entityId, entityName, killerEntityId,
+        drops: actualDrops, tileX: pos.tileX, tileY: pos.tileY,
+      }));
+    }
+
+    // Emit creature_died to nearby players (excluding the killer)
+    const killerBp = this.entities.blueprintId.get(killerEntityId);
+    const killerName = killerBp ? this.bpName(killerBp.blueprintId) : 'Unknown';
+    for (const [playerEid, playerSlot] of this.players) {
+      if (playerEid === killerEntityId) continue;
+      const playerPos = this.entities.position.get(playerEid);
+      if (!playerPos) continue;
+      if (Math.abs(pos.tileX - playerPos.tileX) <= INTEREST_RANGE &&
+          Math.abs(pos.tileY - playerPos.tileY) <= INTEREST_RANGE) {
+        this.emitEvent(playerEid, this.makeEvent('creature_died', {
+          entityId, entityName, killerEntityId, killerName,
+          tileX: pos.tileX, tileY: pos.tileY,
+        }));
       }
     }
 
@@ -634,6 +804,10 @@ export class GameWorld implements SystemState {
       this.inventoryMgr.removeItem(eid, itemId, 1);
       this.inventoryMgr.addItem(eid, outputBp, 1);
       slot.connection.onInventoryChanged(eid, this);
+      this.emitEvent(eid, this.makeEvent('item_cooked', {
+        inputBlueprintId: item.blueprintId, inputName: this.bpName(item.blueprintId),
+        outputBlueprintId: outputBp, outputName: this.bpName(outputBp),
+      }));
       return;
     }
 
@@ -662,6 +836,10 @@ export class GameWorld implements SystemState {
         if (item.blueprintId === BlueprintType.StorageChest) this.inventoryMgr.create(newEid, 100);
       }
       slot.connection.onInventoryChanged(eid, this);
+      this.emitEvent(eid, this.makeEvent('building_placed', {
+        blueprintId: item.blueprintId, itemName: this.bpName(item.blueprintId),
+        tileX, tileY,
+      }));
     }
   }
 
@@ -746,7 +924,10 @@ export class GameWorld implements SystemState {
     // Schedule respawn in 5 seconds (100 ticks at 20Hz)
     this.playerRespawnTimers.set(entityId, this._tick + 100);
 
-    if (slot) slot.connection.onInventoryChanged(entityId, this);
+    if (slot) {
+      slot.connection.onInventoryChanged(entityId, this);
+      this.emitEvent(entityId, this.makeEvent('player_died', {}));
+    }
   }
 
   private respawnPlayer(entityId: number): void {
@@ -764,7 +945,12 @@ export class GameWorld implements SystemState {
     this.entities.currentAction.set(entityId, { actionType: ActionType.Idle });
 
     const slot = this.players.get(entityId);
-    if (slot) slot.connection.onInventoryChanged(entityId, this);
+    if (slot) {
+      slot.connection.onInventoryChanged(entityId, this);
+      this.emitEvent(entityId, this.makeEvent('player_respawned', {
+        tileX: sx, tileY: sy, currentHp: 100, maxHp: 100,
+      }));
+    }
   }
 
   private broadcastTick(): void {

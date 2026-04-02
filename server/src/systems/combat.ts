@@ -74,8 +74,22 @@ export interface DeathEvent {
   killerEntityId: number;
 }
 
-export function runCombat(world: SystemState): DeathEvent[] {
+export interface CombatHit {
+  attackerEntityId: number;
+  targetEntityId: number;
+  damage: number;
+  targetCurrentHp: number;
+  targetMaxHp: number;
+}
+
+export interface CombatResult {
+  deaths: DeathEvent[];
+  hits: CombatHit[];
+}
+
+export function runCombat(world: SystemState): CombatResult {
   const deaths: DeathEvent[] = [];
+  const hits: CombatHit[] = [];
 
   for (const [attackerId, state] of world.combatStates) {
     const attackerPos = world.entities.position.get(attackerId);
@@ -122,6 +136,14 @@ export function runCombat(world: SystemState): DeathEvent[] {
     targetHealth.currentHp = Math.max(0, targetHealth.currentHp - state.damage);
     world.entities.health.set(state.targetEntityId, targetHealth);
 
+    hits.push({
+      attackerEntityId: attackerId,
+      targetEntityId: state.targetEntityId,
+      damage: state.damage,
+      targetCurrentHp: targetHealth.currentHp,
+      targetMaxHp: targetHealth.maxHp,
+    });
+
     if (targetHealth.currentHp <= 0) {
       deaths.push({ entityId: state.targetEntityId, killerEntityId: attackerId });
       world.combatStates.delete(attackerId);
@@ -131,5 +153,5 @@ export function runCombat(world: SystemState): DeathEvent[] {
     }
   }
 
-  return deaths;
+  return { deaths, hits };
 }

@@ -76,4 +76,6 @@ export class WebSocketConnection implements PlayerConnection {
   onChatMessage(_entityId: number, senderEntityId: number, message: string): void {
     this.send(encodeChatMessage(senderEntityId, message));
   }
+
+  onGameEvent(_entityId: number, _event: import('../events.js').GameEvent): void {}
 }

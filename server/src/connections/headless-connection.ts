@@ -1,4 +1,5 @@
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
+import type { GameEvent } from '../events.js';
 
 export interface ConnectionEvent {
   type: 'init' | 'inventory' | 'tick' | 'containerOpen' | 'dialogueOpen' | 'chatMessage';
@@ -13,6 +14,7 @@ export interface ConnectionEvent {
 
 export class HeadlessConnection implements PlayerConnection {
   readonly events: ConnectionEvent[] = [];
+  readonly gameEvents: GameEvent[] = [];
 
   onInitialState(entityId: number, _world: GameWorldView): void {
     this.events.push({ type: 'init', entityId });
@@ -42,5 +44,9 @@ export class HeadlessConnection implements PlayerConnection {
 
   onChatMessage(entityId: number, senderEntityId: number, message: string): void {
     this.events.push({ type: 'chatMessage', entityId, senderEntityId, chatMessage: message });
+  }
+
+  onGameEvent(_entityId: number, event: GameEvent): void {
+    this.gameEvents.push(event);
   }
 }

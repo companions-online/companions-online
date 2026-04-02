@@ -108,9 +108,18 @@ export function isHarvesting(eid: number, world: SystemState): boolean {
   return world.harvestStates.has(eid);
 }
 
-/** Returns entity IDs that yielded this tick (need InventorySync). */
-export function runHarvest(world: SystemState): number[] {
-  const yielded: number[] = [];
+export interface HarvestEvent {
+  entityId: number;
+  yieldBlueprintId: number;
+  targetEntityId?: number;
+  remaining?: number;
+  depleted: boolean;
+  bonusBlueprintId?: number;
+}
+
+/** Returns harvest events for this tick (need InventorySync for each entityId). */
+export function runHarvest(world: SystemState): HarvestEvent[] {
+  const events: HarvestEvent[] = [];
 
   for (const [eid, state] of world.harvestStates) {
     const pos = world.entities.position.get(eid);
@@ -140,28 +149,44 @@ export function runHarvest(world: SystemState): number[] {
       cancelHarvest(eid, world);
       continue;
     }
-    yielded.push(eid);
 
+    let bonusBlueprintId: number | undefined;
     if (state.context.bonusChance && state.context.bonusBlueprintId) {
       state.rng = (state.rng * 1664525 + 1013904223) >>> 0;
       if ((state.rng >>> 0) / 0x100000000 < state.context.bonusChance) {
         world.inventoryMgr.addItem(eid, state.context.bonusBlueprintId, 1);
+        bonusBlueprintId = state.context.bonusBlueprintId;
       }
     }
 
+    let depleted = false;
+    let remaining: number | undefined;
     if (state.targetEntityId !== undefined) {
-      const remaining = depleteTree(state.targetEntityId, world);
+      remaining = depleteTree(state.targetEntityId, world);
       if (remaining !== undefined && remaining <= 0) {
+        depleted = true;
         const tpos = world.entities.position.get(state.targetEntityId);
         if (tpos) world.occupancy.clear(tpos.tileX, tpos.tileY);
         world.entities.destroy(state.targetEntityId);
-        cancelHarvest(eid, world);
-        continue;
       }
+    }
+
+    events.push({
+      entityId: eid,
+      yieldBlueprintId: state.context.yieldBlueprintId,
+      targetEntityId: state.targetEntityId,
+      remaining: remaining,
+      depleted,
+      bonusBlueprintId,
+    });
+
+    if (depleted) {
+      cancelHarvest(eid, world);
+      continue;
     }
 
     state.ticksRemaining = state.context.tickCost;
   }
 
-  return yielded;
+  return events;
 }

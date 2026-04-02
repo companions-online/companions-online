@@ -44,8 +44,14 @@ export function initCritterAI(world: SystemState): void {
   }
 }
 
+export interface CritterBehaviorChange {
+  type: 'aggro' | 'flee';
+  creatureEntityId: number;
+  targetPlayerEntityId: number;
+}
+
 /** Called when a critter takes damage — triggers flee or aggro response. */
-export function notifyCritterAttacked(entityId: number, attackerEntityId: number, world: SystemState): void {
+export function notifyCritterAttacked(entityId: number, attackerEntityId: number, world: SystemState): CritterBehaviorChange | undefined {
   const state = world.critterStates.get(entityId);
   if (!state) return;
   const bp = world.entities.blueprintId.get(entityId);
@@ -58,6 +64,7 @@ export function notifyCritterAttacked(entityId: number, attackerEntityId: number
     state.behavior = 'flee';
     state.targetEntityId = attackerEntityId;
     clearMoveTarget(entityId, world);
+    return { type: 'flee', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
   } else if (config.aggroRange) {
     // Fight back
     state.behavior = 'aggro';
@@ -65,11 +72,14 @@ export function notifyCritterAttacked(entityId: number, attackerEntityId: number
     if (!isInCombat(entityId, world)) {
       startAttack(entityId, attackerEntityId, world);
     }
+    return { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
   }
   // Deer: passive — no behavior change
+  return undefined;
 }
 
-export function runCritterAI(world: SystemState): void {
+export function runCritterAI(world: SystemState): CritterBehaviorChange[] {
+  const changes: CritterBehaviorChange[] = [];
   for (const [eid, state] of world.critterStates) {
     if (!world.entities.exists(eid)) {
       world.critterStates.delete(eid);
@@ -103,9 +113,11 @@ export function runCritterAI(world: SystemState): void {
         state.behavior = 'flee';
         state.targetEntityId = nearestPlayerId;
         clearMoveTarget(eid, world);
+        changes.push({ type: 'flee', creatureEntityId: eid, targetPlayerEntityId: nearestPlayerId });
       } else if (config.aggroRange && nearestPlayerId !== undefined && nearestDist <= config.aggroRange) {
         state.behavior = 'aggro';
         state.targetEntityId = nearestPlayerId;
+        changes.push({ type: 'aggro', creatureEntityId: eid, targetPlayerEntityId: nearestPlayerId });
       }
     }
 
@@ -144,6 +156,7 @@ export function runCritterAI(world: SystemState): void {
       // 'passive': do nothing
     }
   }
+  return changes;
 }
 
 function executeFlee(eid: number, state: CritterState, world: SystemState): void {
