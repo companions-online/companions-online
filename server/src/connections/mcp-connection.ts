@@ -1,3 +1,4 @@
+import { ActionType } from '@shared/actions.js';
 import type { PlayerConnection, GameWorldView } from '../player-connection.js';
 import type { GameEvent } from '../events.js';
 import { EventBuffer } from '../events.js';
@@ -13,6 +14,10 @@ export type DialogueData = {
   }[];
 };
 
+export interface ActionResult {
+  status: 'complete' | 'died' | 'timeout';
+}
+
 export class McpConnection implements PlayerConnection {
   entityId = 0;
   world: GameWorldView | null = null;
@@ -22,9 +27,31 @@ export class McpConnection implements PlayerConnection {
   dialogueState: { npcEntityId: number; dialogue: DialogueData } | null = null;
   containerEntityId: number | null = null;
 
+  // Action blocking
+  pendingAction: { resolve: (r: ActionResult) => void } | null = null;
+  private ticksWaited = 0;
+
   constructor(viewRange = 8, bufferSize = 50, bufferAge = 60_000) {
     this.eventBuffer = new EventBuffer(bufferSize, bufferAge);
     this.viewRange = viewRange;
+  }
+
+  awaitAction(): Promise<ActionResult> {
+    if (this.pendingAction) {
+      this.pendingAction.resolve({ status: 'complete' });
+    }
+    return new Promise(resolve => {
+      this.pendingAction = { resolve };
+      this.ticksWaited = 0;
+    });
+  }
+
+  private resolveAction(status: ActionResult['status']): void {
+    if (this.pendingAction) {
+      this.pendingAction.resolve({ status });
+      this.pendingAction = null;
+      this.ticksWaited = 0;
+    }
   }
 
   onInitialState(entityId: number, world: GameWorldView): void {
@@ -33,9 +60,31 @@ export class McpConnection implements PlayerConnection {
   }
 
   onInventoryChanged(): void {}
-  onTick(): void {}
   onChunkNeeded(): void {}
   onChatMessage(): void {}
+
+  onTick(): void {
+    if (!this.pendingAction || !this.world) return;
+    this.ticksWaited++;
+
+    const ca = this.world.entities.currentAction.get(this.entityId);
+    const actionType = ca?.actionType ?? ActionType.Idle;
+
+    if (this.ticksWaited === 1) {
+      // First tick: action was just processed by GameWorld.
+      // Idle = instant action (equip/craft/etc) or rejected. Resolve.
+      // Dead = died during processing. Resolve.
+      // Anything else = action in progress, keep waiting.
+      if (actionType === ActionType.Idle) { this.resolveAction('complete'); return; }
+      if (actionType === ActionType.Dead) { this.resolveAction('died'); return; }
+      return;
+    }
+
+    // Subsequent ticks: resolve when action finishes or times out
+    if (actionType === ActionType.Idle) this.resolveAction('complete');
+    else if (actionType === ActionType.Dead) this.resolveAction('died');
+    else if (this.ticksWaited >= 600) this.resolveAction('timeout');
+  }
 
   onContainerOpen(_entityId: number, containerEntityId: number): void {
     this.containerEntityId = containerEntityId;

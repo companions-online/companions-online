@@ -6,7 +6,7 @@ import { setupInput } from './input.js';
 
 // --- Connect ---
 const host = process.argv[2] || 'localhost:3001';
-const ws = new WebSocket(`ws://${host}`);
+const ws = new WebSocket(`ws://${host}/ws`);
 ws.binaryType = 'arraybuffer';
 
 ws.on('open', () => {

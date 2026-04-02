@@ -1,12 +1,13 @@
+import { serve } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 import { TICK_RATE } from '@shared/constants.js';
-import { encodePong, decodeClientMessage } from '@shared/protocol/codec.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { createDefaultWorld } from './game-world.js';
-import { WebSocketConnection } from './connections/ws-connection.js';
 import { renderDashboard } from './dashboard.js';
+import { createApp } from './app.js';
+import { getSessionCount } from './mcp-session.js';
 
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT ?? '', 10) || 3001;
 const WORLD_SEED = parseInt(process.env.SEED ?? '', 10) || 42;
 
 // --- Create world ---
@@ -16,13 +17,15 @@ console.log(`[server] world ready: ${world.entities.getEntityCount()} entities`)
 
 const telemetry = world.telemetry;
 
+// --- Create Hono app ---
+const { app, wsUpgrade, getWsConnectionCount } = createApp(world, telemetry);
+
 // --- Game loop ---
 const loop = new GameLoop(TICK_RATE);
 
-let wsConnectionCount = 0;
-
 loop.start((tick, _dt) => {
-  telemetry.setConnectionCount('ws', wsConnectionCount);
+  telemetry.setConnectionCount('ws', getWsConnectionCount());
+  telemetry.setConnectionCount('mcp', getSessionCount());
   world.runTick();
 
   if (tick % TICK_RATE === 0) {
@@ -31,37 +34,11 @@ loop.start((tick, _dt) => {
   }
 });
 
-// Clear screen when loop starts
 process.stdout.write('\x1b[2J\x1b[H');
 
-// --- WebSocket server ---
-const wss = new WebSocketServer({ port: PORT });
+// --- Start HTTP server ---
+const httpServer = serve({ fetch: app.fetch, port: PORT });
 
-wss.on('listening', () => {});
-
-wss.on('connection', (ws) => {
-  wsConnectionCount++;
-  const conn = new WebSocketConnection(ws, telemetry);
-  const entityId = world.addPlayer(conn);
-
-  ws.on('message', (data) => {
-    try {
-      const raw = data instanceof ArrayBuffer ? data : (data as Buffer).buffer.slice((data as Buffer).byteOffset, (data as Buffer).byteOffset + (data as Buffer).byteLength);
-      const buf = raw as ArrayBuffer;
-      telemetry.recordBytesReceived('ws', buf.byteLength);
-      const msg = decodeClientMessage(buf);
-      if (msg.type === 'action') {
-        world.setAction(entityId, msg.data);
-      } else if (msg.type === 'ping') {
-        ws.send(encodePong(msg.clientTime));
-      }
-    } catch (_e) {
-      // bad message — silently discard
-    }
-  });
-
-  ws.on('close', () => {
-    wsConnectionCount--;
-    world.removePlayer(entityId);
-  });
-});
+// --- Attach WebSocket server ---
+const wss = new WebSocketServer({ server: httpServer as import('http').Server, path: '/ws' });
+wss.on('connection', (ws) => wsUpgrade(ws));
