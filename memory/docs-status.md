@@ -7,14 +7,19 @@
 | Doc | Area | What changed |
 |-----|------|-------------|
 | `entity-blueprints-draft.md` | Blueprint IDs | Renumbered into ranges: creatures 0-19, resources 20-29, tools 30-39, weapons 40-49, armor 50-59, consumables 60-69, placeables 70-79, world 80-89, NPCs 90-99, special 100+ |
-| `entity-blueprints-draft.md` | HillRock | Removed entirely. Terrain.Rock is mineable directly — no entity needed |
-| `entity-blueprints-draft.md` | Stats | Rebalanced from docs. Player HP=100, creature stats adjusted. Check blueprints.ts for current values |
-| `entity-blueprints-draft.md` | Placeables | Added equipSlot:'hand' + stackable:true. WoodenWall goes to building tile layer, door/campfire/chest stay as entities |
-| `network-protocol-draft.md` | Opcodes | Added: Welcome, InventorySync, ContainerOpen, DialogueOpen. Client-side prediction removed (server-authoritative) |
-| `network-protocol-draft.md` | Components | Removed Ownership/Appearance. Added BlueprintId. Client derives appearance from BlueprintId |
-| `action-taxonomy.md` | Actions | Implemented: MoveTo, Cancel, Pickup, Equip, Unequip, Drop, Craft, Harvest, UseItemAt, Attack, Interact, Transfer, DialogueSelect, Trade. NOT yet: UseConsumable, Say |
-| `action-taxonomy.md` | Queries | GET_INVENTORY etc not implemented as protocol queries — client reads from synced state |
-| `action-taxonomy.md` | NPCs | Hermit/Trader/Wanderer implemented with dialogue trees and barter trades |
+| `entity-blueprints-draft.md` | HillRock | Removed entirely. Terrain.Rock is mineable directly |
+| `entity-blueprints-draft.md` | Stats | Rebalanced. Check blueprints.ts for current values |
+| `entity-blueprints-draft.md` | Placeables | Added equipSlot:'hand' + stackable:true. WoodenWall goes to building tile layer |
+| `network-protocol-draft.md` | Opcodes | Added: Welcome, InventorySync, ContainerOpen, DialogueOpen. Client-side prediction removed |
+| `network-protocol-draft.md` | Components | Removed Ownership/Appearance. Added BlueprintId |
+| `action-taxonomy.md` | Actions | All 17 implemented: MoveTo, Cancel, Pickup, Equip, Unequip, Drop, Craft, Harvest, UseItemAt, Attack, Interact, Transfer, DialogueSelect, Trade, UseConsumable, Say |
+| `action-taxonomy.md` | Queries | Not protocol queries — client reads from synced state |
+| `mcp-spec-draft.md` | Events | Evolved to 18 types (3 priority tiers), "teleportation model" cuts snapshot-inferrable events |
+| `mcp-spec-draft.md` | Medium/Low events | player_entered/left, entity_spawned/despawned removed. creature_fleeing + creature_died kept for continuity |
+| `mcp-spec-draft.md` | Event generation | Emitted at authoritative source (handlers/systems), not from delta reconstruction |
+| `mcp-spec-draft.md` | Inactivity timeout | Removed — MCP clients stay connected indefinitely, only dropped on session DELETE |
+| `mcp-spec-draft.md` | Action blocking | 30s (600 tick) safety valve timeout. Instant actions resolve in 1 tick |
+| `mcp-spec-draft.md` | Transport | Hono + @modelcontextprotocol/sdk WebStandardStreamableHTTPServerTransport, one McpServer per session |
 
 ## What to trust
 1. **Code** — always authoritative

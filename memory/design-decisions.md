@@ -4,70 +4,76 @@
 
 **GameWorld encapsulates all state** — no module-level mutable globals anywhere. Systems are pure functions that take `world: SystemState`. This enables multiple isolated worlds (for E2E tests) in the same process.
 
-**PlayerConnection (not "sink")** — user explicitly chose "Connection" over other names. Interface has 7 methods: onInitialState, onInventoryChanged, onTick, onChunkNeeded, onContainerOpen, onDialogueOpen, onChatMessage. GameWorld never encodes wire format.
+**PlayerConnection (not "sink")** — user explicitly chose "Connection" over other names. Interface has 8 methods: onInitialState, onInventoryChanged, onTick, onChunkNeeded, onContainerOpen, onDialogueOpen, onChatMessage, onGameEvent. GameWorld never encodes wire format.
 
 **SystemState interface** — lightweight subset of GameWorld. Unit tests create plain objects satisfying it without full GameWorld. GameWorld implements it. Avoids coupling test code to the full class. Includes `players` map so critter AI can iterate players directly (O(critters×players) not O(critters×entities)).
 
 **processAction as switch/dispatch** — each of the 17 action types has its own private handler method. `cancelConflictingStates()` handles pre-action cleanup. Say is handled before cancellation (doesn't interrupt other actions).
 
+**Hono server on one port** — MCP Streamable HTTP + WebSocket + static files all served from port 3001. Hono app created via factory function (`createApp(world)`) for testability.
+
+## MCP Design
+
+**Events emitted at authoritative source** — NOT reverse-engineered from deltas. GameWorld handlers emit directly via `onGameEvent`. System functions return enriched data (CombatResult with hits, HarvestEvent[], ConsumeEvent[], CritterBehaviorChange[]). GameWorld translates system returns to events.
+
+**LLM "teleportation" model** — LLM players experience constant teleportation between tool calls. Every response is a full snapshot. Only emit events NOT inferrable from snapshots: damage causality, ephemeral chat, action interruption reasons. Snapshot-inferrable info (entity positions, who's nearby) comes from `<map>` and `<entities>` sections.
+
+**Two continuity-preservation events** — `creature_fleeing` and `creature_died` kept at Medium priority despite being somewhat inferrable, because they bridge behavioral cause-and-effect chains.
+
+**Action blocking model** — MCP action tools block via Promise. `awaitAction()` creates Promise, `onTick` resolves it when player's currentAction returns to Idle/Dead. Tick 1: if Idle → instant action (equip/craft/etc), resolve immediately. Subsequent ticks: wait for completion. 600-tick (30s) safety valve timeout.
+
+**One McpServer per session** — tool handlers close over session-specific state (conn, entityId). Sessions stored in Map, persist until explicit DELETE. No inactivity timeout (user decision).
+
+**McpConnection holds live GameWorldView ref** — reads entity state, terrain, inventory on demand. No delta accumulation needed (unlike WebSocket). EventBuffer for game events. Dialogue/container state cached from one-shot callbacks (not readable from world ref).
+
+**Text formatters as pure functions** — take McpConnection, produce XML-tagged text. Reuse shared/src/ascii.ts chars. Token-efficient compact format. Item IDs prefixed with `#` in inventory/container for tool call references.
+
+**MCP CLI test tool** — `scripts/mcp.ts` persists session in `.session` file. Auto-reconnects on stale session. Lists tools with no args, executes with `tool key=value` syntax.
+
 ## Building Layer vs Entities
 
-**WoodenWall → building tile layer**. Static structures use `map.setBuilding()`. Synced via chunk streaming + tile deltas. No entity overhead — a 10x10 building is 100 bytes of tile data, not 100 entities.
+**WoodenWall → building tile layer**. Static structures use `map.setBuilding()`. Synced via chunk streaming + tile deltas. No entity overhead.
 
-**Door, Campfire, StorageChest → entities**. These have interactive behavior (toggle, cooking, storage) that needs entity state. User explicitly chose this split.
+**Door, Campfire, StorageChest → entities**. These have interactive behavior. Ground item detection: `!comp.statusEffects` distinguishes ground items from placed entities.
 
-**Ground item detection** — placed entities get `statusEffects` component on placement. Ground items (from Drop) only have position+blueprintId. `!comp.statusEffects` distinguishes them reliably. Used by action resolver to decide Pickup vs Interact.
-
-**Campfire has collides: true** — needed for cooking (server finds campfire via `occupancy.get(tileX, tileY)`). Also means pathfinding routes around it.
-
-**Building.Door removed from terrain.ts** — doors are entities, not building tiles. The Building enum only has Wall, Floor, Fence.
+**Campfire has collides: true** — needed for cooking (server finds campfire via `occupancy.get(tileX, tileY)`).
 
 ## Game Mechanics
 
-**No HillRock entity** — Terrain.Rock tiles are mineable directly. The harvest system checks terrain type when no entity is found at the target.
+**No HillRock entity** — Terrain.Rock tiles are mineable directly.
 
-**Placeables are stackable + equippable** — All placeables have `stackable: true, maxStack: 10, equipSlot: 'hand'`. Same for tools, weapons, armor. RawMeat/RawFish also have `equipSlot: 'hand'` so they can be equipped and used at campfire via UseItemAt.
+**UseItemAt unifies cooking + placing** — Equip item → target tile → server resolves.
 
-**UseItemAt unifies cooking + placing** — Equip item in hand → target tile → [u] key. Server resolves: RawFish/RawMeat at campfire → cook. Placeable category → spawn world entity or set building tile.
+**UseConsumable is channeled, single-use** — unlike harvest (repeats), consumables complete once.
 
-**UseConsumable is channeled, single-use** — unlike harvest (which repeats), consumables complete once then stop. Bandage: 30HP over 10 ticks. Food: 15-20HP over 3 ticks. Interrupted by any other action.
+**Player death** — doesn't destroy the entity. Sets `ActionType.Dead`, drops equipped items, schedules respawn in 100 ticks.
 
-**Say doesn't cancel other actions** — you can chat while harvesting, attacking, etc. Handled before `cancelConflictingStates` in processAction.
-
-**Player death** — doesn't destroy the entity (unlike critters). Sets `ActionType.Dead`, drops equipped items as ground entities, clears occupancy, schedules respawn in 100 ticks (5s). Actions blocked while dead. Guard against re-death (wolf re-aggro on corpse resetting respawn timer).
-
-**Fist as default weapon** — Player base damage=1, attackSpeed=2 ticks. Weapons override both via blueprint weaponDamage/weaponSpeed.
+**Fist as default weapon** — Player base damage=1, attackSpeed=2.
 
 ## Pathfinding & Movement
 
-**maxSearchNodes=1000, reject if not found** — user decision: players click nearby, don't need cross-map pathfinding. Keep the limit fixed regardless of map size.
+**maxSearchNodes=1000, reject if not found** — keep the limit fixed regardless of map size.
 
-**Wait-and-repath for dynamic collision** — When movement is blocked by another entity, wait up to 10 ticks (WAIT_PATIENCE), then re-path with A*.
+**Wait-and-repath** — blocked by entity → wait 10 ticks → re-path.
 
-**Alternating diagonal cost** — 1, 2, 1, 2... per diagonal step (UO/d20 approach, ~6% error from √2).
+**Alternating diagonal cost** — 1, 2, 1, 2... (UO/d20 approach).
 
 ## World Generation
 
-**Auto-scaling with MAP_SIZE** — `scale = MAP_SIZE / 128`. All noise frequencies divide by scale. Spawn density per-tile stays constant.
+**Auto-scaling with MAP_SIZE** — `scale = MAP_SIZE / 128`. All noise frequencies divide by scale.
 
-**NPC placement** — Hermit 8-15 tiles from spawn, Trader 10-20 tiles, Wanderer 30-45×scale tiles. Each tries 50 random positions in their distance band. Wanderer gets critter AI config (wander, long idles, speed 1).
-
-## Chunk Streaming
-
-**Viewport-only on connect** — only sends chunks within INTEREST_RANGE of player (25 vs 1024 for full map). Streams new chunks as player moves.
-
-**Tile deltas** — dirty tiles tracked in WorldMap. Broadcast to players who have the affected chunk.
+**NPC placement** — Hermit 8-15 tiles from spawn, Trader 10-20, Wanderer 30-45×scale.
 
 ## CLI
 
-**Modular split** — 6 files: client.ts (entry), state.ts (shared state + type helpers), connection.ts (message handling), render.ts (viewport + status), panels.ts (inventory/crafting/container/dialogue), input.ts (keyboard + actions).
+**Modular split** — 6 files. WebSocket connects to `/ws` path.
 
-**Type helpers** — `getHp()`, `getBpId()`, `getEffects()`, `getActionType()` eliminate `as any` casts for variant component types.
-
-**Chat mode** — [t] enters typing mode, printable chars build message, Enter sends Say, Esc cancels. Recent messages overlaid on map for 5 seconds.
+**Chat mode** — [t] enters typing mode, Enter sends, Esc cancels.
 
 ## Testing
 
-**E2E tests use GameWorld directly** — `createTestWorld()` + `addTestPlayer()` + `world.setAction()` + `world.runTicks(n)`. No WebSocket needed. HeadlessConnection captures events for assertion.
+**Load-bearing tests only** — test integrated behavior and side effects, not trivial property setting. E2E event tests verify full pipeline. MCP E2E tests start real Hono server, connect via SDK client, call tools, verify response format.
 
-**Unit tests use SystemState mock objects** — Plain objects with the needed Maps, not full GameWorld. Must include `players: new Map()` and `consumableStates: new Map()`.
+**E2E tests use GameWorld directly** — `createTestWorld()` + `addTestPlayer()` + `world.setAction()` + `world.runTicks(n)`.
+
+**MCP E2E tests use real HTTP** — Hono server on random port, MCP SDK Client + StreamableHTTPClientTransport.

@@ -4,14 +4,26 @@
 
 ```
 shared/src/     Shared types, constants, protocol codec, pathfinding, world gen, inventory logic
-server/src/     Game server: GameWorld, ECS, systems, connections, telemetry, NPC dialogues
+server/src/     Game server: GameWorld, ECS, systems, connections, MCP, telemetry, NPC dialogues
 client/src/     Web client (esbuild, placeholder — CLI is primary client)
 cli/            CLI game client: state, rendering, input, panels, connection handler (6 modules)
-scripts/        Dev tools: map viewer, map stats
+scripts/        Dev tools: map viewer, map stats, MCP CLI test tool
 test/           Unit tests + test/e2e/ for behavioral E2E tests
 docs/           Design seed documents (may be outdated — code is authoritative)
 memory/         These orientation docs
 ```
+
+## Server Stack
+
+Hono HTTP server on port 3001, serving three concerns on one port:
+
+```
+POST/GET/DELETE /mcp  →  MCP Streamable HTTP (LLM players)
+GET /ws               →  WebSocket upgrade (human/CLI players)
+GET /*                →  static files (web client)
+```
+
+Dependencies: `hono`, `@hono/node-server`, `ws`, `@modelcontextprotocol/sdk`, `zod`
 
 ## Core Abstraction: GameWorld
 
@@ -57,13 +69,32 @@ interface PlayerConnection {
   onContainerOpen(entityId, containerEntityId, world)
   onDialogueOpen(entityId, npcEntityId, dialogue)
   onChatMessage(entityId, senderEntityId, message)
+  onGameEvent(entityId, event: GameEvent)
 }
 ```
 
-Three implementations:
+Four implementations:
 - **WebSocketConnection** (`connections/ws-connection.ts`) — binary protocol encoding
 - **HeadlessConnection** (`connections/headless-connection.ts`) — test spy, captures events
-- **MCP Connection** — future, pull-based
+- **McpConnection** (`connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick
+
+## Event System
+
+`server/src/events.ts` — 18 event types across 3 priority tiers (Critical/High/Medium). EventBuffer with priority-based decay and age-out.
+
+Events emitted at authoritative sources: GameWorld handlers emit directly via `slot.connection.onGameEvent()`. System functions (combat, harvest, consumable, critter-ai) return enriched data, GameWorld translates to events.
+
+Design principle: only emit events NOT inferrable from state snapshots (damage causality, ephemeral chat, action interruption reasons). LLM experience is "constant teleportation" — full snapshot per response.
+
+## MCP Layer
+
+**McpConnection** — thin PlayerConnection impl. Holds live `GameWorldView` reference for on-demand reads (no delta accumulation). EventBuffer for game events. Action blocking: `awaitAction()` returns Promise, resolved by `onTick` when player's currentAction returns to Idle/Dead or 30s timeout.
+
+**mcp-tools.ts** — 19 tools (15 action + 4 query) registered on per-session McpServer. Action tools call `world.setAction()` + `await conn.awaitAction()`. Query tools return immediately.
+
+**mcp-session.ts** — session lifecycle. One McpServer + transport + McpConnection per session. Sessions persist until explicit DELETE.
+
+**mcp-formatters.ts** — pure functions producing XML-tagged text sections: `<self>`, `<map>`, `<entities>`, `<terrain>`, `<events>`, `<inventory>`, `<recipes>`, `<container>`, plus envelope composers.
 
 ## SystemState Interface
 
@@ -74,14 +105,14 @@ Three implementations:
 ```
 0. Process player respawns (dead → alive after 5s timer)
 1. Process pending player actions (switch dispatch → 17 handler methods)
-2. Critter AI (wander / flee / aggro decisions, iterates world.players for nearest-player)
-3. Run harvest (channeled gathering, yields on timer)
-3.5. Run consumables (channeled healing, single-use completion)
+2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
+3. Run harvest (channeled gathering, yields on timer) → returns HarvestEvent[]
+3.5. Run consumables (channeled healing) → returns ConsumeEvent[]
 4. Run respawns (depleted trees respawn after 30s)
 5. Run movement (A* pathfinding, occupancy collision, wait-and-repath)
-6. Run combat (damage, death detection — players get death state, critters get destroyed)
-7. Process deaths → loot drops (per-creature drop tables) + player equipped item drops
-8. Resolve pending pickups + pending interacts (walk-to-item/door/chest/NPC then auto-do)
+6. Run combat (damage, death detection) → returns CombatResult { deaths, hits }
+7. Process deaths → loot drops + player death handling
+8. Resolve pending pickups + pending interacts
 9. Per-player visibility diff + chunk streaming + tile deltas → broadcast via PlayerConnection
 10. Clear dirty/destroyed + dirty tiles
 ```
@@ -122,10 +153,6 @@ NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams wit
 
 Static structures (WoodenWall) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas.
 Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health).
-- Doors use `StatusEffect.Open` bit for open/closed state, toggle occupancy on interact.
-- Campfire has `collides: true` (occupancy registered). Cooking finds it via `occupancy.get()`.
-- StorageChest gets its own inventory (`inventoryMgr.create`) on placement.
-- Ground items (from Drop) have only position+blueprintId — distinguished from placed entities by absence of statusEffects component.
 
 ## Player Death + Respawn
 

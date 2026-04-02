@@ -1,6 +1,6 @@
 # Current State
 
-## Completed — All Core Game Logic Done
+## Completed — All Core Game Logic + MCP
 - Scaffolding (esbuild, tsx, vitest, monorepo)
 - Shared foundations (types, enums, constants, direction, terrain, coordinates)
 - Binary protocol codec (all message types, round-trip tested)
@@ -20,24 +20,28 @@
 - Death + loot drops (per-creature drop tables, probabilistic drops)
 - Player death + respawn (5s dead state, drop equipped items, respawn at spawn)
 - Critter AI behaviors (wander/flee/aggro/passive per blueprint, optimized to iterate players)
-- Bear + Skeleton + NPC spawns in world gen (Hermit near spawn, Trader near spawn, Wanderer roams)
-- GameWorld refactor (all state encapsulated, processAction as switch/dispatch with handler methods)
-- PlayerConnection abstraction (WebSocket + Headless + future MCP)
+- Bear + Skeleton + NPC spawns in world gen
+- GameWorld refactor (all state encapsulated, processAction as switch/dispatch)
+- PlayerConnection abstraction (WebSocket + Headless + MCP)
 - Chunk streaming (viewport-only on connect, stream as player moves)
 - Tile delta system (building changes propagated to nearby players)
 - Building layer for walls (static tiles, not entities)
-- Door toggle (entity-based, StatusEffect.Open, occupancy toggle)
-- Container system (chest placement with inventory, Transfer action, ContainerOpen opcode)
-- NPC dialogue + barter (Hermit/Trader/Wanderer, DialogueOpen opcode, Trade action, Hermit first-time gift)
-- Say/chat (broadcast within INTEREST_RANGE, ChatMessage opcode, CLI chat mode with [t]alk)
-- Auto-action resolver (context-sensitive cursor: pickup/harvest/attack/interact/move)
-- Telemetry dashboard (per-phase CPU timing, network bytes, ANSI dashboard in separate module)
+- Door toggle, Container system, NPC dialogue + barter, Say/chat
+- Auto-action resolver, Telemetry dashboard
 - E2E test scaffold (GameWorld.runTicks, HeadlessConnection, test helpers)
-- Code debt round: CLI split into 6 modules, processAction refactored to dispatch, codec dedup, dashboard extracted, type helpers, Building.Door removed
+- **Event system** (18 types, 3 priority tiers, EventBuffer with decay/age-out)
+- **Event emission from authoritative sources** (onGameEvent on PlayerConnection, emitted from handlers + enriched system returns)
+- **McpConnection** (thin PlayerConnection impl, live GameWorldView ref, EventBuffer, action blocking via onTick)
+- **MCP text formatters** (self, map, entities, terrain, events, inventory, recipes, container, envelopes)
+- **MCP server** (Hono on port 3001, Streamable HTTP with per-session McpServer/transport)
+- **MCP tools** (15 action tools + 4 query tools, blocking execution model)
+- **MCP session management** (create/destroy, session persistence)
+- **MCP CLI test tool** (`scripts/mcp.ts`, session file persistence, tool enumeration + execution)
+- **Server migration** from raw ws to Hono (MCP + WS + static on one port)
 
-**All 17 actions from the action taxonomy are implemented.**
+**All 17 game actions + 19 MCP tools implemented.**
 
-## 144 Tests across 13 files — all passing
+## 184 Tests across 16 files — all passing
 
 ## Known Issues
 - Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds. Fix: lower to ~0.50
@@ -46,17 +50,13 @@
 
 ## Queued Work
 
-### Scalability (next priority)
-1. **Rock terrain fix**: Lower elevation threshold so rock/iron resources actually spawn
-2. **Broadcast optimization**: Spatial index for visibility diff (currently O(entities×clients))
-3. **Critter alive zones**: Only run AI for critters near players
-
-### MCP Client (main remaining feature)
-- Pull-based PlayerConnection implementation for LLM players
-- Accumulate state, serve on tool call
-- Uses shared ASCII map view for orientation
+### Scalability (deferred)
+1. Rock terrain fix
+2. Broadcast optimization: spatial index for visibility diff
+3. Critter alive zones: only run AI for critters near players
 
 ### Future
 - 2D asset pipeline (web client)
 - Campfire burn timer
 - More NPC types
+- MCP combat interruption (getting attacked cancels non-attack actions for MCP players)
