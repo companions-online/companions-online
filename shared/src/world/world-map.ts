@@ -14,6 +14,17 @@ export class WorldMap {
     this.buildingMeta = new Uint8Array(size);
   }
 
+  static fromBuffers(
+    width: number, height: number,
+    terrain: Uint8Array, buildings: Uint8Array, buildingMeta: Uint8Array,
+  ): WorldMap {
+    const map = new WorldMap(width, height);
+    map.terrain.set(terrain);
+    map.buildings.set(buildings);
+    map.buildingMeta.set(buildingMeta);
+    return map;
+  }
+
   private idx(x: number, y: number): number {
     return y * this.width + x;
   }

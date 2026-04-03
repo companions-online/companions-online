@@ -31,6 +31,14 @@ export class EntityManager {
     return id;
   }
 
+  createWithId(id: number): void {
+    this.alive.add(id);
+    if (id >= this.nextId) this.nextId = id + 1;
+  }
+
+  getNextId(): number { return this.nextId; }
+  setNextId(id: number): void { this.nextId = id; }
+
   destroy(id: number): void {
     this.alive.delete(id);
     this.dirty.delete(id);

@@ -145,6 +145,10 @@ export class InventoryManager {
     this.inventories.delete(entityId);
   }
 
+  getAll(): ReadonlyMap<number, Inventory> { return this.inventories; }
+  getNextItemId(): number { return this.nextItemId; }
+  setNextItemId(id: number): void { this.nextItemId = id; }
+
   getSyncData(entityId: number): SyncedInventoryItem[] {
     const inv = this.inventories.get(entityId);
     if (!inv) return [];

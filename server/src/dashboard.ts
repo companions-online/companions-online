@@ -7,6 +7,12 @@ const LINE = '\u2500'.repeat(53);
 
 let lastRenderTime = performance.now();
 
+export interface DashboardState {
+  worldId: string;
+  paused: boolean;
+  saveStatus: '' | 'saving' | 'saved';
+}
+
 function formatUptime(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -23,16 +29,17 @@ function formatBytes(bytes: number, elapsed: number): string {
   return `${Math.round(perSec)} B/s`;
 }
 
-export function renderDashboard(snap: TelemetrySnapshot): void {
+export function renderDashboard(snap: TelemetrySnapshot, state: DashboardState): void {
   const now = performance.now();
   const elapsedSec = (now - lastRenderTime) / 1000;
 
   const tickMs = snap.tickAvgUs / 1000;
   const budgetPct = TICK_BUDGET_MS > 0 ? (tickMs / TICK_BUDGET_MS) * 100 : 0;
 
+  const pauseTag = state.paused ? '  \x1b[33m[PAUSED]\x1b[0m' : '';
   const lines: string[] = [];
   lines.push('');
-  lines.push(` Companions Online \u2014 tick ${snap.tick} (${TICK_RATE}Hz)       uptime ${formatUptime(snap.uptimeMs)}`);
+  lines.push(` Companions Online \u2014 tick ${snap.tick} (${TICK_RATE}Hz)       uptime ${formatUptime(snap.uptimeMs)}${pauseTag}`);
   lines.push(LINE);
   lines.push(` TICK BUDGET   ${tickMs.toFixed(1)}ms / ${TICK_BUDGET_MS}ms  (${budgetPct.toFixed(0)}%)`);
   lines.push(LINE);
@@ -64,6 +71,11 @@ export function renderDashboard(snap: TelemetrySnapshot): void {
   lines.push(LINE);
   lines.push(` WORLD   entities: ${snap.entityCount}   players: ${snap.playerCount}   critters: ${snap.entityCount - snap.playerCount}`);
   lines.push('');
+
+  // Status line
+  const saveTag = state.saveStatus === 'saving' ? ' \x1b[33msaving...\x1b[0m' :
+                  state.saveStatus === 'saved'  ? ' \x1b[32msaved\x1b[0m' : '';
+  lines.push(` \x1b[2m[q]\x1b[0m quit  \x1b[2m[s]\x1b[0m save  \x1b[2m[p]\x1b[0m pause${saveTag}   world: \x1b[36m${state.worldId}\x1b[0m`);
 
   const cols = process.stdout.columns || 80;
   const out = '\x1b[H' + lines.map(l => l.padEnd(cols)).join('\n');

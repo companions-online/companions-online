@@ -9,3 +9,5 @@ export const INTEREST_RANGE = 32;
 
 export const SPAWN_X = Math.floor(MAP_SIZE / 2);
 export const SPAWN_Y = Math.floor(MAP_SIZE / 2);
+
+export const AUTOSAVE_WORLD_TICKS = 6000; // 5 minutes at 20Hz

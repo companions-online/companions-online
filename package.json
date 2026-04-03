@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "tsx watch server/src/main.ts",
+    "dev": "npm run dev:server",
+    "dev:server": "tsx server/src/main.ts",
     "dev:client": "tsx client/dev.ts",
     "build:client": "tsx client/build.ts",
     "typecheck": "tsc --noEmit",
