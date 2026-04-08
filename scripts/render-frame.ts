@@ -25,8 +25,8 @@ const deerSprite = await loadImage(
 const scene = createScene(42);
 spawnDeer(scene, 6, deerSprite as unknown as CanvasImageSource);
 
-const canvas = createCanvas(CANVAS_W, CANVAS_H);
-renderScene(canvas.getContext('2d') as unknown as CanvasRenderingContext2D, scene, CANVAS_W, CANVAS_H);
+const canvas = createCanvas(GAME_W, GAME_H);
+renderScene(canvas.getContext('2d') as unknown as CanvasRenderingContext2D, scene, GAME_W, GAME_H);
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
