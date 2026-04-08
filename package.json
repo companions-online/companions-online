@@ -6,21 +6,23 @@
   "scripts": {
     "dev": "npm run dev:server",
     "dev:server": "tsx server/src/main.ts",
-    "dev:client": "tsx client/dev.ts",
-    "build:client": "tsx client/build.ts",
+    "dev:client": "tsx client-web/dev.ts",
+    "build:client": "tsx client-web/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "cli:map": "tsx scripts/view-map.ts",
     "cli:play": "tsx cli/client.ts",
     "cli:stats": "tsx scripts/map-stats.ts",
-    "cli:mcp": "tsx scripts/mcp.ts"
+    "cli:mcp": "tsx scripts/mcp.ts",
+    "import:sprite": "tsx scripts/import-sprite.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.12",
     "@hono/node-ws": "^1.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "hono": "^4.12.9",
+    "sharp": "^0.34.5",
     "ws": "^8.18.0",
     "zod": "^4.3.6"
   },

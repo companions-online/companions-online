@@ -5,3 +5,11 @@ https://civitai.com/models/448101/sprite-sheet-maker
 
 aesthetics: https://www.youtube.com/watch?v=JUOiXVXcEqU    Ultima Online - Old School Guild Wars - 2002
 https://www.youtube.com/watch?v=8Z5luD6lUtY    Ultima Online In 2025 "Is It Worth Playing?"
+
+
+
+
+
+https://www.youtube.com/watch?v=CuBvG9mfQng&t=25s
+Tutorial: Creating a pixel art isometric tiles and map with PixelLab
+

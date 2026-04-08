@@ -17,6 +17,6 @@
       "@shared/*": ["./shared/src/*"]
     }
   },
-  "include": ["shared/src/**/*", "server/src/**/*", "client/src/**/*", "cli/**/*"],
+  "include": ["shared/src/**/*", "server/src/**/*", "client-web/src/**/*", "cli/**/*"],
   "exclude": ["node_modules", "dist"]
 }
