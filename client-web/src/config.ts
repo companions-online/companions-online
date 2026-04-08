@@ -20,5 +20,25 @@ export const GAME_Y = HUD_TOP_H;
 export const GAME_W = CANVAS_W - HUD_RIGHT_W;
 export const GAME_H = CANVAS_H - HUD_TOP_H - HUD_BOTTOM_H;
 
-/** Number of procedural grass tile variants */
-export const GRASS_VARIANTS = 4;
+/** Number of terrain types (matches shared Terrain enum) */
+export const TERRAIN_COUNT = 6;
+
+/** Procedural tile variants per terrain type, indexed by Terrain enum value */
+export const TERRAIN_VARIANT_COUNTS: readonly number[] = [
+  4, // Grass
+  3, // Dirt
+  3, // Rock
+  3, // Sand
+  2, // Water
+  2, // River
+];
+
+/** Water/river animation */
+export const WATER_ANIM_FRAMES = 4;
+export const WATER_FRAME_MS = 160;
+
+/** Elevation: pixels of vertical offset per unit of elevation */
+export const PX_PER_Z = 16;
+
+/** Debug: draw tile edge outlines */
+export const DEBUG_VIEW = false;

@@ -20,11 +20,12 @@ export class Camera {
 
   getVisibleBounds() {
     const r = CLIENT_VIEW_RANGE;
+    const pad = 3; // extra tiles for elevation overshoot
     return {
       minTileX: Math.max(0, Math.floor(this.centerTileX - r)),
       maxTileX: Math.min(MAP_SIZE - 1, Math.ceil(this.centerTileX + r)),
-      minTileY: Math.max(0, Math.floor(this.centerTileY - r)),
-      maxTileY: Math.min(MAP_SIZE - 1, Math.ceil(this.centerTileY + r)),
+      minTileY: Math.max(0, Math.floor(this.centerTileY - r - pad)),
+      maxTileY: Math.min(MAP_SIZE - 1, Math.ceil(this.centerTileY + r + pad)),
     };
   }
 }

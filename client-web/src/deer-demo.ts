@@ -3,6 +3,8 @@ import { SPAWN_X, SPAWN_Y, MAP_SIZE } from '@shared/constants.js';
 import { DX, DY, Direction } from '@shared/direction.js';
 import { findPath } from '@shared/pathfinding.js';
 import { TILE_W, TILE_H } from './config.js';
+import type { Entity } from './entity.js';
+import type { Scene } from './scene.js';
 
 const FRAME_W = 92;
 const FRAME_H = 92;
@@ -19,12 +21,6 @@ const WANDER_RADIUS = 20;
 const WANDER_STEP_MIN = 3;
 const WANDER_STEP_MAX = 8;
 
-// Shared sprite sheet across all deer
-const spriteSheet = new Image();
-spriteSheet.src = '/assets/deer.png';
-let spriteLoaded = false;
-spriteSheet.onload = () => { spriteLoaded = true; };
-
 function deltaToDirection(dx: number, dy: number): number {
   for (let d = 0; d < 8; d++) {
     if (DX[d] === dx && DY[d] === dy) return d;
@@ -32,32 +28,30 @@ function deltaToDirection(dx: number, dy: number): number {
   return Direction.S;
 }
 
-function clamp(v: number, min: number, max: number) {
+function clampNum(v: number, min: number, max: number) {
   return v < min ? min : v > max ? max : v;
 }
 
-function randomWanderTarget(homeX: number, homeY: number): { x: number; y: number } {
-  const angle = Math.random() * Math.PI * 2;
-  const dist = WANDER_STEP_MIN + Math.random() * (WANDER_STEP_MAX - WANDER_STEP_MIN);
-  const tx = Math.round(homeX + dist * Math.cos(angle));
-  const ty = Math.round(homeY + dist * Math.sin(angle));
-  // Keep within wander radius of center and map bounds
-  const cx = SPAWN_X, cy = SPAWN_Y;
-  return {
-    x: clamp(tx, Math.max(0, cx - WANDER_RADIUS), Math.min(MAP_SIZE - 1, cx + WANDER_RADIUS)),
-    y: clamp(ty, Math.max(0, cy - WANDER_RADIUS), Math.min(MAP_SIZE - 1, cy + WANDER_RADIUS)),
-  };
+function randomWanderTarget(homeX: number, homeY: number, isBlocked: (x: number, y: number) => boolean): { x: number; y: number } {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = WANDER_STEP_MIN + Math.random() * (WANDER_STEP_MAX - WANDER_STEP_MIN);
+    const tx = Math.round(homeX + dist * Math.cos(angle));
+    const ty = Math.round(homeY + dist * Math.sin(angle));
+    const cx = SPAWN_X, cy = SPAWN_Y;
+    const x = clampNum(tx, Math.max(0, cx - WANDER_RADIUS), Math.min(MAP_SIZE - 1, cx + WANDER_RADIUS));
+    const y = clampNum(ty, Math.max(0, cy - WANDER_RADIUS), Math.min(MAP_SIZE - 1, cy + WANDER_RADIUS));
+    if (!isBlocked(x, y)) return { x, y };
+  }
+  return { x: homeX, y: homeY };
 }
 
-interface Deer {
-  update(dt: number): void;
-  draw(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number): void;
-  screenY(): number;
-  interpTileX(): number;
-  interpTileY(): number;
-}
-
-function createDeer(startX: number, startY: number): Deer {
+export function createDeer(
+  startX: number,
+  startY: number,
+  isBlocked: (x: number, y: number) => boolean,
+  sprite: CanvasImageSource | null,
+): Entity {
   let tileX = startX;
   let tileY = startY;
   let prevTileX = tileX;
@@ -74,12 +68,12 @@ function createDeer(startX: number, startY: number): Deer {
   let path: { x: number; y: number }[] = [];
   let pathIndex = 0;
 
-  let paused = false;
-  let pauseTimer = 0;
+  let paused = true;
+  let pauseTimer = Math.random() * 2.0;
 
-  // Stagger initial pause so deer don't all start moving at once
-  paused = true;
-  pauseTimer = Math.random() * 2.0;
+  let cachedScreenY = 0;
+  let cachedInterpTileX = startX;
+  let cachedInterpTileY = startY;
 
   function startStep() {
     const target = path[pathIndex];
@@ -100,13 +94,12 @@ function createDeer(startX: number, startY: number): Deer {
   }
 
   function planNextSegment() {
-    const target = randomWanderTarget(tileX, tileY);
-    const result = findPath(tileX, tileY, target.x, target.y, () => false, MAP_SIZE, MAP_SIZE);
+    const target = randomWanderTarget(tileX, tileY, isBlocked);
+    const result = findPath(tileX, tileY, target.x, target.y, isBlocked, MAP_SIZE, MAP_SIZE);
     path = result.path;
     pathIndex = 0;
 
     if (path.length === 0) {
-      // Nowhere to go, pause and retry
       paused = true;
       pauseTimer = 0.5;
       return;
@@ -115,9 +108,19 @@ function createDeer(startX: number, startY: number): Deer {
     startStep();
   }
 
-  function update(dt: number) {
-    if (!spriteLoaded) return;
+  function computeInterp() {
+    if (moving) {
+      const target = path[pathIndex];
+      const t = Math.min(moveProgress, 1);
+      cachedInterpTileX = prevTileX + (target.x - prevTileX) * t;
+      cachedInterpTileY = prevTileY + (target.y - prevTileY) * t;
+    } else {
+      cachedInterpTileX = tileX;
+      cachedInterpTileY = tileY;
+    }
+  }
 
+  function update(dt: number) {
     if (paused) {
       pauseTimer -= dt;
       if (pauseTimer <= 0) {
@@ -162,41 +165,22 @@ function createDeer(startX: number, startY: number): Deer {
     computeInterp();
   }
 
-  let cachedScreenY = 0;
-  let cachedInterpTileX = startX;
-  let cachedInterpTileY = startY;
-
-  function computeInterp() {
-    if (moving) {
-      const target = path[pathIndex];
-      const t = Math.min(moveProgress, 1);
-      cachedInterpTileX = prevTileX + (target.x - prevTileX) * t;
-      cachedInterpTileY = prevTileY + (target.y - prevTileY) * t;
-    } else {
-      cachedInterpTileX = tileX;
-      cachedInterpTileY = tileY;
-    }
-  }
-
   function draw(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
-    if (!spriteLoaded) return;
-
     computeInterp();
     const screen = tileToScreen(cachedInterpTileX, cachedInterpTileY, TILE_W, TILE_H);
-    const screenX = screen.screenX;
-    const screenY = screen.screenY;
+    cachedScreenY = screen.screenY;
 
-    cachedScreenY = screenY;
+    if (!sprite) return;
 
     const col = moving ? 1 + walkFrame : 0;
     const row = (direction + 1) % 8;
     const sx = col * FRAME_W;
     const sy = row * FRAME_H;
 
-    const dstX = screenX + offsetX + TILE_W / 2 - FOOT_X;
-    const dstY = screenY + offsetY + TILE_H / 2 - FOOT_Y;
+    const dstX = screen.screenX + offsetX + TILE_W / 2 - FOOT_X;
+    const dstY = screen.screenY + offsetY + TILE_H / 2 - FOOT_Y;
 
-    ctx.drawImage(spriteSheet, sx, sy, FRAME_W, FRAME_H, dstX, dstY, FRAME_W, FRAME_H);
+    ctx.drawImage(sprite, sx, sy, FRAME_W, FRAME_H, dstX, dstY, FRAME_W, FRAME_H);
   }
 
   return {
@@ -208,25 +192,20 @@ function createDeer(startX: number, startY: number): Deer {
   };
 }
 
-export function createDeerHerd(count: number) {
-  const deer: Deer[] = [];
+/**
+ * Spawn deer around the map center and add them to scene.entities.
+ */
+export function spawnDeer(
+  scene: Scene,
+  count: number,
+  sprite: CanvasImageSource | null,
+): void {
+  const isBlocked = (x: number, y: number) => !scene.worldMap.isWalkable(x, y);
   for (let i = 0; i < count; i++) {
-    // Spread starting positions around center
     const angle = (i / count) * Math.PI * 2;
     const dist = 3 + Math.random() * 10;
     const sx = Math.round(SPAWN_X + dist * Math.cos(angle));
     const sy = Math.round(SPAWN_Y + dist * Math.sin(angle));
-    deer.push(createDeer(sx, sy));
+    scene.entities.push(createDeer(sx, sy, isBlocked, sprite));
   }
-
-  return {
-    player: deer[0],
-    update(dt: number) {
-      for (const d of deer) d.update(dt);
-    },
-    draw(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
-      deer.sort((a, b) => a.screenY() - b.screenY());
-      for (const d of deer) d.draw(ctx, offsetX, offsetY);
-    },
-  };
 }

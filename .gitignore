@@ -4,3 +4,4 @@ dist/
 .vite/
 scripts/.session
 data/worlds/
+assets/import/
