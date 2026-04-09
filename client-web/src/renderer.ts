@@ -1,7 +1,9 @@
-import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, HUD_RIGHT_W, HUD_TOP_H, HUD_BOTTOM_H } from './config.js';
+import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, HUD_RIGHT_W, HUD_TOP_H, HUD_BOTTOM_H, DEBUG_MASK_ATLAS, DEBUG_MASKED_TERRAIN_ATLAS } from './config.js';
 import { createScene } from './scene.js';
 import { renderScene } from './render-scene.js';
 import { spawnDeer } from './deer-demo.js';
+import { drawMaskAtlas } from './blend-masks.js';
+import { drawMaskedTerrainAtlas } from './masked-terrain.js';
 
 export function createRenderer(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d')!;
@@ -10,6 +12,26 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 
   canvas.width = CANVAS_W;
   canvas.height = CANVAS_H;
+
+  // Phase A: raw mask shapes only (no terrain). Turn off once masks look right.
+  if (DEBUG_MASK_ATLAS) {
+    return {
+      start() {
+        drawMaskAtlas(ctx, scene.blendMasks, CANVAS_W, CANVAS_H);
+      },
+    };
+  }
+
+  // Phase C: masked terrain tiles. Shows, per terrain, the base tile followed
+  // by its 31 masked variants so the destination-in composite can be eyeballed
+  // before wiring into the renderer.
+  if (DEBUG_MASKED_TERRAIN_ATLAS) {
+    return {
+      start() {
+        drawMaskedTerrainAtlas(ctx, scene.rawTerrainTiles, scene.maskedTerrain, CANVAS_W, CANVAS_H);
+      },
+    };
+  }
 
   // Load deer sprite — entities appear once loaded
   const spriteSheet = new Image();

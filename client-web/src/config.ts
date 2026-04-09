@@ -38,7 +38,13 @@ export const WATER_ANIM_FRAMES = 4;
 export const WATER_FRAME_MS = 160;
 
 /** Elevation: pixels of vertical offset per unit of elevation */
-export const PX_PER_Z = 16;
+export const PX_PER_Z = 32;
 
 /** Debug: draw tile edge outlines */
 export const DEBUG_VIEW = false;
+
+/** Debug: render the 3 × 31 blend-mask atlas instead of the scene (Phase A verification). */
+export const DEBUG_MASK_ATLAS = false;
+
+/** Debug: render the 6 × 32 masked-terrain atlas instead of the scene (Phase C verification). */
+export const DEBUG_MASKED_TERRAIN_ATLAS = false;

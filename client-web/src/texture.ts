@@ -160,14 +160,18 @@ function generateSingleTile(
 }
 
 /**
- * Generate all terrain tile textures, pre-split for the quad renderer.
- * Returns [terrainType][frameIndex][variant] = SplitTile.
+ * Generate raw (unsplit) terrain tile textures. Returns
+ * [terrainType][frameIndex][variant] = OffscreenCanvas.
  *
  * Non-animated terrain types have 1 frame (frameIndex always 0).
  * Water (4) and River (5) have WATER_ANIM_FRAMES frames.
+ *
+ * The raw tiles are needed by masked-terrain.ts, which composites blend
+ * masks on top before splitting. For plain base rendering, splitTerrainTiles()
+ * turns them into SplitTile form for the quad renderer.
  */
-export function generateTerrainTiles(): SplitTile[][][] {
-  const allTiles: SplitTile[][][] = [];
+export function generateRawTerrainTiles(): OffscreenCanvas[][][] {
+  const allTiles: OffscreenCanvas[][][] = [];
 
   for (let t = 0; t < TERRAIN_COUNT; t++) {
     const style = TERRAIN_STYLES[t];
@@ -175,12 +179,11 @@ export function generateTerrainTiles(): SplitTile[][][] {
     const isAnimated = t === 4 || t === 5;
     const frameCount = isAnimated ? WATER_ANIM_FRAMES : 1;
 
-    const frames: SplitTile[][] = [];
+    const frames: OffscreenCanvas[][] = [];
     for (let f = 0; f < frameCount; f++) {
-      const variants: SplitTile[] = [];
+      const variants: OffscreenCanvas[] = [];
       for (let v = 0; v < variantCount; v++) {
-        const tile = generateSingleTile(t, v, f, style);
-        variants.push(splitTile(tile));
+        variants.push(generateSingleTile(t, v, f, style));
       }
       frames.push(variants);
     }
@@ -188,6 +191,20 @@ export function generateTerrainTiles(): SplitTile[][][] {
   }
 
   return allTiles;
+}
+
+/** Split every tile in a raw terrain grid, preserving [terrain][frame][variant] shape. */
+export function splitTerrainTiles(raw: OffscreenCanvas[][][]): SplitTile[][][] {
+  return raw.map((frames) => frames.map((variants) => variants.map(splitTile)));
+}
+
+/**
+ * Convenience: generate and split in one call. Equivalent to
+ * splitTerrainTiles(generateRawTerrainTiles()). Used where the caller only
+ * needs the split tiles for base rendering.
+ */
+export function generateTerrainTiles(): SplitTile[][][] {
+  return splitTerrainTiles(generateRawTerrainTiles());
 }
 
 /** Deterministic variant selection per tile coordinate */

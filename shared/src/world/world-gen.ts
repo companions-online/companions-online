@@ -77,7 +77,7 @@ export function generateWorld(seed: number): WorldGenResult {
       const t = map.getTerrain(x, y);
       if (t !== Terrain.Grass && t !== Terrain.Dirt) continue;
       const rv = river.noise2d(x * riverFreq, y * riverFreq);
-      if (Math.abs(rv) < 0.03) {
+      if (Math.abs(rv) < 0.05) {
         map.setTerrain(x, y, Terrain.River);
       }
     }
