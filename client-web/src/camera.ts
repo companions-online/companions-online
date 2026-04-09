@@ -28,4 +28,33 @@ export class Camera {
       maxTileY: Math.min(MAP_SIZE - 1, Math.ceil(this.centerTileY + r + pad)),
     };
   }
+
+  /**
+   * Invert a canvas click into a world tile. Returns null if the click is
+   * outside the game viewport or the computed tile is off-map.
+   *
+   * Uses the flat iso inverse — ignores PX_PER_Z elevation deformation, so on
+   * hilly tiles the result may be the visually-adjacent tile. Acceptable for
+   * click-to-move picking in a prototype.
+   */
+  tileAt(canvasX: number, canvasY: number): { tx: number; ty: number } | null {
+    if (canvasX < GAME_X || canvasX >= GAME_X + GAME_W) return null;
+    if (canvasY < GAME_Y || canvasY >= GAME_Y + GAME_H) return null;
+
+    const { offsetX, offsetY } = this.getOffset();
+    const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
+
+    // N vertex of tile (0,0) sits at (HALF_W + offsetX, offsetY) — see
+    // getTileCorners in elevation.ts. Subtract that origin to get world-iso
+    // coords, then apply the inverse of tileToScreen.
+    const sx = canvasX - offsetX - hw;
+    const sy = canvasY - offsetY;
+
+    const tx = Math.floor((sx / hw + sy / hh) / 2);
+    const ty = Math.floor((sy / hh - sx / hw) / 2);
+
+    if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) return null;
+    return { tx, ty };
+  }
 }

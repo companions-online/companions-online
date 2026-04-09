@@ -82,7 +82,15 @@ function baseShape(id: number): Shape {
     }
   }
 
-  // Combination masks 20..30: union of individual edge weights (pixel max).
+  // Combination masks 20..30: p-max (p=4) of the constituent edge weights.
+  //
+  // A hard max() would create a sharp kink on the diamond axis where two edges
+  // meet (e.g. mask 24's SE+SW kept region has a 90° V-notch at its apex,
+  // producing the square-cornered look that the user flagged). p-max —
+  // (Σ w^p)^(1/p) — rounds that kink into a smooth curve and pulls the apex
+  // toward the center, so the kept region's corner tapers diagonally instead
+  // of squaring off. Values can exceed 1 near tile vertices when multiple
+  // edges are simultaneously near-max, so we clamp.
   const combos: Record<number, readonly EdgeDir[]> = {
     20: ['NE', 'SW'],              // opposite: upper-right + lower-left
     21: ['SE', 'NW'],              // opposite: lower-right + upper-left
@@ -99,12 +107,12 @@ function baseShape(id: number): Shape {
   const dirs = combos[id];
   if (!dirs) throw new Error(`baseShape: invalid mask id ${id}`);
   return (nx, ny) => {
-    let m = 0;
+    let sum = 0;
     for (const d of dirs) {
       const w = edgeWeight(nx, ny, d);
-      if (w > m) m = w;
+      sum += w * w * w * w; // w^4
     }
-    return m;
+    return Math.min(1, Math.pow(sum, 0.25));
   };
 }
 

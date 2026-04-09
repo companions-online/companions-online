@@ -7,11 +7,23 @@ import { drawMaskedTerrainAtlas } from './masked-terrain.js';
 
 export function createRenderer(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d')!;
-  const scene = createScene(42);
+  const scene = createScene(44);
   let lastTime = 0;
 
   canvas.width = CANVAS_W;
   canvas.height = CANVAS_H;
+
+  // Click-to-move: translate a mousedown into a world tile and forward it to
+  // the player-controlled deer. getBoundingClientRect handles any CSS scaling
+  // between the canvas element's rendered size and its native pixel size.
+  canvas.addEventListener('mousedown', (ev) => {
+    if (!scene.playerDeer) return;
+    const rect = canvas.getBoundingClientRect();
+    const cx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    const cy = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    const tile = scene.camera.tileAt(cx, cy);
+    if (tile) scene.playerDeer.moveTo(tile.tx, tile.ty);
+  });
 
   // Phase A: raw mask shapes only (no terrain). Turn off once masks look right.
   if (DEBUG_MASK_ATLAS) {

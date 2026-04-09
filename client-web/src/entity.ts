@@ -5,3 +5,8 @@ export interface Entity {
   interpTileX(): number;
   interpTileY(): number;
 }
+
+/** Entity that accepts click-to-move commands. */
+export interface ControllableEntity extends Entity {
+  moveTo(tileX: number, tileY: number): void;
+}

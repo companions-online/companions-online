@@ -40,6 +40,11 @@ export function renderScene(
   ctx.fillRect(0, 0, width, height);
 
   ctx.save();
+  // Nearest-neighbor sampling — avoids anti-alias fringing along tile diamond
+  // edges, which would otherwise show as dark-grey seams between adjacent
+  // tiles when the affine transform maps source pixels to fractional dest
+  // coordinates.
+  // ctx.imageSmoothingEnabled = false;
   ctx.beginPath();
   ctx.rect(vp.x, vp.y, vp.w, vp.h);
   ctx.clip();

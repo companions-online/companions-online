@@ -38,10 +38,10 @@ export const WATER_ANIM_FRAMES = 4;
 export const WATER_FRAME_MS = 160;
 
 /** Elevation: pixels of vertical offset per unit of elevation */
-export const PX_PER_Z = 32;
+export const PX_PER_Z = 16;
 
-/** Debug: draw tile edge outlines */
-export const DEBUG_VIEW = false;
+/** Draw a subtle dark outline around each tile diamond (useful for grid-debug, off by default). */
+export const SHOW_TILE_OUTLINES = false;
 
 /** Debug: render the 3 × 31 blend-mask atlas instead of the scene (Phase A verification). */
 export const DEBUG_MASK_ATLAS = false;

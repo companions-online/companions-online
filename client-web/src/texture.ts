@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, DEBUG_VIEW } from './config.js';
+import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, SHOW_TILE_OUTLINES } from './config.js';
 import { splitTile, type SplitTile } from './quad-renderer.js';
 
 const HALF_W = TILE_W / 2;
@@ -137,7 +137,7 @@ function generateSingleTile(
 
       [r, g, b] = style.features(rand, r, g, b);
 
-      if (DEBUG_VIEW) {
+      if (SHOW_TILE_OUTLINES) {
         const edgeDist = 1.0 - diamondEdgeDist(px, py);
         if (edgeDist < 0.06) {
           const darken = 15 * style.edgeDarken;

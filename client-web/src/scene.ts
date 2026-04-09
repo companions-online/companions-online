@@ -6,7 +6,7 @@ import { buildElevationGrid } from './elevation.js';
 import { generateBlendMasks, type BlendMaskSet } from './blend-masks.js';
 import { buildMaskedTerrain, type MaskedTerrainTiles } from './masked-terrain.js';
 import type { SplitTile } from './quad-renderer.js';
-import type { Entity } from './entity.js';
+import type { Entity, ControllableEntity } from './entity.js';
 
 export interface Scene {
   worldMap: WorldMap;
@@ -17,6 +17,7 @@ export interface Scene {
   elevationGrid: Float32Array;
   camera: Camera;
   entities: Entity[];
+  playerDeer: ControllableEntity | null;   // click-to-move target entity, set by spawnDeer
   time: number;                            // ms, drives water animation frame
 }
 
@@ -41,6 +42,7 @@ export function createScene(seed: number): Scene {
     elevationGrid,
     camera,
     entities: [],
+    playerDeer: null,
     time: 0,
   };
 }
