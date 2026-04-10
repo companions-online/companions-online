@@ -1,17 +1,18 @@
+// TODO: delete this file once network sync provides server-side entities.
+// The local-wander deer is a placeholder so the renderer + camera-follow path
+// has something to exercise during development. The wander state machine is
+// preserved verbatim from the previous Entity-interface implementation; only
+// the wrapper around it changed (now produces a ClientEntity).
+
 import { tileToScreen } from '@shared/coordinates.js';
 import { SPAWN_X, SPAWN_Y, MAP_SIZE } from '@shared/constants.js';
 import { DX, DY, Direction } from '@shared/direction.js';
 import { findPath } from '@shared/pathfinding.js';
 import { TILE_W, TILE_H } from '../platform/config.js';
-import type { Entity } from './entity.js';
+import type { ClientEntity } from './client-entity.js';
 import type { SpriteRenderer } from './sprite-renderer.js';
-
-const FRAME_W = 92;
-const FRAME_H = 92;
-
-/** Foot-anchor offset inside a 92×92 frame (matches client-web/deer-demo). */
-const FOOT_X = 46;
-const FOOT_Y = 70;
+import type { SpriteRegistry, SpriteSheetRef } from './sprite-registry.js';
+import { DEER_BLUEPRINT } from './sprite-manifest.js';
 
 const MOVE_SPEED = 120;
 const WALK_FRAMES = 6;
@@ -21,12 +22,6 @@ const PAUSE_MAX = 2.0;
 const WANDER_RADIUS = 20;
 const WANDER_STEP_MIN = 3;
 const WANDER_STEP_MAX = 8;
-
-/** Metadata about the deer sprite sheet, needed to translate pixel rects into UVs. */
-export interface SpriteSheetInfo {
-  width: number;
-  height: number;
-}
 
 function deltaToDirection(dx: number, dy: number): number {
   for (let d = 0; d < 8; d++) {
@@ -58,16 +53,18 @@ function randomWanderTarget(
 }
 
 /**
- * Create a wandering deer entity. The wander state machine is a direct port of
- * `client-web/src/deer-demo.ts::createDeer`; only the draw path changed to
- * emit a sprite call through the WebGL SpriteRenderer.
+ * Build a wandering deer ClientEntity. The wander state lives in this
+ * function's closure (paused, pauseTimer, path, pathIndex, walkFrame, walkTimer,
+ * moveProgress, etc.); the entity's `tick` callback runs the state machine each
+ * frame and copies the resulting visual position out to `e.visualX/visualY`.
  */
-export function createDeer(
+function createDeer(
+  id: number,
   startX: number,
   startY: number,
   isBlocked: (x: number, y: number) => boolean,
-  sheet: SpriteSheetInfo,
-): Entity {
+  sheet: SpriteSheetRef,
+): ClientEntity {
   let tileX = startX;
   let tileY = startY;
   let prevTileX = tileX;
@@ -87,7 +84,6 @@ export function createDeer(
   let paused = true;
   let pauseTimer = Math.random() * 2.0;
 
-  let cachedScreenY = 0;
   let cachedInterpTileX = startX;
   let cachedInterpTileY = startY;
 
@@ -136,94 +132,110 @@ export function createDeer(
     }
   }
 
-  function update(dt: number) {
-    if (paused) {
-      pauseTimer -= dt;
-      if (pauseTimer <= 0) {
-        paused = false;
+  const entity: ClientEntity = {
+    id,
+    blueprintId: { blueprintId: DEER_BLUEPRINT },
+    direction: { dir: direction },
+    spriteSheet: sheet,
+    walkFrame: 0,
+    frameTimer: 0,
+    visualX: startX,
+    visualY: startY,
+    screenY: 0,
+
+    tick(self, dt) {
+      if (paused) {
+        pauseTimer -= dt;
+        if (pauseTimer <= 0) {
+          paused = false;
+          planNextSegment();
+        }
+      } else if (!moving) {
         planNextSegment();
-      }
-      return;
-    }
-
-    if (!moving) {
-      planNextSegment();
-      return;
-    }
-
-    moveProgress += dt / moveDuration;
-
-    walkTimer += dt;
-    if (walkTimer >= walkFrameDuration) {
-      walkTimer -= walkFrameDuration;
-      walkFrame = (walkFrame + 1) % WALK_FRAMES;
-    }
-
-    if (moveProgress >= 1.0) {
-      const target = path[pathIndex];
-      tileX = target.x;
-      tileY = target.y;
-      pathIndex++;
-
-      if (pathIndex < path.length) {
-        startStep();
       } else {
-        moving = false;
-        walkFrame = 0;
+        moveProgress += dt / moveDuration;
 
-        if (Math.random() < PAUSE_CHANCE) {
-          paused = true;
-          pauseTimer = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
+        walkTimer += dt;
+        if (walkTimer >= walkFrameDuration) {
+          walkTimer -= walkFrameDuration;
+          walkFrame = (walkFrame + 1) % WALK_FRAMES;
+        }
+
+        if (moveProgress >= 1.0) {
+          const target = path[pathIndex];
+          tileX = target.x;
+          tileY = target.y;
+          pathIndex++;
+
+          if (pathIndex < path.length) {
+            startStep();
+          } else {
+            moving = false;
+            walkFrame = 0;
+
+            if (Math.random() < PAUSE_CHANCE) {
+              paused = true;
+              pauseTimer = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
+            }
+          }
         }
       }
-    }
 
-    computeInterp();
-  }
+      computeInterp();
+      self.visualX = cachedInterpTileX;
+      self.visualY = cachedInterpTileY;
+      self.walkFrame = walkFrame;
+      self.direction = { dir: direction };
+    },
 
-  function draw(sprites: SpriteRenderer, offsetX: number, offsetY: number) {
-    computeInterp();
-    const screen = tileToScreen(cachedInterpTileX, cachedInterpTileY, TILE_W, TILE_H);
-    cachedScreenY = screen.screenY;
+    draw(self, sprites, gl, offsetX, offsetY) {
+      const screen = tileToScreen(self.visualX, self.visualY, TILE_W, TILE_H);
+      self.screenY = screen.screenY;
 
-    const col = moving ? 1 + walkFrame : 0;
-    const row = (direction + 1) % 8;
-    const sx = col * FRAME_W;
-    const sy = row * FRAME_H;
+      const dir = self.direction?.dir ?? Direction.S;
+      const col = moving ? 1 + self.walkFrame : 0;
+      const row = (dir + 1) % 8;
+      const sx = col * sheet.frameW;
+      const sy = row * sheet.frameH;
 
-    const dstX = screen.screenX + offsetX + TILE_W / 2 - FOOT_X;
-    const dstY = screen.screenY + offsetY + TILE_H / 2 - FOOT_Y;
+      const dstX = screen.screenX + offsetX + TILE_W / 2 - sheet.footX;
+      const dstY = screen.screenY + offsetY + TILE_H / 2 - sheet.footY;
 
-    sprites.drawSprite(
-      dstX, dstY, FRAME_W, FRAME_H,
-      sx / sheet.width, sy / sheet.height, FRAME_W / sheet.width, FRAME_H / sheet.height,
-    );
-  }
-
-  return {
-    update,
-    draw,
-    screenY: () => cachedScreenY,
-    interpTileX: () => cachedInterpTileX,
-    interpTileY: () => cachedInterpTileY,
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, sheet.texture);
+      sprites.drawSprite(
+        dstX, dstY, sheet.frameW, sheet.frameH,
+        sx / sheet.sheetW, sy / sheet.sheetH,
+        sheet.frameW / sheet.sheetW, sheet.frameH / sheet.sheetH,
+      );
+    },
   };
+
+  return entity;
 }
 
 /**
- * Spawn `count` wandering deer around the map center and add them to the
- * entities array.
+ * Spawn `count` wandering deer around the map center, register them in the
+ * entity Map under fresh sequential ids, and return the assigned ids so the
+ * caller can pick (e.g.) the first deer as the camera-follow target.
  */
 export function spawnDeer(
-  entities: Entity[],
+  entities: Map<number, ClientEntity>,
   count: number,
   isBlocked: (x: number, y: number) => boolean,
-  sheet: SpriteSheetInfo,
-): void {
+  registry: SpriteRegistry,
+  startId: number = 1,
+): number[] {
+  const sheet = registry.resolve(DEER_BLUEPRINT, 0);
+  const ids: number[] = [];
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2;
     const dist = 3 + Math.random() * 10;
     const sx = Math.round(SPAWN_X + dist * Math.cos(angle));
     const sy = Math.round(SPAWN_Y + dist * Math.sin(angle));
-    entities.push(createDeer(sx, sy, isBlocked, sheet));
+    const id = startId + i;
+    entities.set(id, createDeer(id, sx, sy, isBlocked, sheet));
+    ids.push(id);
   }
+  return ids;
 }

@@ -9,17 +9,7 @@ if (!gl) {
   throw new Error('WebGL2 context unavailable');
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`failed to load ${src}`));
-    img.src = src;
-  });
-}
-
-const deerImage = await loadImage('/assets/deer.png');
-const scene = await createScene(gl, 42, deerImage);
+const scene = await createScene(gl, 42);
 checkGLError(gl, 'after scene init');
 
 const renderer = createRenderer(canvas, scene);

@@ -9,9 +9,9 @@ import { buildTerrainTextureArray, buildMaskTextureArray, type TerrainTextureArr
 import { buildTerrainInstances } from './terrain/terrain-instances.js';
 import { TerrainRenderer } from './terrain/terrain-renderer.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
-import { createImageTexture } from './platform/gl-utils.js';
-import { spawnDeer, type SpriteSheetInfo } from './entities/deer.js';
-import type { Entity } from './entities/entity.js';
+import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
+import { spawnDeer } from './entities/deer.js';
+import type { ClientEntity } from './entities/client-entity.js';
 
 export interface Scene {
   gl: WebGL2RenderingContext;
@@ -21,20 +21,19 @@ export interface Scene {
   maskTexture: MaskTextureArray;
   terrainRenderer: TerrainRenderer;
   spriteRenderer: SpriteRenderer;
-  deerTexture: WebGLTexture;
-  deerSheet: SpriteSheetInfo;
-  entities: Entity[];
+  spriteRegistry: SpriteRegistry;
+  entities: Map<number, ClientEntity>;
+  myEntityId: number | null;
   time: number;
 }
 
 /**
  * One-shot async scene build: world-gen + terrain/mask texture uploads +
- * instance buffers + sprite sheet upload + deer spawn.
+ * instance buffers + sprite registry load + deer spawn.
  */
 export async function createScene(
   gl: WebGL2RenderingContext,
   seed: number,
-  deerImage: HTMLImageElement,
 ): Promise<Scene> {
   const { map: worldMap } = generateWorld(seed);
 
@@ -54,16 +53,16 @@ export async function createScene(
   const terrainRenderer = new TerrainRenderer(gl, instances);
   const spriteRenderer = new SpriteRenderer(gl);
 
-  const deerTexture = createImageTexture(gl, deerImage);
-  const deerSheet: SpriteSheetInfo = {
-    width: deerImage.naturalWidth,
-    height: deerImage.naturalHeight,
-  };
+  // Load every sprite PNG declared in sprite-manifest.ts in parallel.
+  const spriteRegistry = await loadSpriteRegistry(gl);
 
   const camera = new Camera(SPAWN_X, SPAWN_Y);
 
-  const entities: Entity[] = [];
-  spawnDeer(entities, 6, (x, y) => !worldMap.isWalkable(x, y), deerSheet);
+  const entities = new Map<number, ClientEntity>();
+  const deerIds = spawnDeer(entities, 6, (x, y) => !worldMap.isWalkable(x, y), spriteRegistry);
+  // Temporary: follow the first local deer as if it were the player. Once
+  // network sync arrives, the welcome message will set scene.myEntityId.
+  const myEntityId = deerIds[0] ?? null;
 
   return {
     gl,
@@ -73,9 +72,9 @@ export async function createScene(
     maskTexture,
     terrainRenderer,
     spriteRenderer,
-    deerTexture,
-    deerSheet,
+    spriteRegistry,
     entities,
+    myEntityId,
     time: 0,
   };
 }

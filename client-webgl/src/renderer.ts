@@ -2,9 +2,9 @@ import { CANVAS_W, CANVAS_H } from './platform/config.js';
 import type { Scene } from './scene.js';
 
 /**
- * Wire a scene to the RAF loop: update all entities, follow the first one,
- * then draw terrain + sprites. Returns an object with a `start()` method for
- * main.ts to call once everything is loaded.
+ * Wire a scene to the RAF loop: tick all entities, follow myEntityId (or the
+ * first entity as a fallback), then draw terrain + Y-sorted sprites. Returns an
+ * object with a `start()` method for main.ts to call once everything is loaded.
  */
 export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
   const gl = scene.gl;
@@ -27,10 +27,18 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
     lastTime = now;
     scene.time = now;
 
-    for (const e of scene.entities) e.update(dt);
+    for (const e of scene.entities.values()) {
+      e.tick?.(e, dt, scene);
+    }
 
-    if (scene.entities.length > 0) {
-      scene.camera.follow(scene.entities[0].interpTileX(), scene.entities[0].interpTileY());
+    // Camera follow: prefer myEntityId, fall back to the first entity in
+    // iteration order if it's null or its entity is gone.
+    const me = scene.myEntityId !== null ? scene.entities.get(scene.myEntityId) : undefined;
+    if (me) {
+      scene.camera.follow(me.visualX, me.visualY);
+    } else {
+      const first = scene.entities.values().next().value;
+      if (first) scene.camera.follow(first.visualX, first.visualY);
     }
 
     const [offsetX, offsetY] = scene.camera.getOffset();
@@ -47,14 +55,13 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
       scene.time,
     );
 
-    // Sprite pass — Y-sorted so deer in front of each other layer correctly.
-    if (scene.entities.length > 0) {
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, scene.deerTexture);
+    // Sprite pass — Y-sorted so entities in front of each other layer correctly.
+    // Each entity's draw callback is responsible for binding its own texture.
+    if (scene.entities.size > 0) {
       scene.spriteRenderer.begin(resolution);
-      const sorted = scene.entities.slice().sort((a, b) => a.screenY() - b.screenY());
+      const sorted = Array.from(scene.entities.values()).sort((a, b) => a.screenY - b.screenY);
       for (const e of sorted) {
-        e.draw(scene.spriteRenderer, offsetX, offsetY);
+        e.draw?.(e, scene.spriteRenderer, gl, offsetX, offsetY);
       }
       scene.spriteRenderer.end();
     }
