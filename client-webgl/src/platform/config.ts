@@ -6,6 +6,17 @@ export const TILE_H = 32;
 export const CANVAS_W = 1600;
 export const CANVAS_H = 900;
 
+/** HUD region sizes (reserved canvas chrome around the game area) */
+export const HUD_RIGHT_W = 300;
+export const HUD_TOP_H = 40;
+export const HUD_BOTTOM_H = 140;
+
+/** Game viewport within the canvas */
+export const GAME_X = 0;
+export const GAME_Y = HUD_TOP_H;
+export const GAME_W = CANVAS_W - HUD_RIGHT_W;
+export const GAME_H = CANVAS_H - HUD_TOP_H - HUD_BOTTOM_H;
+
 /** Number of terrain types (matches shared Terrain enum) */
 export const TERRAIN_COUNT = 6;
 
