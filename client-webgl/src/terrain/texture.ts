@@ -322,21 +322,42 @@ function generateRiver(
   variant: number,
   frame: number,
 ): [number, number, number] {
-  // Directional scroll — rivers flow along a single axis. Small per-frame
-  // step (~0.2 units in noise space ≈ 4.4 px on the low-freq term) so the
-  // frame-to-frame delta is well within the noise correlation distance and
-  // reads as smooth flow rather than discrete snaps.
-  const scrollX = frame * 0.2;
-  const scrollY = frame * 0.1;
+  // Two-phase flowmap blending for a seamlessly-looping cycle. Each frame is
+  // a mix of two scroll "lanes" 180° out of phase; whichever lane is about to
+  // wrap at the cycle boundary has its blend weight at zero, so the
+  // discontinuity is invisible. Standard real-time water shader trick
+  // (Valve's flow-map water, River/Moana style flowmaps). Stacks with the
+  // shader-side frame blend, which handles smoothness WITHIN the cycle while
+  // this handles smoothness AT the wrap.
+  const phaseA = frame / WATER_ANIM_FRAMES;       // 0 .. (N-1)/N
+  const phaseB = (phaseA + 0.5) % 1;
+  const wB = Math.abs(2 * phaseA - 1);            // triangular: 1 at seam, 0 at mid
+
+  // Total noise-space travel per full cycle along the flow axis. Each lane
+  // scrolls this distance across its phase 0..1.
+  const scrollDistX = 2.0;
+  const scrollDistY = 1.0;
+
   const vx = variant * 11.9;
   const vy = variant * 5.7;
 
-  // Low-freq streaks flow with the current. High-freq fine detail is NOT
-  // scrolled — it stays anchored to the tile, acting as a "static decal"
-  // underneath the moving low-freq layer. Without decoupling, the px/7 term
-  // shifts nearly a full wavelength per frame and visibly boils.
-  const low  = noise.noise2d(px / 22 + vx + scrollX, py / 6 + vy + scrollY);
-  const high = noise.noise2d(px / 7  + vx,           py / 4 + vy          ) * 0.5;
+  // Low-freq streaks: two parallel lanes through the noise field. The +50 Y
+  // offset on lane B moves it to a decorrelated slice of noise space so the
+  // mid-cycle 50/50 blend reads as "river with different streaks" rather
+  // than a ghosted double-exposure of the same content.
+  const lowA = noise.noise2d(
+    px / 22 + vx + phaseA * scrollDistX,
+    py / 6  + vy + phaseA * scrollDistY,
+  );
+  const lowB = noise.noise2d(
+    px / 22 + vx + phaseB * scrollDistX,
+    py / 6  + vy + phaseB * scrollDistY + 50.0,
+  );
+  const low = lowA * (1 - wB) + lowB * wB;
+
+  // High-freq fine detail stays anchored to the tile (static decal under the
+  // moving current) — no scroll, no two-phase blend, no boiling.
+  const high = noise.noise2d(px / 7 + vx, py / 4 + vy) * 0.5;
   const streak = low + high;
 
   let r = 36 + streak * 14;
