@@ -11,12 +11,12 @@ export const TERRAIN_COUNT = 6;
 
 /** Procedural tile variants per terrain type, indexed by Terrain enum value */
 export const TERRAIN_VARIANT_COUNTS: readonly number[] = [
-  4, // Grass
-  3, // Dirt
-  3, // Rock
-  3, // Sand
-  2, // Water
-  2, // River
+  6, // Grass
+  4, // Dirt
+  4, // Rock
+  4, // Sand
+  3, // Water
+  3, // River
 ];
 
 /** Water/river animation */
@@ -27,4 +27,4 @@ export const WATER_FRAME_MS = 160;
 export const PX_PER_Z = 16;
 
 /** Draw a subtle dark outline around each tile diamond (grid debug). */
-export const SHOW_TILE_OUTLINES = false;
+export const SHOW_TILE_OUTLINES = true;

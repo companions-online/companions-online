@@ -1,7 +1,14 @@
-import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, SHOW_TILE_OUTLINES } from './config.js';
+import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES } from './config.js';
+import { PerlinNoise } from '@shared/world/noise.js';
 
 const HALF_W = TILE_W / 2;
 const HALF_H = TILE_H / 2;
+
+// ---------------------------------------------------------------------------
+// Deterministic pixel-order randomness — used for static fine-grain noise and
+// for "sprinkled" features (tufts, pebbles). Each (terrain, variant, frame)
+// gets its own sequence so variants diverge but stay reproducible across runs.
+// ---------------------------------------------------------------------------
 
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
@@ -11,11 +18,12 @@ function lcg(seed: number): () => number {
   };
 }
 
+/** Diamond-interior test — still exported so blend-masks.ts can use it. */
 export function isInsideDiamond(px: number, py: number): boolean {
   return Math.abs(px - HALF_W + 0.5) / HALF_W + Math.abs(py - HALF_H + 0.5) / HALF_H <= 1.0;
 }
 
-/** Normalized distance from center to diamond edge (0 = center, 1 = edge) */
+/** Normalised distance from centre to diamond edge (0 = centre, 1 = edge). */
 export function diamondEdgeDist(px: number, py: number): number {
   return Math.abs(px - HALF_W + 0.5) / HALF_W + Math.abs(py - HALF_H + 0.5) / HALF_H;
 }
@@ -24,107 +32,329 @@ function clamp(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
-export interface TerrainStyle {
-  baseR: number; baseG: number; baseB: number;
-  noiseR: number; noiseG: number; noiseB: number;
-  edgeDarken: number;
-  features(rand: () => number, r: number, g: number, b: number): [number, number, number];
+// ---------------------------------------------------------------------------
+// Per-(terrain, variant, frame) Perlin instances. Pre-allocating once means
+// we don't pay construction cost inside the hot pixel loop, and different
+// variants get genuinely different noise fields (not just UV-offset views of
+// the same field).
+// ---------------------------------------------------------------------------
+
+const NOISE_CACHE = new Map<number, PerlinNoise>();
+function getNoise(terrain: number, variant: number): PerlinNoise {
+  // Key is stable across frames so water animation scrolls through one field.
+  const key = terrain * 256 + variant;
+  let n = NOISE_CACHE.get(key);
+  if (!n) {
+    n = new PerlinNoise(key * 2654435761 + 0x9e3779b9);
+    NOISE_CACHE.set(key, n);
+  }
+  return n;
 }
 
-export const TERRAIN_STYLES: readonly TerrainStyle[] = [
-  // Grass (0)
-  {
-    baseR: 56, baseG: 120, baseB: 48,
-    noiseR: 8, noiseG: 15, noiseB: 8,
-    edgeDarken: 1.0,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.05) return [r + 10, g + 15, b + 8];
-      if (v < 0.08) return [r - 10, g - 12, b - 8];
-      return [r, g, b];
-    },
-  },
-  // Dirt (1)
-  {
-    baseR: 120, baseG: 90, baseB: 55,
-    noiseR: 10, noiseG: 8, noiseB: 6,
-    edgeDarken: 1.0,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.04) return [r + 15, g + 12, b + 10];
-      if (v < 0.06) return [r - 12, g - 10, b - 8];
-      return [r, g, b];
-    },
-  },
-  // Rock (2)
-  {
-    baseR: 110, baseG: 105, baseB: 100,
-    noiseR: 12, noiseG: 12, noiseB: 12,
-    edgeDarken: 1.2,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.06) return [r + 20, g + 18, b + 16];
-      if (v < 0.10) return [r - 18, g - 16, b - 14];
-      return [r, g, b];
-    },
-  },
-  // Sand (3)
-  {
-    baseR: 194, baseG: 178, baseB: 128,
-    noiseR: 8, noiseG: 6, noiseB: 5,
-    edgeDarken: 0.8,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.03) return [r + 8, g + 4, b - 2];
-      return [r, g, b];
-    },
-  },
-  // Water (4)
-  {
-    baseR: 30, baseG: 70, baseB: 140,
-    noiseR: 6, noiseG: 10, noiseB: 15,
-    edgeDarken: 1.5,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.04) return [r + 15, g + 20, b + 25];
-      if (v < 0.07) return [r - 8, g - 6, b - 4];
-      return [r, g, b];
-    },
-  },
-  // River (5)
-  {
-    baseR: 40, baseG: 90, baseB: 150,
-    noiseR: 5, noiseG: 8, noiseB: 12,
-    edgeDarken: 1.3,
-    features(rand, r, g, b) {
-      const v = rand();
-      if (v < 0.05) return [r + 12, g + 16, b + 20];
-      if (v < 0.08) return [r - 6, g - 4, b - 3];
-      return [r, g, b];
-    },
-  },
+// ---------------------------------------------------------------------------
+// Per-terrain generator functions.
+//
+// Each takes the usual context and writes an RGB triple. Inputs:
+//   px, py    : pixel coordinates inside the tile rectangle (0..TILE_W-1, 0..TILE_H-1)
+//   noise     : a PerlinNoise instance unique to (terrain, variant)
+//   rand      : deterministic pixel-order rand() for sprinkled features
+//   variant   : 0..variantCount-1 — used to offset sample coords so variants
+//               of the same terrain look distinct even with the same noise
+//   frame     : 0..WATER_ANIM_FRAMES-1 — only used by water/river for UV scroll
+//
+// Feature placement that should ANIMATE (water highlights) must derive its
+// position from the noise field. Feature placement that's STATIC (grass tufts,
+// dirt pebbles) should use `rand()` — that gives a stable per-pixel decision
+// that's the same across frames (non-animated terrains only ever pass frame=0).
+// ---------------------------------------------------------------------------
+
+type GeneratorFn = (
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  frame: number,
+) => [number, number, number];
+
+function generateGrass(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  // Two-octave Perlin: broad colour variation (freq ~3 blobs/tile) plus
+  // mid-frequency detail. Variant offset pushes the sample window so each
+  // variant sits in a different slice of noise space.
+  const vx = variant * 17.3;
+  const vy = variant * 11.7;
+  const lowFreq  = noise.noise2d(px / 20 + vx, py / 10 + vy);       // large blobs
+  const midFreq  = noise.noise2d(px / 7  + vx, py / 4  + vy) * 0.5; // grass blades clumps
+  const blob = lowFreq + midFreq;
+
+  let r = 56  + blob * 14;
+  let g = 110 + blob * 26;
+  let b = 42  + blob * 10;
+
+  // Fine per-pixel grain so it doesn't read as smooth gradients at close zoom.
+  const grain = rand() - 0.5;
+  r += grain * 6;
+  g += grain * 12;
+  b += grain * 6;
+
+  // Tufts — ~3% of pixels get a bright-green bump. Static across frames.
+  const sprinkle = rand();
+  if (sprinkle < 0.03) {
+    r += 10;
+    g += 30;
+    b += 6;
+  } else if (sprinkle < 0.05) {
+    // Darker shadow tufts
+    r -= 6;
+    g -= 16;
+    b -= 4;
+  }
+
+  // Rare flowers — tiny yellow/white specks
+  if (rand() < 0.003) {
+    r = 220; g = 210; b = 90;
+  }
+
+  return [r, g, b];
+}
+
+function generateDirt(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  const vx = variant * 13.3;
+  const vy = variant * 19.7;
+  const lowFreq = noise.noise2d(px / 18 + vx, py / 9 + vy);
+  const midFreq = noise.noise2d(px / 6  + vx, py / 3 + vy) * 0.4;
+  const blob = lowFreq + midFreq;
+
+  let r = 118 + blob * 22;
+  let g = 88  + blob * 16;
+  let b = 54  + blob * 10;
+
+  const grain = rand() - 0.5;
+  r += grain * 10;
+  g += grain * 8;
+  b += grain * 6;
+
+  // Pebbles — darker specks clustering where the noise is low (crevices feel).
+  if (blob < -0.3 && rand() < 0.25) {
+    r -= 24;
+    g -= 18;
+    b -= 12;
+  }
+  // Bright dry patches
+  if (blob > 0.4 && rand() < 0.15) {
+    r += 14;
+    g += 12;
+    b += 8;
+  }
+
+  return [r, g, b];
+}
+
+function generateRock(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  const vx = variant * 23.1;
+  const vy = variant * 29.3;
+  // Larger low-freq contrast than dirt — rock should read as chunky.
+  const low  = noise.noise2d(px / 14 + vx, py / 7  + vy);
+  const mid  = noise.noise2d(px / 5  + vx, py / 3  + vy) * 0.35;
+  const blob = low + mid;
+
+  let r = 108 + blob * 30;
+  let g = 104 + blob * 28;
+  let b = 100 + blob * 26;
+
+  const grain = rand() - 0.5;
+  r += grain * 12;
+  g += grain * 12;
+  b += grain * 12;
+
+  // Boulder clusters — where low noise is very positive, brighten hard.
+  if (low > 0.45) {
+    r += 20;
+    g += 18;
+    b += 16;
+  }
+  // Dark cracks — where low noise is very negative, darken hard.
+  if (low < -0.45) {
+    r -= 28;
+    g -= 26;
+    b -= 24;
+  }
+  // Mineral flecks
+  if (rand() < 0.01) {
+    r += 45;
+    g += 42;
+    b += 38;
+  }
+
+  return [r, g, b];
+}
+
+function generateSand(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  const vx = variant * 7.7;
+  const vy = variant * 13.1;
+  // Gentle low-freq colour variation.
+  const blob = noise.noise2d(px / 24 + vx, py / 12 + vy);
+
+  // Directional ripple lines — a sinusoid at higher frequency along a diagonal.
+  // Offset phase by the low-freq noise so the ripples wave around instead of
+  // being perfectly parallel.
+  const ripplePhase = (px * 0.55 + py * 0.25) + blob * 1.5;
+  const ripple = Math.sin(ripplePhase) * 0.5 + 0.5; // [0, 1]
+
+  let r = 196 + blob * 10 + (ripple - 0.5) * 14;
+  let g = 180 + blob * 8  + (ripple - 0.5) * 12;
+  let b = 130 + blob * 6  + (ripple - 0.5) * 8;
+
+  const grain = rand() - 0.5;
+  r += grain * 6;
+  g += grain * 5;
+  b += grain * 4;
+
+  // Rare bright sparkles
+  if (rand() < 0.006) {
+    r += 30;
+    g += 28;
+    b += 20;
+  }
+
+  return [r, g, b];
+}
+
+function generateWater(
+  px: number, py: number,
+  noise: PerlinNoise,
+  _rand: () => number,
+  variant: number,
+  frame: number,
+): [number, number, number] {
+  // Scroll the sample coordinates with the frame index — this is what makes
+  // the caustic pattern visibly flow between frames. Horizontal + slow
+  // vertical gives a gentle "ocean ripple" feel.
+  const scrollX = frame * 1.2;
+  const scrollY = frame * 0.35;
+  const vx = variant * 9.1;
+  const vy = variant * 17.3;
+
+  const low  = noise.noise2d(px / 18 + vx + scrollX, py / 9 + vy + scrollY);
+  const high = noise.noise2d(px / 6  + vx - scrollX, py / 3 + vy + scrollY) * 0.4;
+  const caustic = low + high;
+
+  let r = 28 + caustic * 14;
+  let g = 70 + caustic * 26;
+  let b = 140 + caustic * 22;
+
+  // Bright highlights where the caustic peaks — these follow the flow because
+  // they're driven by the scrolled noise, not pixel-order rand().
+  if (caustic > 0.55) {
+    r += 30;
+    g += 45;
+    b += 40;
+  }
+  // Dark troughs
+  if (caustic < -0.55) {
+    r -= 12;
+    g -= 18;
+    b -= 24;
+  }
+
+  return [r, g, b];
+}
+
+function generateRiver(
+  px: number, py: number,
+  noise: PerlinNoise,
+  _rand: () => number,
+  variant: number,
+  frame: number,
+): [number, number, number] {
+  // Stronger directional scroll than open water — rivers flow fast and along
+  // a single axis. The iso "downhill" axis on screen is roughly (+1, +0.5).
+  const scrollX = frame * 2.6;
+  const scrollY = frame * 1.3;
+  const vx = variant * 11.9;
+  const vy = variant * 5.7;
+
+  // Stretch noise along the flow direction so streaks line up with the
+  // scroll — divide the cross-axis by a larger number to elongate.
+  const low  = noise.noise2d(px / 22 + vx + scrollX, py / 6 + vy + scrollY);
+  const high = noise.noise2d(px / 7  + vx + scrollX, py / 4 + vy + scrollY) * 0.5;
+  const streak = low + high;
+
+  let r = 36 + streak * 14;
+  let g = 86 + streak * 22;
+  let b = 148 + streak * 18;
+
+  // Crest highlights (stronger than ocean, rivers have visible foam)
+  if (streak > 0.45) {
+    r += 40;
+    g += 52;
+    b += 48;
+  }
+  if (streak < -0.5) {
+    r -= 10;
+    g -= 14;
+    b -= 20;
+  }
+
+  return [r, g, b];
+}
+
+const GENERATORS: readonly GeneratorFn[] = [
+  generateGrass,
+  generateDirt,
+  generateRock,
+  generateSand,
+  generateWater,
+  generateRiver,
 ];
+
+// ---------------------------------------------------------------------------
+// Tile and tile-grid generation
+// ---------------------------------------------------------------------------
 
 function generateSingleTile(
   terrainType: number,
   variantIndex: number,
   frameIndex: number,
-  style: TerrainStyle,
 ): OffscreenCanvas {
   const oc = new OffscreenCanvas(TILE_W, TILE_H);
   const ctx = oc.getContext('2d')!;
   const imageData = ctx.createImageData(TILE_W, TILE_H);
   const data = imageData.data;
 
-  // Shift seed per frame for animation variation
+  const noise = getNoise(terrainType, variantIndex);
+  const generator = GENERATORS[terrainType];
+
+  // Re-seeded per frame so static features (tufts, pebbles) on non-animated
+  // terrains hit the same pixel positions each regen — frame=0 always for
+  // them, so reseeding is a no-op in practice.
   const seed = (terrainType * TERRAIN_COUNT + variantIndex) * 2654435761
     + 374761393
     + frameIndex * 999331;
   const rand = lcg(seed);
-
-  // Per-frame color modulation for water/river
-  const isWater = terrainType === 4 || terrainType === 5;
-  const frameColorShift = isWater ? Math.sin(frameIndex * Math.PI / 2) * 3 : 0;
 
   // Fill the ENTIRE rectangle — don't clip to the diamond shape here. The
   // quad renderer's triangles already clip the drawable area to the diamond
@@ -136,21 +366,7 @@ function generateSingleTile(
   // Filling the rect acts as safety padding for those off-by-one samples.
   for (let py = 0; py < TILE_H; py++) {
     for (let px = 0; px < TILE_W; px++) {
-      let r = style.baseR + Math.floor(rand() * style.noiseR * 2 - style.noiseR);
-      let g = style.baseG + Math.floor(rand() * style.noiseG * 2 - style.noiseG);
-      let b = style.baseB + Math.floor(rand() * style.noiseB * 2 - style.noiseB) + frameColorShift;
-
-      [r, g, b] = style.features(rand, r, g, b);
-
-      if (SHOW_TILE_OUTLINES) {
-        const edgeDist = 1.0 - diamondEdgeDist(px, py);
-        if (edgeDist < 0.06) {
-          const darken = 15 * style.edgeDarken;
-          r -= darken;
-          g -= darken * 1.2;
-          b -= darken * 0.8;
-        }
-      }
+      const [r, g, b] = generator(px, py, noise, rand, variantIndex, frameIndex);
 
       const i = (py * TILE_W + px) * 4;
       data[i]     = clamp(r);
@@ -169,13 +385,13 @@ function generateSingleTile(
  * [terrainType][frameIndex][variant] = OffscreenCanvas.
  *
  * Non-animated terrain types have 1 frame (frameIndex always 0).
- * Water (4) and River (5) have WATER_ANIM_FRAMES frames.
+ * Water (4) and River (5) have WATER_ANIM_FRAMES frames, each produced by
+ * scrolling the Perlin sample coordinates — see generateWater/generateRiver.
  */
 export function generateRawTerrainTiles(): OffscreenCanvas[][][] {
   const allTiles: OffscreenCanvas[][][] = [];
 
   for (let t = 0; t < TERRAIN_COUNT; t++) {
-    const style = TERRAIN_STYLES[t];
     const variantCount = TERRAIN_VARIANT_COUNTS[t];
     const isAnimated = t === 4 || t === 5;
     const frameCount = isAnimated ? WATER_ANIM_FRAMES : 1;
@@ -184,7 +400,7 @@ export function generateRawTerrainTiles(): OffscreenCanvas[][][] {
     for (let f = 0; f < frameCount; f++) {
       const variants: OffscreenCanvas[] = [];
       for (let v = 0; v < variantCount; v++) {
-        variants.push(generateSingleTile(t, v, f, style));
+        variants.push(generateSingleTile(t, v, f));
       }
       frames.push(variants);
     }

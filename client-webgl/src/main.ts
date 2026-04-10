@@ -19,7 +19,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 const deerImage = await loadImage('/assets/deer.png');
-const scene = await createScene(gl, 44, deerImage);
+const scene = await createScene(gl, 42, deerImage);
 checkGLError(gl, 'after scene init');
 
 const renderer = createRenderer(canvas, scene);

@@ -17,13 +17,15 @@
 export const TILE_BASE_VS = /* glsl */ `#version 300 es
 precision highp float;
 
-layout(location = 0) in int  a_cornerId;   // per-vertex: 0=N 1=E 2=S 3=W
-layout(location = 1) in vec4 a_cornerX;    // per-instance
-layout(location = 2) in vec4 a_cornerY;    // per-instance
-layout(location = 3) in int  a_srcLayer;   // per-instance
+layout(location = 0) in int  a_cornerId;    // per-vertex: 0=N 1=E 2=S 3=W
+layout(location = 1) in vec4 a_cornerX;     // per-instance
+layout(location = 2) in vec4 a_cornerY;     // per-instance
+layout(location = 3) in int  a_srcLayer;    // per-instance
+layout(location = 5) in int  a_animStride;  // per-instance; 0 = static, N = frame stride
 
 uniform vec2 u_resolution;
 uniform vec2 u_cameraPx;
+uniform int  u_frame;  // current water-anim frame, 0..WATER_ANIM_FRAMES-1
 
 out vec2 v_uv;
 flat out int v_srcLayer;
@@ -45,7 +47,9 @@ void main() {
   gl_Position = vec4(cx, cy, 0.0, 1.0);
 
   v_uv = CORNER_UV[a_cornerId];
-  v_srcLayer = a_srcLayer;
+  // Frame advance: animated tiles have stride>0 (the variant count of their
+  // terrain), static tiles have stride=0 and fall through untouched.
+  v_srcLayer = a_srcLayer + u_frame * a_animStride;
 }
 `;
 
@@ -77,9 +81,11 @@ layout(location = 1) in vec4 a_cornerX;
 layout(location = 2) in vec4 a_cornerY;
 layout(location = 3) in int  a_srcLayer;
 layout(location = 4) in int  a_maskLayer;
+layout(location = 5) in int  a_animStride;
 
 uniform vec2 u_resolution;
 uniform vec2 u_cameraPx;
+uniform int  u_frame;
 
 out vec2 v_uv;
 flat out int v_srcLayer;
@@ -100,7 +106,10 @@ void main() {
   gl_Position = vec4(cx, cy, 0.0, 1.0);
 
   v_uv = CORNER_UV[a_cornerId];
-  v_srcLayer = a_srcLayer;
+  // See TILE_BASE_VS for the stride animation pattern. Overlays that
+  // reference a water/river neighbour also need frame offsetting so shore
+  // tiles flow in sync with the open-water interior.
+  v_srcLayer = a_srcLayer + u_frame * a_animStride;
   v_maskLayer = a_maskLayer;
 }
 `;

@@ -10,6 +10,7 @@ import {
   OVERLAY_INSTANCE_STRIDE,
   type TerrainInstanceBuffers,
 } from './terrain-instances.js';
+import { WATER_ANIM_FRAMES, WATER_FRAME_MS } from './config.js';
 
 /**
  * Shared static vertex buffer holding the corner-id sequence for two
@@ -31,16 +32,18 @@ const CORNER_ID_SEQUENCE = new Int8Array([0, 1, 2, 0, 2, 3]);
 // Attribute location constants — must match the `layout(location=N)` decls
 // in shaders.ts. Keeping them here keeps the JS setup readable without
 // querying the program at runtime.
-const LOC_CORNER_ID  = 0;
-const LOC_CORNER_X   = 1;
-const LOC_CORNER_Y   = 2;
-const LOC_SRC_LAYER  = 3;
-const LOC_MASK_LAYER = 4;
+const LOC_CORNER_ID   = 0;
+const LOC_CORNER_X    = 1;
+const LOC_CORNER_Y    = 2;
+const LOC_SRC_LAYER   = 3;
+const LOC_MASK_LAYER  = 4;
+const LOC_ANIM_STRIDE = 5;
 
 interface BaseUniforms {
   resolution: WebGLUniformLocation;
   cameraPx: WebGLUniformLocation;
   terrain: WebGLUniformLocation;
+  frame: WebGLUniformLocation;
 }
 
 interface OverlayUniforms extends BaseUniforms {
@@ -58,9 +61,12 @@ function getUniformOrThrow(
 }
 
 /**
- * Configure the three per-instance attribute slots (cornerX, cornerY, srcLayer)
- * on the currently-bound VAO, using an interleaved layout with the given
- * stride. The per-vertex corner-id attribute is set up separately.
+ * Configure the per-instance attribute slots shared between the base and
+ * overlay VAOs: cornerX, cornerY, srcLayer. The overlay VAO additionally sets
+ * up a_maskLayer (see overlay constructor path) and both VAOs set up
+ * a_animStride which lives at a per-instance offset that depends on the
+ * stride (base = 36, overlay = 40). The per-vertex corner-id attribute is
+ * configured separately.
  */
 function setupBaseInstanceAttribs(gl: WebGL2RenderingContext, stride: number): void {
   // 4 floats at offset 0  → a_cornerX
@@ -137,6 +143,11 @@ export class TerrainRenderer {
     );
     setupBaseInstanceAttribs(gl, BASE_INSTANCE_STRIDE);
 
+    // a_animStride lives right after a_srcLayer on base instances (offset 36).
+    gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
+    gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, BASE_INSTANCE_STRIDE, 36);
+    gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
+
     // --- Overlay VAO ------------------------------------------------------
     const overlayVao = gl.createVertexArray();
     if (!overlayVao) throw new Error('createVertexArray returned null');
@@ -159,6 +170,11 @@ export class TerrainRenderer {
     gl.vertexAttribIPointer(LOC_MASK_LAYER, 1, gl.INT, OVERLAY_INSTANCE_STRIDE, 36);
     gl.vertexAttribDivisor(LOC_MASK_LAYER, 1);
 
+    // a_animStride at offset 40 on overlay instances (after srcLayer + maskLayer).
+    gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
+    gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, OVERLAY_INSTANCE_STRIDE, 40);
+    gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
+
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -167,12 +183,14 @@ export class TerrainRenderer {
       resolution: getUniformOrThrow(gl, this.baseProgram, 'u_resolution'),
       cameraPx: getUniformOrThrow(gl, this.baseProgram, 'u_cameraPx'),
       terrain: getUniformOrThrow(gl, this.baseProgram, 'u_terrain'),
+      frame: getUniformOrThrow(gl, this.baseProgram, 'u_frame'),
     };
     this.overlayUniforms = {
       resolution: getUniformOrThrow(gl, this.overlayProgram, 'u_resolution'),
       cameraPx: getUniformOrThrow(gl, this.overlayProgram, 'u_cameraPx'),
       terrain: getUniformOrThrow(gl, this.overlayProgram, 'u_terrain'),
       masks: getUniformOrThrow(gl, this.overlayProgram, 'u_masks'),
+      frame: getUniformOrThrow(gl, this.overlayProgram, 'u_frame'),
     };
   }
 
@@ -181,8 +199,14 @@ export class TerrainRenderer {
     cameraPx: readonly [number, number],
     terrainTexture: WebGLTexture,
     maskTexture: WebGLTexture,
+    time: number,
   ): void {
     const gl = this.gl;
+
+    // Water/river animation frame. WATER_FRAME_MS=160, WATER_ANIM_FRAMES=4
+    // → one full cycle every 640 ms. Non-animated tiles have animStride=0 in
+    // their instance record so this uniform has no effect on them.
+    const frame = Math.floor(time / WATER_FRAME_MS) % WATER_ANIM_FRAMES;
 
     // Bind both texture arrays up front. Base program only uses unit 0,
     // overlay program uses both — binding twice is free.
@@ -196,6 +220,7 @@ export class TerrainRenderer {
     gl.uniform2f(this.baseUniforms.resolution, resolution[0], resolution[1]);
     gl.uniform2f(this.baseUniforms.cameraPx, cameraPx[0], cameraPx[1]);
     gl.uniform1i(this.baseUniforms.terrain, 0);
+    gl.uniform1i(this.baseUniforms.frame, frame);
 
     gl.disable(gl.BLEND);
     gl.bindVertexArray(this.baseVao);
@@ -207,6 +232,7 @@ export class TerrainRenderer {
     gl.uniform2f(this.overlayUniforms.cameraPx, cameraPx[0], cameraPx[1]);
     gl.uniform1i(this.overlayUniforms.terrain, 0);
     gl.uniform1i(this.overlayUniforms.masks, 1);
+    gl.uniform1i(this.overlayUniforms.frame, frame);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

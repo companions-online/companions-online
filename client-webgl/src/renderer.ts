@@ -37,12 +37,14 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
 
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Terrain pass (base + overlay).
+    // Terrain pass (base + overlay). `scene.time` drives the water/river
+    // animation frame uniform inside TerrainRenderer.
     scene.terrainRenderer.render(
       resolution,
       [offsetX, offsetY],
       scene.terrainTexture.texture,
       scene.maskTexture.texture,
+      scene.time,
     );
 
     // Sprite pass — Y-sorted so deer in front of each other layer correctly.
