@@ -215,10 +215,13 @@ export class TerrainRenderer {
   ): void {
     const gl = this.gl;
 
-    // Water/river animation frame. WATER_FRAME_MS=160, WATER_ANIM_FRAMES=4
-    // → one full cycle every 640 ms. Non-animated tiles have animStride=0 in
-    // their instance record so this uniform has no effect on them.
-    const frame = Math.floor(time / WATER_FRAME_MS) % WATER_ANIM_FRAMES;
+    // Water/river animation frame. WATER_FRAME_MS=160, WATER_ANIM_FRAMES=8
+    // → one full cycle every 1280 ms. Kept as a FLOAT — the shader's VS
+    // splits it into floor/fract so the FS can mix between adjacent frame
+    // layers, upgrading the discrete carousel into continuous flow. Non-
+    // animated tiles have animStride=0 so their two layers collapse to the
+    // same index and the mix is identity.
+    const frame = (time / WATER_FRAME_MS) % WATER_ANIM_FRAMES;
 
     // Bind both texture arrays up front. Base program only uses unit 0,
     // overlay program uses both — binding twice is free.
@@ -232,7 +235,7 @@ export class TerrainRenderer {
     gl.uniform2f(this.baseUniforms.resolution, resolution[0], resolution[1]);
     gl.uniform2f(this.baseUniforms.cameraPx, cameraPx[0], cameraPx[1]);
     gl.uniform1i(this.baseUniforms.terrain, 0);
-    gl.uniform1i(this.baseUniforms.frame, frame);
+    gl.uniform1f(this.baseUniforms.frame, frame);
 
     gl.disable(gl.BLEND);
     gl.bindVertexArray(this.baseVao);
@@ -244,7 +247,7 @@ export class TerrainRenderer {
     gl.uniform2f(this.overlayUniforms.cameraPx, cameraPx[0], cameraPx[1]);
     gl.uniform1i(this.overlayUniforms.terrain, 0);
     gl.uniform1i(this.overlayUniforms.masks, 1);
-    gl.uniform1i(this.overlayUniforms.frame, frame);
+    gl.uniform1f(this.overlayUniforms.frame, frame);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

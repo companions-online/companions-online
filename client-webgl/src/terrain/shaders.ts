@@ -6,6 +6,11 @@
 //   - Origin for all screen-space math is top-left, y-down.
 //   - Terrain tile textures are uploaded with UNPACK_FLIP_Y_WEBGL=true, so
 //     UV (0.5, 0.0) = N corner (top of diamond).
+//   - u_frame is a FLOAT — the fractional part drives temporal blending
+//     between two adjacent animation-frame layers so 8 discrete baked frames
+//     read as continuous flow at the refresh rate.
+
+import { WATER_ANIM_FRAMES } from '../platform/config.js';
 
 /**
  * Shared tile vertex shader for the BASE terrain pass.
@@ -24,13 +29,15 @@ layout(location = 3) in int  a_srcLayer;    // per-instance
 layout(location = 5) in int  a_animStride;  // per-instance; 0 = static, N = frame stride
 layout(location = 6) in vec4 a_cornerShade; // per-instance; per-vertex shade [N,E,S,W]
 
-uniform vec2 u_resolution;
-uniform vec2 u_cameraPx;
-uniform int  u_frame;  // current water-anim frame, 0..WATER_ANIM_FRAMES-1
+uniform vec2  u_resolution;
+uniform vec2  u_cameraPx;
+uniform float u_frame;  // current water-anim frame as a float, 0..${WATER_ANIM_FRAMES}
 
 out vec2 v_uv;
 out float v_shade;
-flat out int v_srcLayer;
+flat out int v_srcLayerA;
+flat out int v_srcLayerB;
+flat out float v_frameBlend;
 
 const vec2 CORNER_UV[4] = vec2[4](
   vec2(0.5, 0.0),  // N  — top    of tile image
@@ -50,29 +57,42 @@ void main() {
 
   v_uv = CORNER_UV[a_cornerId];
   // Frame advance: animated tiles have stride>0 (the variant count of their
-  // terrain), static tiles have stride=0 and fall through untouched.
-  v_srcLayer = a_srcLayer + u_frame * a_animStride;
+  // terrain), static tiles have stride=0 so fA==fB and the FS mix collapses
+  // to identity. We compute two adjacent layers and a blend factor; the FS
+  // mixes them to upgrade the discrete frame carousel into continuous flow.
+  int fA = int(floor(u_frame));
+  int fB = (fA + 1) % ${WATER_ANIM_FRAMES};
+  v_srcLayerA = a_srcLayer + fA * a_animStride;
+  v_srcLayerB = a_srcLayer + fB * a_animStride;
+  v_frameBlend = fract(u_frame);
   // Vertex-shared shade: adjacent tiles agree at their shared corners, so
   // interpolation across the fragment shader is continuous across the map.
   v_shade = a_cornerShade[a_cornerId];
 }
 `;
 
-/** Base fragment shader — one texture sample, discard outside diamond. */
+/** Base fragment shader — two texture samples mixed by frame blend, discard outside diamond. */
 export const TILE_BASE_FS = /* glsl */ `#version 300 es
 precision highp float;
 precision highp sampler2DArray;
 
 in vec2 v_uv;
 in float v_shade;
-flat in int v_srcLayer;
+flat in int v_srcLayerA;
+flat in int v_srcLayerB;
+flat in float v_frameBlend;
 
 uniform sampler2DArray u_terrain;
 
 out vec4 outColor;
 
 void main() {
-  vec4 c = texture(u_terrain, vec3(v_uv, float(v_srcLayer)));
+  // Sample both adjacent frame layers and blend. For static tiles
+  // (animStride=0) layerA == layerB so the mix is identity and the only cost
+  // is one redundant texture fetch — accepted cost for terrain fillrate.
+  vec4 a = texture(u_terrain, vec3(v_uv, float(v_srcLayerA)));
+  vec4 b = texture(u_terrain, vec3(v_uv, float(v_srcLayerB)));
+  vec4 c = mix(a, b, v_frameBlend);
   if (c.a < 0.5) discard;
   outColor = vec4(c.rgb * v_shade, c.a);
 }
@@ -90,13 +110,15 @@ layout(location = 4) in int  a_maskLayer;
 layout(location = 5) in int  a_animStride;
 layout(location = 6) in vec4 a_cornerShade;
 
-uniform vec2 u_resolution;
-uniform vec2 u_cameraPx;
-uniform int  u_frame;
+uniform vec2  u_resolution;
+uniform vec2  u_cameraPx;
+uniform float u_frame;
 
 out vec2 v_uv;
 out float v_shade;
-flat out int v_srcLayer;
+flat out int v_srcLayerA;
+flat out int v_srcLayerB;
+flat out float v_frameBlend;
 flat out int v_maskLayer;
 
 const vec2 CORNER_UV[4] = vec2[4](
@@ -114,10 +136,15 @@ void main() {
   gl_Position = vec4(cx, cy, 0.0, 1.0);
 
   v_uv = CORNER_UV[a_cornerId];
-  // See TILE_BASE_VS for the stride animation pattern. Overlays that
-  // reference a water/river neighbour also need frame offsetting so shore
-  // tiles flow in sync with the open-water interior.
-  v_srcLayer = a_srcLayer + u_frame * a_animStride;
+  // See TILE_BASE_VS for the frame-blend pattern. Overlays that reference a
+  // water/river neighbour pick the same pair of frame layers so shore tiles
+  // flow in lockstep with the open-water interior. The mask layer is not
+  // animated — only the terrain source sample blends.
+  int fA = int(floor(u_frame));
+  int fB = (fA + 1) % ${WATER_ANIM_FRAMES};
+  v_srcLayerA = a_srcLayer + fA * a_animStride;
+  v_srcLayerB = a_srcLayer + fB * a_animStride;
+  v_frameBlend = fract(u_frame);
   v_maskLayer = a_maskLayer;
   v_shade = a_cornerShade[a_cornerId];
 }
@@ -129,6 +156,9 @@ void main() {
  * The mask texture's RGB is meaningless (we wrote 255,255,255 always), only
  * its alpha channel encodes the blend strength. Output is the neighbor's RGB
  * modulated by the mask alpha, composited with SRC_ALPHA,ONE_MINUS_SRC_ALPHA.
+ *
+ * The source terrain sample is frame-blended like the base pass. The mask
+ * itself is static — we only sample one mask layer.
  */
 export const TILE_OVERLAY_FS = /* glsl */ `#version 300 es
 precision highp float;
@@ -136,7 +166,9 @@ precision highp sampler2DArray;
 
 in vec2 v_uv;
 in float v_shade;
-flat in int v_srcLayer;
+flat in int v_srcLayerA;
+flat in int v_srcLayerB;
+flat in float v_frameBlend;
 flat in int v_maskLayer;
 
 uniform sampler2DArray u_terrain;
@@ -145,15 +177,17 @@ uniform sampler2DArray u_masks;
 out vec4 outColor;
 
 void main() {
-  vec4 src = texture(u_terrain, vec3(v_uv, float(v_srcLayer)));
+  vec4 a = texture(u_terrain, vec3(v_uv, float(v_srcLayerA)));
+  vec4 b = texture(u_terrain, vec3(v_uv, float(v_srcLayerB)));
+  vec4 src = mix(a, b, v_frameBlend);
   float maskA = texture(u_masks, vec3(v_uv, float(v_maskLayer))).a;
 
   // Combine source tile alpha (diamond clip) with mask strength.
-  float a = src.a * maskA;
-  if (a <= 0.0) discard;
+  float alpha = src.a * maskA;
+  if (alpha <= 0.0) discard;
 
   // Apply the same world-shade as the base pass so blendomatic transitions
   // don't reveal a brightness step at the tile boundary.
-  outColor = vec4(src.rgb * v_shade, a);
+  outColor = vec4(src.rgb * v_shade, alpha);
 }
 `;

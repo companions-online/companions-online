@@ -32,6 +32,11 @@ function clamp(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
 // ---------------------------------------------------------------------------
 // Per-variant base colour offset. Stacks ON TOP of the world-coords vertex
 // shade — these are small per-tile hue shifts to break the "every variant
@@ -317,35 +322,40 @@ function generateRiver(
   variant: number,
   frame: number,
 ): [number, number, number] {
-  // Directional scroll — rivers flow along a single axis. Reduced from the
-  // "violent" 2.6 / 1.3 jump-per-frame so adjacent frames look closer to each
-  // other and the eye reads continuous flow instead of discrete snaps.
-  const scrollX = frame * 1.0;
-  const scrollY = frame * 0.5;
+  // Directional scroll — rivers flow along a single axis. Small per-frame
+  // step (~0.2 units in noise space ≈ 4.4 px on the low-freq term) so the
+  // frame-to-frame delta is well within the noise correlation distance and
+  // reads as smooth flow rather than discrete snaps.
+  const scrollX = frame * 0.2;
+  const scrollY = frame * 0.1;
   const vx = variant * 11.9;
   const vy = variant * 5.7;
 
-  // Stretch noise along the flow direction so streaks line up with the
-  // scroll — divide the cross-axis by a larger number to elongate.
+  // Low-freq streaks flow with the current. High-freq fine detail is NOT
+  // scrolled — it stays anchored to the tile, acting as a "static decal"
+  // underneath the moving low-freq layer. Without decoupling, the px/7 term
+  // shifts nearly a full wavelength per frame and visibly boils.
   const low  = noise.noise2d(px / 22 + vx + scrollX, py / 6 + vy + scrollY);
-  const high = noise.noise2d(px / 7  + vx + scrollX, py / 4 + vy + scrollY) * 0.5;
+  const high = noise.noise2d(px / 7  + vx,           py / 4 + vy          ) * 0.5;
   const streak = low + high;
 
   let r = 36 + streak * 14;
   let g = 86 + streak * 22;
   let b = 148 + streak * 18;
 
-  // Crest highlights (stronger than ocean, rivers have visible foam)
-  if (streak > 0.45) {
-    r += 40;
-    g += 52;
-    b += 48;
-  }
-  if (streak < -0.5) {
-    r -= 10;
-    g -= 14;
-    b -= 20;
-  }
+  // Crest highlights — smoothstep ramp instead of hard threshold so the foam
+  // fades in continuously rather than popping on/off between frames.
+  const bright = smoothstep(0.35, 0.70, streak);
+  r += 40 * bright;
+  g += 52 * bright;
+  b += 48 * bright;
+
+  // Dark troughs — reversed edges so the ramp fires as streak drops below
+  // -0.35 and reaches full strength at -0.60.
+  const dark = smoothstep(-0.35, -0.60, streak);
+  r -= 10 * dark;
+  g -= 14 * dark;
+  b -= 20 * dark;
 
   const tint = variantTint(variant);
   return [r + tint[0], g + tint[1], b + tint[2]];

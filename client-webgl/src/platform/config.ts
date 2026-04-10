@@ -20,7 +20,7 @@ export const TERRAIN_VARIANT_COUNTS: readonly number[] = [
 ];
 
 /** Water/river animation */
-export const WATER_ANIM_FRAMES = 4;
+export const WATER_ANIM_FRAMES = 8;
 export const WATER_FRAME_MS = 160;
 
 /** Elevation: pixels of vertical offset per unit of elevation */
