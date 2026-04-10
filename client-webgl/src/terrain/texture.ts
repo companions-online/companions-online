@@ -281,35 +281,50 @@ function generateWater(
   variant: number,
   frame: number,
 ): [number, number, number] {
-  // Scroll the sample coordinates with the frame index — this is what makes
-  // the caustic pattern visibly flow between frames. Horizontal + slow
-  // vertical gives a gentle "ocean ripple" feel.
-  const scrollX = frame * 1.2;
-  const scrollY = frame * 0.35;
+  // Circular-orbit sampling for a naturally seamless loop. Each noise layer's
+  // sample point traces a closed circle through noise space over the full
+  // cycle, so at the wrap it's back exactly where it started — no teleport,
+  // no cross-fade trick required. Counter-rotating orbits on low vs high keep
+  // the caustic interference pattern that gives ocean its shimmer.
+  //
+  // Non-directional by construction: the pattern roils in place rather than
+  // flowing, which is what distinguishes ocean from river visually.
+  const phase = (2 * Math.PI * frame) / WATER_ANIM_FRAMES;
+  const lowR  = 1.0;   // orbit radius for low-freq layer (noise-space units)
+  const highR = 0.6;   // smaller orbit for high-freq — fine detail wanders less
+
   const vx = variant * 9.1;
   const vy = variant * 17.3;
 
-  const low  = noise.noise2d(px / 18 + vx + scrollX, py / 9 + vy + scrollY);
-  const high = noise.noise2d(px / 6  + vx - scrollX, py / 3 + vy + scrollY) * 0.4;
+  // Low-freq: clockwise orbit in noise space.
+  const lowX = Math.cos(phase) * lowR;
+  const lowY = Math.sin(phase) * lowR;
+  const low = noise.noise2d(px / 18 + vx + lowX, py / 9 + vy + lowY);
+
+  // High-freq: counter-clockwise orbit preserves the "two layers drifting
+  // past each other" caustic interference that gives ocean its shimmer.
+  const highX = Math.cos(-phase) * highR;
+  const highY = Math.sin(-phase) * highR;
+  const high = noise.noise2d(px / 6 + vx + highX, py / 3 + vy + highY) * 0.4;
+
   const caustic = low + high;
 
   let r = 28 + caustic * 14;
   let g = 70 + caustic * 26;
   let b = 140 + caustic * 22;
 
-  // Bright highlights where the caustic peaks — these follow the flow because
-  // they're driven by the scrolled noise, not pixel-order rand().
-  if (caustic > 0.55) {
-    r += 30;
-    g += 45;
-    b += 40;
-  }
-  // Dark troughs
-  if (caustic < -0.55) {
-    r -= 12;
-    g -= 18;
-    b -= 24;
-  }
+  // Crest highlights — smoothstep ramp, no on/off pop.
+  const bright = smoothstep(0.45, 0.75, caustic);
+  r += 30 * bright;
+  g += 45 * bright;
+  b += 40 * bright;
+
+  // Dark troughs — reversed edges so the ramp fires as caustic drops below
+  // -0.45 and reaches full strength at -0.70.
+  const dark = smoothstep(-0.45, -0.70, caustic);
+  r -= 12 * dark;
+  g -= 18 * dark;
+  b -= 24 * dark;
 
   const tint = variantTint(variant);
   return [r + tint[0], g + tint[1], b + tint[2]];
