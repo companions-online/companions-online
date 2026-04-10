@@ -11,7 +11,12 @@ import { TerrainRenderer } from './terrain/terrain-renderer.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
 import { spawnDeer } from './entities/deer.js';
+import { spawnPlayer } from './entities/player.js';
 import type { ClientEntity } from './entities/client-entity.js';
+
+export interface PlayerControls {
+  moveTo: (tileX: number, tileY: number) => void;
+}
 
 export interface Scene {
   gl: WebGL2RenderingContext;
@@ -24,12 +29,13 @@ export interface Scene {
   spriteRegistry: SpriteRegistry;
   entities: Map<number, ClientEntity>;
   myEntityId: number | null;
+  playerControls: PlayerControls | null;
   time: number;
 }
 
 /**
  * One-shot async scene build: world-gen + terrain/mask texture uploads +
- * instance buffers + sprite registry load + deer spawn.
+ * instance buffers + sprite registry load + player + wander deer spawn.
  */
 export async function createScene(
   gl: WebGL2RenderingContext,
@@ -59,10 +65,11 @@ export async function createScene(
   const camera = new Camera(SPAWN_X, SPAWN_Y);
 
   const entities = new Map<number, ClientEntity>();
-  const deerIds = spawnDeer(entities, 6, (x, y) => !worldMap.isWalkable(x, y), spriteRegistry);
-  // Temporary: follow the first local deer as if it were the player. Once
-  // network sync arrives, the welcome message will set scene.myEntityId.
-  const myEntityId = deerIds[0] ?? null;
+  const isBlocked = (x: number, y: number) => !worldMap.isWalkable(x, y);
+
+  // Player first — becomes scene.myEntityId. Wander herd takes ids 2..6.
+  const playerSpawn = spawnPlayer(entities, SPAWN_X, SPAWN_Y, isBlocked, spriteRegistry, 1);
+  spawnDeer(entities, 5, isBlocked, spriteRegistry, 2);
 
   return {
     gl,
@@ -74,7 +81,8 @@ export async function createScene(
     spriteRenderer,
     spriteRegistry,
     entities,
-    myEntityId,
+    myEntityId: playerSpawn.id,
+    playerControls: { moveTo: playerSpawn.moveTo },
     time: 0,
   };
 }

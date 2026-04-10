@@ -1,6 +1,7 @@
 import { createScene } from './scene.js';
 import { createRenderer } from './renderer.js';
 import { checkGLError } from './platform/gl-utils.js';
+import { attachMouseControls } from './controls/mouse.js';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const gl = canvas.getContext('webgl2', { antialias: false });
@@ -11,6 +12,8 @@ if (!gl) {
 
 const scene = await createScene(gl, 42);
 checkGLError(gl, 'after scene init');
+
+attachMouseControls(canvas, scene);
 
 const renderer = createRenderer(canvas, scene);
 renderer.start();

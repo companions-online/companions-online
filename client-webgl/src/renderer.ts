@@ -1,5 +1,6 @@
-import { CANVAS_W, CANVAS_H } from './platform/config.js';
+import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H } from './platform/config.js';
 import type { Scene } from './scene.js';
+import { drawHud } from './ui/hud.js';
 
 /**
  * Wire a scene to the RAF loop: tick all entities, follow myEntityId (or the
@@ -45,6 +46,12 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
 
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    // Game pass — restrict drawing to the game viewport via scissor test so
+    // terrain + sprites don't bleed into the HUD chrome regions. gl.scissor
+    // uses bottom-left origin, so flip Y from our top-left GAME_Y.
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(GAME_X, CANVAS_H - GAME_Y - GAME_H, GAME_W, GAME_H);
+
     // Terrain pass (base + overlay). `scene.time` drives the water/river
     // animation frame uniform inside TerrainRenderer.
     scene.terrainRenderer.render(
@@ -65,6 +72,12 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
       }
       scene.spriteRenderer.end();
     }
+
+    gl.disable(gl.SCISSOR_TEST);
+
+    // HUD pass — currently a no-op stub; future inventory/minimap/action bar
+    // draws into the chrome regions outside the game viewport.
+    drawHud(gl);
 
     requestAnimationFrame(frame);
   }
