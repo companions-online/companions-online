@@ -22,12 +22,14 @@ layout(location = 1) in vec4 a_cornerX;     // per-instance
 layout(location = 2) in vec4 a_cornerY;     // per-instance
 layout(location = 3) in int  a_srcLayer;    // per-instance
 layout(location = 5) in int  a_animStride;  // per-instance; 0 = static, N = frame stride
+layout(location = 6) in vec4 a_cornerShade; // per-instance; per-vertex shade [N,E,S,W]
 
 uniform vec2 u_resolution;
 uniform vec2 u_cameraPx;
 uniform int  u_frame;  // current water-anim frame, 0..WATER_ANIM_FRAMES-1
 
 out vec2 v_uv;
+out float v_shade;
 flat out int v_srcLayer;
 
 const vec2 CORNER_UV[4] = vec2[4](
@@ -50,6 +52,9 @@ void main() {
   // Frame advance: animated tiles have stride>0 (the variant count of their
   // terrain), static tiles have stride=0 and fall through untouched.
   v_srcLayer = a_srcLayer + u_frame * a_animStride;
+  // Vertex-shared shade: adjacent tiles agree at their shared corners, so
+  // interpolation across the fragment shader is continuous across the map.
+  v_shade = a_cornerShade[a_cornerId];
 }
 `;
 
@@ -59,6 +64,7 @@ precision highp float;
 precision highp sampler2DArray;
 
 in vec2 v_uv;
+in float v_shade;
 flat in int v_srcLayer;
 
 uniform sampler2DArray u_terrain;
@@ -68,7 +74,7 @@ out vec4 outColor;
 void main() {
   vec4 c = texture(u_terrain, vec3(v_uv, float(v_srcLayer)));
   if (c.a < 0.5) discard;
-  outColor = c;
+  outColor = vec4(c.rgb * v_shade, c.a);
 }
 `;
 
@@ -82,12 +88,14 @@ layout(location = 2) in vec4 a_cornerY;
 layout(location = 3) in int  a_srcLayer;
 layout(location = 4) in int  a_maskLayer;
 layout(location = 5) in int  a_animStride;
+layout(location = 6) in vec4 a_cornerShade;
 
 uniform vec2 u_resolution;
 uniform vec2 u_cameraPx;
 uniform int  u_frame;
 
 out vec2 v_uv;
+out float v_shade;
 flat out int v_srcLayer;
 flat out int v_maskLayer;
 
@@ -111,6 +119,7 @@ void main() {
   // tiles flow in sync with the open-water interior.
   v_srcLayer = a_srcLayer + u_frame * a_animStride;
   v_maskLayer = a_maskLayer;
+  v_shade = a_cornerShade[a_cornerId];
 }
 `;
 
@@ -126,6 +135,7 @@ precision highp float;
 precision highp sampler2DArray;
 
 in vec2 v_uv;
+in float v_shade;
 flat in int v_srcLayer;
 flat in int v_maskLayer;
 
@@ -142,7 +152,9 @@ void main() {
   float a = src.a * maskA;
   if (a <= 0.0) discard;
 
-  outColor = vec4(src.rgb, a);
+  // Apply the same world-shade as the base pass so blendomatic transitions
+  // don't reveal a brightness step at the tile boundary.
+  outColor = vec4(src.rgb * v_shade, a);
 }
 `;
 

@@ -77,6 +77,41 @@ export function getVertexHeight(grid: Float32Array, vx: number, vy: number): num
   return grid[vy * size + vx];
 }
 
+/**
+ * Build a (mapSize+1)² shade grid using a low-frequency Perlin field. Used as
+ * a per-vertex multiplicative brightness modifier for tile rendering — adjacent
+ * tiles share vertices, so the resulting shading is continuous across tile
+ * boundaries and breaks up the "every tile looks identical" monotone problem
+ * the per-tile texture noise can't fix.
+ *
+ * The seed is XOR'd against a constant so the shade pattern doesn't visually
+ * align with the elevation hills (which would just darken the same regions
+ * twice).
+ */
+export function buildShadeGrid(seed: number, mapSize: number): Float32Array {
+  const size = mapSize + 1;
+  const grid = new Float32Array(size * size);
+  const noise = new PerlinNoise((seed ^ 0x5a5a5a5a) >>> 0);
+
+  // Frequency 0.06 → one Perlin "blob" spans ~17 tiles. Big enough to read as
+  // large terrain "regions" rather than per-tile speckles.
+  const freq = 0.06;
+  for (let vy = 0; vy < size; vy++) {
+    for (let vx = 0; vx < size; vx++) {
+      const n = noise.octave2d(vx * freq, vy * freq, 2, 0.5); // [-1, 1]
+      grid[vy * size + vx] = 1.0 + n * 0.25; // [0.75, 1.25]
+    }
+  }
+  return grid;
+}
+
+/** Look up vertex shade with bounds clamping (returns 1.0 outside the map). */
+export function getVertexShade(grid: Float32Array, vx: number, vy: number): number {
+  const size = MAP_SIZE + 1;
+  if (vx < 0 || vx >= size || vy < 0 || vy >= size) return 1.0;
+  return grid[vy * size + vx];
+}
+
 export interface TileCorners {
   nx: number; ny: number; // N vertex (top)
   ex: number; ey: number; // E vertex (right)

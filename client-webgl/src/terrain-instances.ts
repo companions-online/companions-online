@@ -2,7 +2,7 @@ import { MAP_SIZE } from '@shared/constants.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import { TERRAIN_VARIANT_COUNTS } from './config.js';
 import { tileVariant } from './texture.js';
-import { getTileCorners } from './elevation.js';
+import { getTileCorners, getVertexShade } from './elevation.js';
 import {
   gatherInfluences,
   pickAdjacentMaskId,
@@ -13,21 +13,28 @@ import {
 import { maskLayerIndex, type TerrainLayerIndex } from './texture-arrays.js';
 
 /**
- * Bytes per base instance: 8 corner floats + srcLayer + animStride = 10 × 4.
+ * Bytes per base instance: 8 corner floats + srcLayer + animStride + 4 corner
+ * shade floats = 14 × 4.
  *
  * `animStride` is the number of texture-array layers to skip per animation
  * frame for this tile. 0 for static terrains. For water/river, it equals that
  * terrain's variant count — the layer table in texture-arrays.ts is laid out
  * `[terrain][frame][variant]`, so consecutive frames of the same variant sit
  * exactly `variantCount` layers apart.
+ *
+ * The 4 corner shade floats are sampled from the shade grid (per-vertex,
+ * shared between adjacent tiles) and let the fragment shader interpolate a
+ * smooth world-coords brightness modulation across the whole map. They live
+ * at the END of the instance record so the existing offsets for srcLayer /
+ * animStride / maskLayer don't shift.
  */
-export const BASE_INSTANCE_STRIDE = 40;
+export const BASE_INSTANCE_STRIDE = 56;
 
 /**
  * Bytes per overlay instance: 8 corner floats + srcLayer + maskLayer +
- * animStride = 11 × 4.
+ * animStride + 4 corner shade floats = 15 × 4.
  */
-export const OVERLAY_INSTANCE_STRIDE = 44;
+export const OVERLAY_INSTANCE_STRIDE = 60;
 
 export interface TerrainInstanceBuffers {
   baseData: ArrayBuffer;       // BASE_INSTANCE_STRIDE × tileCount
@@ -50,6 +57,7 @@ export interface TerrainInstanceBuffers {
 export function buildTerrainInstances(
   worldMap: WorldMap,
   elevationGrid: Float32Array,
+  shadeGrid: Float32Array,
   terrainLayerIndex: TerrainLayerIndex,
 ): TerrainInstanceBuffers {
   const W = worldMap.width;
@@ -89,6 +97,15 @@ export function buildTerrainInstances(
 
       const corners = getTileCorners(tx, ty, elevationGrid, 0, 0);
 
+      // 4 corner shade values from the shade grid. Same vertex layout as
+      // elevation: N=(tx,ty), E=(tx+1,ty), S=(tx+1,ty+1), W=(tx,ty+1). Adjacent
+      // tiles share these vertices, so the fragment shader interpolates
+      // shading continuously across tile boundaries.
+      const shadeN = getVertexShade(shadeGrid, tx,     ty);
+      const shadeE = getVertexShade(shadeGrid, tx + 1, ty);
+      const shadeS = getVertexShade(shadeGrid, tx + 1, ty + 1);
+      const shadeW = getVertexShade(shadeGrid, tx,     ty + 1);
+
       // --- Base instance for this tile ---------------------------------
       // Write the frame-0 layer. The vertex shader adds `u_frame * animStride`
       // at draw time, so animated water/river tiles pick the right layer per
@@ -97,17 +114,21 @@ export function buildTerrainInstances(
       const variant = tileVariant(tx, ty, variantCount);
       const baseLayer = terrainLayerIndex[terrain][0][variant];
 
-      const baseF = tileIdx * 10;  // 10 32-bit words per base instance
-      baseF32[baseF + 0] = corners.nx;
-      baseF32[baseF + 1] = corners.ex;
-      baseF32[baseF + 2] = corners.sx;
-      baseF32[baseF + 3] = corners.wx;
-      baseF32[baseF + 4] = corners.ny;
-      baseF32[baseF + 5] = corners.ey;
-      baseF32[baseF + 6] = corners.sy;
-      baseF32[baseF + 7] = corners.wy;
-      baseI32[baseF + 8] = baseLayer;
-      baseI32[baseF + 9] = animStrideFor(terrain);
+      const baseF = tileIdx * 14;  // 14 32-bit words per base instance
+      baseF32[baseF + 0]  = corners.nx;
+      baseF32[baseF + 1]  = corners.ex;
+      baseF32[baseF + 2]  = corners.sx;
+      baseF32[baseF + 3]  = corners.wx;
+      baseF32[baseF + 4]  = corners.ny;
+      baseF32[baseF + 5]  = corners.ey;
+      baseF32[baseF + 6]  = corners.sy;
+      baseF32[baseF + 7]  = corners.wy;
+      baseI32[baseF + 8]  = baseLayer;
+      baseI32[baseF + 9]  = animStrideFor(terrain);
+      baseF32[baseF + 10] = shadeN;
+      baseF32[baseF + 11] = shadeE;
+      baseF32[baseF + 12] = shadeS;
+      baseF32[baseF + 13] = shadeW;
 
       // --- Overlay instances for each higher-priority neighbor --------
       // gatherInfluences returns an already-ascending-by-priority list; we
@@ -127,7 +148,7 @@ export function buildTerrainInstances(
         const nAnimStride = animStrideFor(nTerrain);
 
         const writeOverlay = (maskId: number) => {
-          const off = overlayCount * 11;  // 11 32-bit words per overlay
+          const off = overlayCount * 15;  // 15 32-bit words per overlay
           overlayF32[off + 0]  = corners.nx;
           overlayF32[off + 1]  = corners.ex;
           overlayF32[off + 2]  = corners.sx;
@@ -139,6 +160,10 @@ export function buildTerrainInstances(
           overlayI32[off + 8]  = nSrcLayer;
           overlayI32[off + 9]  = maskLayerIndex(blendMode, maskId);
           overlayI32[off + 10] = nAnimStride;
+          overlayF32[off + 11] = shadeN;
+          overlayF32[off + 12] = shadeE;
+          overlayF32[off + 13] = shadeS;
+          overlayF32[off + 14] = shadeW;
           overlayCount++;
         };
 

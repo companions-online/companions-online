@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES } from './config.js';
+import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, SHOW_TILE_OUTLINES } from './config.js';
 import { PerlinNoise } from '@shared/world/noise.js';
 
 const HALF_W = TILE_W / 2;
@@ -30,6 +30,28 @@ export function diamondEdgeDist(px: number, py: number): number {
 
 function clamp(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+// ---------------------------------------------------------------------------
+// Per-variant base colour offset. Stacks ON TOP of the world-coords vertex
+// shade — these are small per-tile hue shifts to break the "every variant
+// looks identical at game zoom" feel, while the shade grid handles the big
+// continuous variation across the map.
+// Asymmetric pattern so neighbouring tiles (which use neighbouring variant
+// ids via tileVariant's hash) tend to land on different tints.
+// ---------------------------------------------------------------------------
+
+const VARIANT_TINTS: readonly [number, number, number][] = [
+  [  0,  0,  0],
+  [  6, -4,  2],
+  [ -4,  6, -2],
+  [  2, -2,  6],
+  [ -2,  2, -6],
+  [  4, -6,  4],
+];
+
+function variantTint(variant: number): [number, number, number] {
+  return VARIANT_TINTS[variant % VARIANT_TINTS.length];
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +142,8 @@ function generateGrass(
     r = 220; g = 210; b = 90;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 function generateDirt(
@@ -158,7 +181,8 @@ function generateDirt(
     b += 8;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 function generateRock(
@@ -203,7 +227,8 @@ function generateRock(
     b += 38;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 function generateSand(
@@ -240,7 +265,8 @@ function generateSand(
     b += 20;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 function generateWater(
@@ -280,7 +306,8 @@ function generateWater(
     b -= 24;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 function generateRiver(
@@ -290,10 +317,11 @@ function generateRiver(
   variant: number,
   frame: number,
 ): [number, number, number] {
-  // Stronger directional scroll than open water — rivers flow fast and along
-  // a single axis. The iso "downhill" axis on screen is roughly (+1, +0.5).
-  const scrollX = frame * 2.6;
-  const scrollY = frame * 1.3;
+  // Directional scroll — rivers flow along a single axis. Reduced from the
+  // "violent" 2.6 / 1.3 jump-per-frame so adjacent frames look closer to each
+  // other and the eye reads continuous flow instead of discrete snaps.
+  const scrollX = frame * 1.0;
+  const scrollY = frame * 0.5;
   const vx = variant * 11.9;
   const vy = variant * 5.7;
 
@@ -319,7 +347,8 @@ function generateRiver(
     b -= 20;
   }
 
-  return [r, g, b];
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
 const GENERATORS: readonly GeneratorFn[] = [
@@ -366,7 +395,20 @@ function generateSingleTile(
   // Filling the rect acts as safety padding for those off-by-one samples.
   for (let py = 0; py < TILE_H; py++) {
     for (let px = 0; px < TILE_W; px++) {
-      const [r, g, b] = generator(px, py, noise, rand, variantIndex, frameIndex);
+      let [r, g, b] = generator(px, py, noise, rand, variantIndex, frameIndex);
+
+      // Debug overlay: dark band hugging the inside of the diamond edge.
+      // Gated to dist <= 1.0 so we ONLY darken in-diamond pixels — the bleed
+      // pixels at dist > 1.0 stay untouched as fallback samples for the
+      // elevation-deformed-triangle UV-interpolation edge case.
+      if (SHOW_TILE_OUTLINES) {
+        const dist = diamondEdgeDist(px, py);
+        if (dist > 0.94 && dist <= 1.0) {
+          r -= 30;
+          g -= 30;
+          b -= 30;
+        }
+      }
 
       const i = (py * TILE_W + px) * 4;
       data[i]     = clamp(r);
@@ -410,7 +452,27 @@ export function generateRawTerrainTiles(): OffscreenCanvas[][][] {
   return allTiles;
 }
 
-/** Deterministic variant selection per tile coordinate */
+/**
+ * Deterministic variant selection per tile coordinate.
+ *
+ * Uses a multiplicative-XOR hash (MurmurHash3 finalizer style). The previous
+ * `(tx*7 + ty*13) % count` formula collapsed to `(tx + ty) % count` whenever
+ * 7 and 13 were both ≡ 1 (mod count), which is the case for count ∈ {3, 6}.
+ * That made every iso screen row pick a single variant — `screenY = (tx+ty)
+ * * HALF_H`, so tiles on the same horizontal row all sit at the same
+ * `tx+ty`, and the linear hash gave them all the same value. Visible result:
+ * grass and water/river painted the world in horizontal stripes of one
+ * variant each, while dirt/rock/sand (count=4) escaped by accident.
+ *
+ * The bit-mixing here scrambles tile coords enough that the result stays
+ * pseudorandom regardless of `count`, so adding new variant counts in the
+ * future won't reintroduce the same trap.
+ */
 export function tileVariant(tileX: number, tileY: number, count: number): number {
-  return ((tileX * 7 + tileY * 13) & 0x7fffffff) % count;
+  let h = Math.imul(tileX | 0, 0x27d4eb2d);
+  h ^= Math.imul(tileY | 0, 0x165667b1);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) % count;
 }

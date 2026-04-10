@@ -4,7 +4,7 @@ import type { WorldMap } from '@shared/world/world-map.js';
 import { Camera } from './camera.js';
 import { generateRawTerrainTiles } from './texture.js';
 import { generateBlendMasks } from './blend-masks.js';
-import { buildElevationGrid } from './elevation.js';
+import { buildElevationGrid, buildShadeGrid } from './elevation.js';
 import { buildTerrainTextureArray, buildMaskTextureArray, type TerrainTextureArray, type MaskTextureArray } from './texture-arrays.js';
 import { buildTerrainInstances } from './terrain-instances.js';
 import { TerrainRenderer } from './terrain-renderer.js';
@@ -46,9 +46,10 @@ export async function createScene(
   const terrainTexture = await buildTerrainTextureArray(gl, rawTiles);
   const maskTexture = await buildMaskTextureArray(gl, masks);
 
-  // Elevation grid + instance buffers (one-time CPU walk over the map).
+  // Elevation grid + shade grid + instance buffers (one-time CPU walk over the map).
   const elevationGrid = buildElevationGrid(seed, MAP_SIZE, worldMap);
-  const instances = buildTerrainInstances(worldMap, elevationGrid, terrainTexture.layerIndex);
+  const shadeGrid = buildShadeGrid(seed, MAP_SIZE);
+  const instances = buildTerrainInstances(worldMap, elevationGrid, shadeGrid, terrainTexture.layerIndex);
 
   const terrainRenderer = new TerrainRenderer(gl, instances);
   const spriteRenderer = new SpriteRenderer(gl);

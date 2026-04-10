@@ -192,10 +192,20 @@ export function pickDiagonalMaskIds(bits: number): number[] {
 /**
  * Deterministic variant offset [0..3] for edge masks 0..15, selected by tile
  * coordinates. Breaks obvious tiling when adjacent tiles use the same edge
- * mask. Matches the variant-hash style used by texture.tileVariant().
+ * mask. Same multiplicative-XOR hash as texture.tileVariant() — see that
+ * function for the rationale on why a linear `tx*a + ty*b mod N` hash
+ * collapses along iso screen rows for unfortunate (a, b, N) combinations.
+ * The `& 3` here happens to be safe with the old constants (count=4 escaped
+ * the trap) but using the proper hash makes future variant-count tweaks
+ * non-load-bearing.
  */
 export function edgeMaskVariant(tx: number, ty: number): number {
-  return ((tx * 7 + ty * 13) & 0x7fffffff) & 3;
+  let h = Math.imul(tx | 0, 0x27d4eb2d);
+  h ^= Math.imul(ty | 0, 0x165667b1);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) & 3;
 }
 
 // Re-export Terrain so callers in client-webgl can work without reaching into
