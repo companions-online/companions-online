@@ -4,6 +4,26 @@ import type { TileCorners } from './elevation.js';
 const HALF_W = TILE_W / 2;
 const HALF_H = TILE_H / 2;
 
+/**
+ * Extra columns each half keeps past the N-S center axis.
+ *
+ * Canvas bilinear sampling reads the 4 nearest source neighbors; if the
+ * sample coordinate sits ε inside the split column (which elevation-induced
+ * fractional destination corners make the common case), the kernel pulls in
+ * one neighbor from the opposite side of the axis. With only the 1-column
+ * overlap the original implementation had, that opposite neighbor is
+ * transparent — each half contributes α≈0.5 along the seam and source-over
+ * composites them to ~0.75, leaving the dark #111 clear-colour showing
+ * through as a vertical stripe down every tile centre.
+ *
+ * 2 is the minimum that fixes it: it guarantees both bilinear neighbours
+ * around x = HALF_W are opaque in each half. The hard α cliff is pushed out
+ * to x = HALF_W ± 2, where the OTHER half is fully opaque and painting
+ * correct colour, so the double-draw composites back to full opacity with
+ * the right colour.
+ */
+const SEAM_OVERLAP = 2;
+
 export interface SplitTile {
   left: OffscreenCanvas;
   right: OffscreenCanvas;
@@ -11,8 +31,9 @@ export interface SplitTile {
 
 /**
  * Split a diamond tile along the N-S vertical center (x = HALF_W) into
- * left and right triangle halves. The center column is included in both
- * halves (1px overlap prevents seams).
+ * left and right triangle halves. Each half also keeps a SEAM_OVERLAP-wide
+ * skirt of opaque pixels past the axis so bilinear sampling of the seam
+ * never reads a transparent neighbour — see SEAM_OVERLAP for the rationale.
  */
 export function splitTile(tile: OffscreenCanvas): SplitTile {
   const w = tile.width;
@@ -25,18 +46,21 @@ export function splitTile(tile: OffscreenCanvas): SplitTile {
   const leftData = leftOc.getContext('2d')!.createImageData(w, h);
   const rightData = rightOc.getContext('2d')!.createImageData(w, h);
 
+  const leftMax = HALF_W + SEAM_OVERLAP;
+  const rightMin = HALF_W - SEAM_OVERLAP;
+
   for (let py = 0; py < h; py++) {
     for (let px = 0; px < w; px++) {
       const i = (py * w + px) * 4;
       if (src.data[i + 3] === 0) continue; // transparent pixel
 
-      if (px <= HALF_W) {
+      if (px <= leftMax) {
         leftData.data[i]     = src.data[i];
         leftData.data[i + 1] = src.data[i + 1];
         leftData.data[i + 2] = src.data[i + 2];
         leftData.data[i + 3] = src.data[i + 3];
       }
-      if (px >= HALF_W) {
+      if (px >= rightMin) {
         rightData.data[i]     = src.data[i];
         rightData.data[i + 1] = src.data[i + 1];
         rightData.data[i + 2] = src.data[i + 2];

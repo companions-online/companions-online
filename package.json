@@ -8,6 +8,8 @@
     "dev:server": "tsx server/src/main.ts",
     "dev:client": "tsx client-web/dev.ts",
     "build:client": "tsx client-web/build.ts",
+    "dev:client-gl": "tsx client-webgl/dev.ts",
+    "build:client-gl": "tsx client-webgl/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,7 +18,8 @@
     "cli:stats": "tsx scripts/map-stats.ts",
     "cli:mcp": "tsx scripts/mcp.ts",
     "import:sprite": "tsx scripts/import-sprite.ts",
-    "render": "tsx scripts/render-frame.ts"
+    "render": "tsx scripts/render-frame.ts",
+    "render:gl": "tsx scripts/render-gl-frame.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.12",
@@ -32,6 +35,7 @@
     "@types/ws": "^8.5.13",
     "concurrently": "^9.1.0",
     "esbuild": "^0.24.0",
+    "puppeteer": "^24.40.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

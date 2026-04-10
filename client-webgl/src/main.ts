@@ -1,0 +1,26 @@
+import { createScene } from './scene.js';
+import { createRenderer } from './renderer.js';
+import { checkGLError } from './gl-utils.js';
+
+const canvas = document.getElementById('game') as HTMLCanvasElement;
+const gl = canvas.getContext('webgl2', { antialias: false });
+if (!gl) {
+  document.body.innerHTML = '<p style="color:#fff;font-family:monospace;padding:2rem">WebGL2 unavailable in this browser.</p>';
+  throw new Error('WebGL2 context unavailable');
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`failed to load ${src}`));
+    img.src = src;
+  });
+}
+
+const deerImage = await loadImage('/assets/deer.png');
+const scene = await createScene(gl, 44, deerImage);
+checkGLError(gl, 'after scene init');
+
+const renderer = createRenderer(canvas, scene);
+renderer.start();

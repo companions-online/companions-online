@@ -47,4 +47,4 @@ export const SHOW_TILE_OUTLINES = false;
 export const DEBUG_MASK_ATLAS = false;
 
 /** Debug: render the 6 × 32 masked-terrain atlas instead of the scene (Phase C verification). */
-export const DEBUG_MASKED_TERRAIN_ATLAS = false;
+export const DEBUG_MASKED_TERRAIN_ATLAS = true;
