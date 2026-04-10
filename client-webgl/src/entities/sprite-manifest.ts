@@ -20,9 +20,11 @@ export interface SpriteManifestEntry {
   footY: number;
 }
 
-// Placeholder blueprint id for the local-wander deer until network sync arrives
-// and we get real server-issued ids.
+// Placeholder blueprint ids for the local-only entities until network sync
+// arrives and we get real server-issued ids.
 export const DEER_BLUEPRINT = 0;
+export const PLAYER_BLUEPRINT = 1;
+export const TREE_BLUEPRINT = 2;
 
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   {
@@ -33,5 +35,23 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
     frameH: 92,
     footX: 46,
     footY: 70,
+  },
+  {
+    blueprintId: PLAYER_BLUEPRINT,
+    name: 'player',
+    variantCount: 1,
+    frameW: 92,
+    frameH: 92,
+    footX: 46,
+    footY: 82,
+  },
+  {
+    blueprintId: TREE_BLUEPRINT,
+    name: 'tree',
+    variantCount: 3,
+    frameW: 64,
+    frameH: 128,
+    footX: 32,
+    footY: 124,
   },
 ];

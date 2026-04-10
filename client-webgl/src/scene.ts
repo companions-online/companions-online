@@ -12,6 +12,7 @@ import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
 import { spawnDeer } from './entities/deer.js';
 import { spawnPlayer } from './entities/player.js';
+import { spawnTrees } from './entities/tree.js';
 import type { ClientEntity } from './entities/client-entity.js';
 
 export interface PlayerControls {
@@ -65,9 +66,18 @@ export async function createScene(
   const camera = new Camera(SPAWN_X, SPAWN_Y);
 
   const entities = new Map<number, ClientEntity>();
-  const isBlocked = (x: number, y: number) => !worldMap.isWalkable(x, y);
+  const terrainBlocked = (x: number, y: number) => !worldMap.isWalkable(x, y);
 
-  // Player first — becomes scene.myEntityId. Wander herd takes ids 2..6.
+  // Trees first: they register occupied tiles that creature pathfinding must
+  // avoid. Tree ids live in a high range (1000+) to stay out of the way of
+  // future creature id growth.
+  const { occupiedTiles: treeTiles } = spawnTrees(
+    entities, 60, terrainBlocked, spriteRegistry, 1000, seed,
+  );
+  const isBlocked = (x: number, y: number) =>
+    terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x);
+
+  // Player — becomes scene.myEntityId. Wander herd takes ids 2..6.
   const playerSpawn = spawnPlayer(entities, SPAWN_X, SPAWN_Y, isBlocked, spriteRegistry, 1);
   spawnDeer(entities, 5, isBlocked, spriteRegistry, 2);
 

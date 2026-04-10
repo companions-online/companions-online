@@ -1,7 +1,6 @@
 // The click-controlled player entity. Wraps a CreatureState with a
 // pendingCommand slot consumed at idle and at every tile boundary, so that
-// mid-walk clicks redirect cleanly without teleports. Currently uses the deer
-// sprite (DEER_BLUEPRINT) since there's no real player sprite yet.
+// mid-walk clicks redirect cleanly without teleports.
 //
 // TODO: when network sync arrives, the local pendingCommand pipeline becomes
 // "send a server move action" and the entity becomes a remote-driven creature.
@@ -17,7 +16,7 @@ import {
   drawCreatureSprite,
 } from './creature.js';
 import type { SpriteRegistry, SpriteSheetRef } from './sprite-registry.js';
-import { DEER_BLUEPRINT } from './sprite-manifest.js';
+import { PLAYER_BLUEPRINT } from './sprite-manifest.js';
 
 const MOVE_SPEED = 120;
 const WALK_FRAMES = 6;
@@ -54,7 +53,7 @@ function createPlayer(
 
   const entity: ClientEntity = {
     id,
-    blueprintId: { blueprintId: DEER_BLUEPRINT },
+    blueprintId: { blueprintId: PLAYER_BLUEPRINT },
     direction: { dir: creature.direction },
     spriteSheet: sheet,
     walkFrame: 0,
@@ -106,7 +105,7 @@ export function spawnPlayer(
   registry: SpriteRegistry,
   id: number,
 ): { id: number; moveTo: (tileX: number, tileY: number) => void } {
-  const sheet = registry.resolve(DEER_BLUEPRINT, 0);
+  const sheet = registry.resolve(PLAYER_BLUEPRINT, 0);
   const { entity, moveTo } = createPlayer(id, startX, startY, isBlocked, sheet);
   entities.set(id, entity);
   return { id, moveTo };
