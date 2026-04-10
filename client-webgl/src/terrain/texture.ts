@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, SHOW_TILE_OUTLINES } from './config.js';
+import { TILE_W, TILE_H, TERRAIN_COUNT, TERRAIN_VARIANT_COUNTS, WATER_ANIM_FRAMES, SHOW_TILE_OUTLINES } from '../platform/config.js';
 import { PerlinNoise } from '@shared/world/noise.js';
 
 const HALF_W = TILE_W / 2;

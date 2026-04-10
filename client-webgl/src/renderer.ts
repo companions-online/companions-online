@@ -1,4 +1,4 @@
-import { CANVAS_W, CANVAS_H } from './config.js';
+import { CANVAS_W, CANVAS_H } from './platform/config.js';
 import type { Scene } from './scene.js';
 
 /**

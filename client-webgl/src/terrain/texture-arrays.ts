@@ -1,6 +1,6 @@
-import { TILE_W, TILE_H } from './config.js';
+import { TILE_W, TILE_H } from '../platform/config.js';
 import { MASKS_PER_MODE, type BlendMaskSet } from './blend-masks.js';
-import { createTextureArray, uploadBitmapLayer } from './gl-utils.js';
+import { createTextureArray, uploadBitmapLayer } from '../platform/gl-utils.js';
 
 /**
  * Flat layer lookup for the terrain texture array.

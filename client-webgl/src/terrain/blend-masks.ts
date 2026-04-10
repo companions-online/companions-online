@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H } from './config.js';
+import { TILE_W, TILE_H } from '../platform/config.js';
 import { isInsideDiamond } from './texture.js';
 
 const HALF_W = TILE_W / 2;

@@ -1,4 +1,4 @@
-import { linkProgram, createBuffer } from './gl-utils.js';
+import { linkProgram, createBuffer } from '../platform/gl-utils.js';
 import {
   TILE_BASE_VS,
   TILE_BASE_FS,
@@ -10,7 +10,7 @@ import {
   OVERLAY_INSTANCE_STRIDE,
   type TerrainInstanceBuffers,
 } from './terrain-instances.js';
-import { WATER_ANIM_FRAMES, WATER_FRAME_MS } from './config.js';
+import { WATER_ANIM_FRAMES, WATER_FRAME_MS } from '../platform/config.js';
 
 /**
  * Shared static vertex buffer holding the corner-id sequence for two

@@ -1,17 +1,17 @@
 import { MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import { Camera } from './camera.js';
-import { generateRawTerrainTiles } from './texture.js';
-import { generateBlendMasks } from './blend-masks.js';
-import { buildElevationGrid, buildShadeGrid } from './elevation.js';
-import { buildTerrainTextureArray, buildMaskTextureArray, type TerrainTextureArray, type MaskTextureArray } from './texture-arrays.js';
-import { buildTerrainInstances } from './terrain-instances.js';
-import { TerrainRenderer } from './terrain-renderer.js';
-import { SpriteRenderer } from './sprite-renderer.js';
-import { createImageTexture } from './gl-utils.js';
-import { spawnDeer, type SpriteSheetInfo } from './deer.js';
-import type { Entity } from './entity.js';
+import { Camera } from './platform/camera.js';
+import { generateRawTerrainTiles } from './terrain/texture.js';
+import { generateBlendMasks } from './terrain/blend-masks.js';
+import { buildElevationGrid, buildShadeGrid } from './terrain/elevation.js';
+import { buildTerrainTextureArray, buildMaskTextureArray, type TerrainTextureArray, type MaskTextureArray } from './terrain/texture-arrays.js';
+import { buildTerrainInstances } from './terrain/terrain-instances.js';
+import { TerrainRenderer } from './terrain/terrain-renderer.js';
+import { SpriteRenderer } from './entities/sprite-renderer.js';
+import { createImageTexture } from './platform/gl-utils.js';
+import { spawnDeer, type SpriteSheetInfo } from './entities/deer.js';
+import type { Entity } from './entities/entity.js';
 
 export interface Scene {
   gl: WebGL2RenderingContext;

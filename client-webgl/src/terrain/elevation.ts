@@ -1,7 +1,7 @@
 import { PerlinNoise } from '@shared/world/noise.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import { Terrain } from '@shared/terrain.js';
-import { TILE_W, TILE_H, PX_PER_Z } from './config.js';
+import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 
 const HALF_W = TILE_W / 2;

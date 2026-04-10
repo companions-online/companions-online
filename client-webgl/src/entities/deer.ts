@@ -2,7 +2,7 @@ import { tileToScreen } from '@shared/coordinates.js';
 import { SPAWN_X, SPAWN_Y, MAP_SIZE } from '@shared/constants.js';
 import { DX, DY, Direction } from '@shared/direction.js';
 import { findPath } from '@shared/pathfinding.js';
-import { TILE_W, TILE_H } from './config.js';
+import { TILE_W, TILE_H } from '../platform/config.js';
 import type { Entity } from './entity.js';
 import type { SpriteRenderer } from './sprite-renderer.js';
 

@@ -1,6 +1,6 @@
 import { MAP_SIZE } from '@shared/constants.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import { TERRAIN_VARIANT_COUNTS } from './config.js';
+import { TERRAIN_VARIANT_COUNTS } from '../platform/config.js';
 import { tileVariant } from './texture.js';
 import { getTileCorners, getVertexShade } from './elevation.js';
 import {

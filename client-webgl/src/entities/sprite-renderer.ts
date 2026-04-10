@@ -1,4 +1,4 @@
-import { linkProgram, createBuffer } from './gl-utils.js';
+import { linkProgram, createBuffer } from '../platform/gl-utils.js';
 import { SPRITE_VS, SPRITE_FS } from './shaders.js';
 
 /**
