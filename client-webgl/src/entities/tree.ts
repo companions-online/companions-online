@@ -19,7 +19,8 @@ import { TREE_BLUEPRINT } from './sprite-manifest.js';
 // also stay just outside that circle.
 const SPAWN_CLEAR_RADIUS = 6;
 
-function createTree(
+/** Place a single tree entity at a specific tile with a given sprite sheet. */
+export function placeTree(
   id: number,
   tileX: number,
   tileY: number,
@@ -136,7 +137,7 @@ export function spawnTrees(
         const sheet = registry.resolve(TREE_BLUEPRINT, variant);
 
         const id = startId + ids.length;
-        entities.set(id, createTree(id, x, y, sheet));
+        entities.set(id, placeTree(id, x, y, sheet));
         occupiedTiles.add(key);
         ids.push(id);
       }

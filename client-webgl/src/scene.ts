@@ -12,7 +12,8 @@ import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
 import { spawnDeer } from './entities/deer.js';
 import { spawnPlayer } from './entities/player.js';
-import { spawnTrees } from './entities/tree.js';
+import { spawnTrees, placeTree } from './entities/tree.js';
+import { TREE_BLUEPRINT } from './entities/sprite-manifest.js';
 import type { ClientEntity } from './entities/client-entity.js';
 
 export interface PlayerControls {
@@ -75,6 +76,14 @@ export async function createScene(
   );
   const isBlocked = (x: number, y: number) =>
     terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x);
+
+  // 3 showcase trees near spawn, one of each variant, side by side.
+  for (let v = 0; v < 3; v++) {
+    const id = 900 + v;
+    const sheet = spriteRegistry.resolve(TREE_BLUEPRINT, v);
+    entities.set(id, placeTree(id, SPAWN_X + 3 + v, SPAWN_Y - 3, sheet));
+    treeTiles.add((SPAWN_Y - 3) * MAP_SIZE + (SPAWN_X + 3 + v));
+  }
 
   // Player — becomes scene.myEntityId. Wander herd takes ids 2..6.
   const playerSpawn = spawnPlayer(entities, SPAWN_X, SPAWN_Y, isBlocked, spriteRegistry, 1);

@@ -18,6 +18,11 @@ export interface SpriteManifestEntry {
   frameH: number;
   footX: number;
   footY: number;
+  /** When true, footX/footY are auto-detected per variant from the loaded
+   *  image (horizontal center + bottommost opaque row). The manual footX/footY
+   *  above are ignored. Useful for static sprites where the "foot" is simply
+   *  the bottom of the visible pixels. */
+  detectFoot?: boolean;
 }
 
 // Placeholder blueprint ids for the local-only entities until network sync
@@ -52,6 +57,7 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
     frameW: 64,
     frameH: 128,
     footX: 32,
-    footY: 124,
+    footY: 128,
+    detectFoot: true,
   },
 ];
