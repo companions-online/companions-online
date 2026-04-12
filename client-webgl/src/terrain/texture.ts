@@ -281,50 +281,47 @@ function generateWater(
   variant: number,
   frame: number,
 ): [number, number, number] {
-  // Circular-orbit sampling for a naturally seamless loop. Each noise layer's
-  // sample point traces a closed circle through noise space over the full
-  // cycle, so at the wrap it's back exactly where it started — no teleport,
-  // no cross-fade trick required. Counter-rotating orbits on low vs high keep
-  // the caustic interference pattern that gives ocean its shimmer.
-  //
-  // Non-directional by construction: the pattern roils in place rather than
-  // flowing, which is what distinguishes ocean from river visually.
-  const phase = (2 * Math.PI * frame) / WATER_ANIM_FRAMES;
-  const lowR  = 1.0;   // orbit radius for low-freq layer (noise-space units)
-  const highR = 0.6;   // smaller orbit for high-freq — fine detail wanders less
+  // Two-phase flowmap blending — same seamless-loop technique as
+  // generateRiver, just slower and with a darker/bluer palette so ocean
+  // reads as a lumbering swell rather than a channel current.
+  const phaseA = frame / WATER_ANIM_FRAMES;
+  const phaseB = (phaseA + 0.5) % 1;
+  const wB = Math.abs(2 * phaseA - 1);
+
+  // Half the river's scroll distance — ocean lumbers where rivers flow.
+  const scrollDistX = 1.0;   // river uses 2.0
+  const scrollDistY = 0.4;   // river uses 1.0
 
   const vx = variant * 9.1;
   const vy = variant * 17.3;
 
-  // Low-freq: clockwise orbit in noise space.
-  const lowX = Math.cos(phase) * lowR;
-  const lowY = Math.sin(phase) * lowR;
-  const low = noise.noise2d(px / 18 + vx + lowX, py / 9 + vy + lowY);
+  // Two parallel lanes through the noise field. The +50 Y offset on lane B
+  // decorrelates it from lane A so the mid-cycle 50/50 blend isn't ghosted.
+  const lowA = noise.noise2d(
+    px / 22 + vx + phaseA * scrollDistX,
+    py / 6  + vy + phaseA * scrollDistY,
+  );
+  const lowB = noise.noise2d(
+    px / 22 + vx + phaseB * scrollDistX,
+    py / 6  + vy + phaseB * scrollDistY + 50.0,
+  );
+  const low = lowA * (1 - wB) + lowB * wB;
 
-  // High-freq: counter-clockwise orbit preserves the "two layers drifting
-  // past each other" caustic interference that gives ocean its shimmer.
-  const highX = Math.cos(-phase) * highR;
-  const highY = Math.sin(-phase) * highR;
-  const high = noise.noise2d(px / 6 + vx + highX, py / 3 + vy + highY) * 0.4;
+  // High-freq fine detail stays anchored to the tile — same decoupling
+  // pattern as river so the detail doesn't boil between frames.
+  const high = noise.noise2d(px / 7 + vx, py / 4 + vy) * 0.5;
+  const streak = low + high;
 
-  const caustic = low + high;
+  // Darker, bluer base palette — more navy than river's mid-blue.
+  let r = 16 + streak * 10;
+  let g = 44 + streak * 18;
+  let b = 112 + streak * 22;
 
-  let r = 28 + caustic * 14;
-  let g = 70 + caustic * 26;
-  let b = 140 + caustic * 22;
-
-  // Crest highlights — smoothstep ramp, no on/off pop.
-  const bright = smoothstep(0.45, 0.75, caustic);
-  r += 30 * bright;
-  g += 45 * bright;
-  b += 40 * bright;
-
-  // Dark troughs — reversed edges so the ramp fires as caustic drops below
-  // -0.45 and reaches full strength at -0.70.
-  const dark = smoothstep(-0.45, -0.70, caustic);
-  r -= 12 * dark;
+  // Dark troughs for "deep water" feel.
+  const dark = smoothstep(-0.40, -0.65, streak);
+  r -= 10 * dark;
   g -= 18 * dark;
-  b -= 24 * dark;
+  b -= 28 * dark;
 
   const tint = variantTint(variant);
   return [r + tint[0], g + tint[1], b + tint[2]];
@@ -379,15 +376,7 @@ function generateRiver(
   let g = 86 + streak * 22;
   let b = 148 + streak * 18;
 
-  // Crest highlights — smoothstep ramp instead of hard threshold so the foam
-  // fades in continuously rather than popping on/off between frames.
-  const bright = smoothstep(0.35, 0.70, streak);
-  r += 40 * bright;
-  g += 52 * bright;
-  b += 48 * bright;
-
-  // Dark troughs — reversed edges so the ramp fires as streak drops below
-  // -0.35 and reaches full strength at -0.60.
+  // Dark troughs for depth.
   const dark = smoothstep(-0.35, -0.60, streak);
   r -= 10 * dark;
   g -= 14 * dark;
