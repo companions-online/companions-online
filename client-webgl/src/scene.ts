@@ -17,6 +17,9 @@ import { TREE_BLUEPRINT } from './entities/sprite-manifest.js';
 import type { ClientEntity } from './entities/client-entity.js';
 import { generateWallTextures } from './buildings/wall-texture.js';
 import { buildWallDrawables, type WallDrawable } from './buildings/wall-sprites.js';
+import { BlueprintType } from '@shared/blueprints.js';
+import { DOOR_BLUEPRINT } from './entities/sprite-manifest.js';
+import { detectDoorFacing, placeDoor } from './entities/door.js';
 
 export interface PlayerControls {
   moveTo: (tileX: number, tileY: number) => void;
@@ -35,6 +38,7 @@ export interface Scene {
   wallDrawables: WallDrawable[];
   myEntityId: number | null;
   playerControls: PlayerControls | null;
+  toggleDoorAt: (tx: number, ty: number) => boolean;
   time: number;
 }
 
@@ -46,7 +50,7 @@ export async function createScene(
   gl: WebGL2RenderingContext,
   seed: number,
 ): Promise<Scene> {
-  const { map: worldMap } = generateWorld(seed);
+  const { map: worldMap, entitySpawns } = generateWorld(seed);
 
   // CPU-side texture + mask generation — pure logic, no GL calls.
   const rawTiles = generateRawTerrainTiles();
@@ -81,8 +85,9 @@ export async function createScene(
   const { occupiedTiles: treeTiles } = spawnTrees(
     entities, terrainBlocked, spriteRegistry, 1000, seed,
   );
+  const doorBlockedTiles = new Set<number>();
   const isBlocked = (x: number, y: number) =>
-    terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x);
+    terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x) || doorBlockedTiles.has(y * MAP_SIZE + x);
 
   // 3 showcase trees near spawn, one of each variant, side by side.
   for (let v = 0; v < 3; v++) {
@@ -90,6 +95,18 @@ export async function createScene(
     const sheet = spriteRegistry.resolve(TREE_BLUEPRINT, v);
     entities.set(id, placeTree(id, SPAWN_X + 3 + v, SPAWN_Y - 3, sheet));
     treeTiles.add((SPAWN_Y - 3) * MAP_SIZE + (SPAWN_X + 3 + v));
+  }
+
+  // Doors — spawn from world-gen entity list.
+  const doorToggles = new Map<number, () => void>(); // tileKey → toggle fn
+  let doorId = 800;
+  const doorSheet = spriteRegistry.resolve(DOOR_BLUEPRINT, 0);
+  for (const spawn of entitySpawns) {
+    if (spawn.blueprint !== BlueprintType.WoodenDoor) continue;
+    const facing = detectDoorFacing(spawn.x, spawn.y, worldMap);
+    const { entity, toggle } = placeDoor(doorId++, spawn.x, spawn.y, facing, doorSheet, elevationGrid, doorBlockedTiles);
+    entities.set(entity.id, entity);
+    doorToggles.set(spawn.y * MAP_SIZE + spawn.x, toggle);
   }
 
   // Player — becomes scene.myEntityId. Wander herd takes ids 2..6.
@@ -109,6 +126,12 @@ export async function createScene(
     wallDrawables,
     myEntityId: playerSpawn.id,
     playerControls: { moveTo: playerSpawn.moveTo },
+    toggleDoorAt(tx, ty) {
+      const key = ty * MAP_SIZE + tx;
+      const toggle = doorToggles.get(key);
+      if (toggle) { toggle(); return true; }
+      return false;
+    },
     time: 0,
   };
 }

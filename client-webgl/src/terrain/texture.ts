@@ -400,14 +400,17 @@ function generateWoodenFloor(
   const vx = variant * 19.1;
   const vy = variant * 7.3;
 
-  // Plank lines: every ~8 pixels along py, aligned to iso-horizontal.
-  // Offset alternate planks by half to break symmetry.
-  const plankH = 8;
-  const plankIdx = Math.floor(py / plankH);
-  const plankOffset = (plankIdx & 1) * 12;
-  const localY = py % plankH;
+  // Isometric-aligned coordinates so planks follow the diamond axes.
+  // isoU runs perpendicular to planks (across them), isoV runs along planks.
+  const isoU = px - 2 * py;
+  const isoV = px + 2 * py;
 
-  // Wood grain running along px (iso direction)
+  const plankH = 18;
+  const plankIdx = Math.floor(isoU / plankH);
+  const plankOffset = (plankIdx & 1) * 12;
+  const localU = ((isoU % plankH) + plankH) % plankH;
+
+  // Wood grain — noise in screen space for visual detail, plank offset in iso
   const grain = noise.noise2d((px + plankOffset) / 4 + vx, py / 16 + vy);
   const fine  = noise.noise2d((px + plankOffset) / 2 + vx, py / 6 + vy) * 0.3;
   const wood = grain + fine;
@@ -419,8 +422,8 @@ function generateWoodenFloor(
   let g = 108 + wood * 12 + plankTint * 8;
   let b =  68 + wood * 6  + plankTint * 6;
 
-  // Plank gap: 1px dark line at the boundary between planks
-  if (localY === 0) {
+  // Plank gap: dark line at the boundary between planks
+  if (localU === 0) {
     r -= 30;
     g -= 25;
     b -= 20;
@@ -453,24 +456,27 @@ function generateStoneFloor(
   const vx = variant * 14.7;
   const vy = variant * 9.3;
 
-  // Irregular stone slabs: use Perlin-based Voronoi-like cells.
-  // For simplicity, use a grid with offset rows (running bond).
-  const slabW = 10;
-  const slabH = 8;
-  const row = Math.floor(py / slabH);
-  const rowOffset = (row & 1) * (slabW >> 1);
-  const col = Math.floor((px + rowOffset) / slabW);
+  // Isometric-aligned coordinates so the brick grid follows diamond axes.
+  const isoU = px - 2 * py;
+  const isoV = px + 2 * py;
 
-  // Mortar detection: 1px gap at slab boundaries
-  const localX = (px + rowOffset) % slabW;
-  const localY = py % slabH;
-  const isMortar = localX === 0 || localY === 0;
+  // Running-bond grid aligned to iso axes.
+  const slabW = 20;
+  const slabH = 18;
+  const row = Math.floor(isoU / slabH);
+  const rowOffset = (row & 1) * (slabW >> 1);
+  const col = Math.floor((isoV + rowOffset + slabW * 1000) / slabW);
+
+  // Mortar detection: gap at slab boundaries in iso space
+  const localU = ((isoU % slabH) + slabH) % slabH;
+  const localV = (((isoV + rowOffset) % slabW) + slabW) % slabW;
+  const isMortar = localU === 0 || localV === 0;
 
   // Per-slab tint via hash
   const slabHash = Math.imul(col * 0x27d4eb2d, row * 0x165667b1 + 1);
   const slabTint = ((slabHash >>> 16) & 0xff) / 255.0 - 0.5; // -0.5..0.5
 
-  // Surface noise
+  // Surface noise (screen space for visual detail)
   const low = noise.noise2d(px / 14 + vx, py / 7 + vy);
   const mid = noise.noise2d(px / 5  + vx, py / 3 + vy) * 0.35;
   const blob = low + mid;

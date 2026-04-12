@@ -222,12 +222,15 @@ export function generateWorld(seed: number): WorldGenResult {
       const tx = bx + dx;
       const ty = by + dy;
       if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
-      const isPerimeter = dx === 0 || (dx === 5 && dy !== 2) || dy === 0 || dy === 5;
-      map.setBuilding(tx, ty, isPerimeter ? Building.Wall : Building.WoodenFloor);
+      const isPerimeter = dx === 0 || (dx === 5 && dy !== 2) || dy === 0 || (dy === 5 && dx !== 2);
+      map.setBuilding(tx, ty, isPerimeter ? Building.Wall : Building.StoneFloor);
       // Force grass under the building so floor blending looks clean
       map.setTerrain(tx, ty, Terrain.Grass);
     }
   }
+
+  spawns.push({ x: bx + 5, y: by + 2, blueprint: BlueprintType.WoodenDoor });
+  spawns.push({ x: bx + 2, y: by + 5, blueprint: BlueprintType.WoodenDoor });
 
   return { map, entitySpawns: spawns };
 }

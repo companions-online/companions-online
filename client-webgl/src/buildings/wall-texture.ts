@@ -6,7 +6,7 @@ const HALF_W = TILE_W / 2; // 32
 const HALF_H = TILE_H / 2; // 16
 
 /** Height of the wall face below the top diamond, in pixels. */
-export const WALL_HEIGHT = 24;
+export const WALL_HEIGHT = 32;
 
 /** Full wall sprite dimensions. */
 export const WALL_SPRITE_W = TILE_W;             // 64

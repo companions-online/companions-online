@@ -30,6 +30,7 @@ export interface SpriteManifestEntry {
 export const DEER_BLUEPRINT = 0;
 export const PLAYER_BLUEPRINT = 1;
 export const TREE_BLUEPRINT = 2;
+export const DOOR_BLUEPRINT = 3;
 
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   {
@@ -59,5 +60,14 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
     footX: 32,
     footY: 128,
     detectFoot: true,
+  },
+  {
+    blueprintId: DOOR_BLUEPRINT,
+    name: 'door',
+    variantCount: 1,
+    frameW: 64,
+    frameH: 64,
+    footX: 32,
+    footY: 64,
   },
 ];

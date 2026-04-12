@@ -3,6 +3,7 @@
 // ClientEntity types; the player exposes itself via the playerControls slot
 // regardless of what kind of entity it is.
 
+import { BlueprintType } from '@shared/blueprints.js';
 import type { Scene } from '../scene.js';
 
 export function attachMouseControls(canvas: HTMLCanvasElement, scene: Scene): void {
@@ -14,7 +15,12 @@ export function attachMouseControls(canvas: HTMLCanvasElement, scene: Scene): vo
     const cy = (ev.clientY - rect.top) * (canvas.height / rect.height);
 
     const tile = scene.camera.tileAt(cx, cy);
-    if (tile && scene.playerControls) {
+    if (!tile) return;
+
+    // Check for a door at the clicked tile.
+    if (scene.toggleDoorAt(tile.tx, tile.ty)) return;
+
+    if (scene.playerControls) {
       scene.playerControls.moveTo(tile.tx, tile.ty);
     }
   });
