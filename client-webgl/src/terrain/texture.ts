@@ -386,6 +386,115 @@ function generateRiver(
   return [r + tint[0], g + tint[1], b + tint[2]];
 }
 
+// ---------------------------------------------------------------------------
+// Building floor generators (rendering-only terrain types 6, 7)
+// ---------------------------------------------------------------------------
+
+function generateWoodenFloor(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  const vx = variant * 19.1;
+  const vy = variant * 7.3;
+
+  // Plank lines: every ~8 pixels along py, aligned to iso-horizontal.
+  // Offset alternate planks by half to break symmetry.
+  const plankH = 8;
+  const plankIdx = Math.floor(py / plankH);
+  const plankOffset = (plankIdx & 1) * 12;
+  const localY = py % plankH;
+
+  // Wood grain running along px (iso direction)
+  const grain = noise.noise2d((px + plankOffset) / 4 + vx, py / 16 + vy);
+  const fine  = noise.noise2d((px + plankOffset) / 2 + vx, py / 6 + vy) * 0.3;
+  const wood = grain + fine;
+
+  // Per-plank base colour shift (deterministic per plank index)
+  const plankTint = ((plankIdx * 0x27d4eb2d) >>> 20) / 4096.0 - 0.5; // -0.5..0.5
+
+  let r = 148 + wood * 18 + plankTint * 12;
+  let g = 108 + wood * 12 + plankTint * 8;
+  let b =  68 + wood * 6  + plankTint * 6;
+
+  // Plank gap: 1px dark line at the boundary between planks
+  if (localY === 0) {
+    r -= 30;
+    g -= 25;
+    b -= 20;
+  }
+
+  // Fine per-pixel grain
+  const g2 = rand() - 0.5;
+  r += g2 * 4;
+  g += g2 * 3;
+  b += g2 * 2;
+
+  // Knots — rare darker circular patches
+  if (rand() < 0.005) {
+    r -= 20;
+    g -= 16;
+    b -= 10;
+  }
+
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
+}
+
+function generateStoneFloor(
+  px: number, py: number,
+  noise: PerlinNoise,
+  rand: () => number,
+  variant: number,
+  _frame: number,
+): [number, number, number] {
+  const vx = variant * 14.7;
+  const vy = variant * 9.3;
+
+  // Irregular stone slabs: use Perlin-based Voronoi-like cells.
+  // For simplicity, use a grid with offset rows (running bond).
+  const slabW = 10;
+  const slabH = 8;
+  const row = Math.floor(py / slabH);
+  const rowOffset = (row & 1) * (slabW >> 1);
+  const col = Math.floor((px + rowOffset) / slabW);
+
+  // Mortar detection: 1px gap at slab boundaries
+  const localX = (px + rowOffset) % slabW;
+  const localY = py % slabH;
+  const isMortar = localX === 0 || localY === 0;
+
+  // Per-slab tint via hash
+  const slabHash = Math.imul(col * 0x27d4eb2d, row * 0x165667b1 + 1);
+  const slabTint = ((slabHash >>> 16) & 0xff) / 255.0 - 0.5; // -0.5..0.5
+
+  // Surface noise
+  const low = noise.noise2d(px / 14 + vx, py / 7 + vy);
+  const mid = noise.noise2d(px / 5  + vx, py / 3 + vy) * 0.35;
+  const blob = low + mid;
+
+  let r = 142 + blob * 16 + slabTint * 14;
+  let g = 128 + blob * 12 + slabTint * 10;
+  let b = 112 + blob * 8  + slabTint * 8;
+
+  if (isMortar) {
+    r -= 35;
+    g -= 30;
+    b -= 25;
+  }
+
+  // Fine grain
+  const grain = rand() - 0.5;
+  r += grain * 6;
+  g += grain * 5;
+  b += grain * 4;
+
+  const tint = variantTint(variant);
+  return [r + tint[0], g + tint[1], b + tint[2]];
+}
+
 const GENERATORS: readonly GeneratorFn[] = [
   generateGrass,
   generateDirt,
@@ -393,6 +502,8 @@ const GENERATORS: readonly GeneratorFn[] = [
   generateSand,
   generateWater,
   generateRiver,
+  generateWoodenFloor,
+  generateStoneFloor,
 ];
 
 // ---------------------------------------------------------------------------

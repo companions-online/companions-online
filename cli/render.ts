@@ -32,7 +32,7 @@ export function buildCursorContext(playerX: number, playerY: number, dx: number,
   const t = state.terrainGrid[gi] as Terrain;
   const b = state.buildingsGrid[gi] as Building;
   const isWalkable = !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
-    && (b === Building.None || b === Building.Floor);
+    && (b === Building.None || b === Building.WoodenFloor || b === Building.StoneFloor);
   const entAt = entityAtWorldTile(tx, ty);
   const handItem = state.inventory.find(i => i.equippedSlot === 1);
 

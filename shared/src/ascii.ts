@@ -18,7 +18,8 @@ export function buildingChar(b: Building): string {
   switch (b) {
     case Building.None:  return '';
     case Building.Wall:  return '#';
-    case Building.Floor: return '_';
+    case Building.WoodenFloor: return '_';
+    case Building.StoneFloor:  return '=';
     case Building.Fence: return '|';
     default:             return '?';
   }

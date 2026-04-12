@@ -1,4 +1,5 @@
-import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H } from './platform/config.js';
+import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H } from './platform/config.js';
+import { tileToScreen } from '@shared/coordinates.js';
 import type { Scene } from './scene.js';
 import { drawHud } from './ui/hud.js';
 
@@ -62,14 +63,33 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
       scene.time,
     );
 
-    // Sprite pass — Y-sorted so entities in front of each other layer correctly.
-    // Each entity's draw callback is responsible for binding its own texture.
-    if (scene.entities.size > 0) {
+    // Sprite pass — Y-sorted: merge entities + wall drawables so walls properly
+    // occlude entities behind them. Pre-compute entity screenY for sorting.
+    const drawCount = scene.entities.size + scene.wallDrawables.length;
+    if (drawCount > 0) {
       scene.spriteRenderer.begin(resolution);
-      const sorted = Array.from(scene.entities.values()).sort((a, b) => a.screenY - b.screenY);
-      for (const e of sorted) {
-        e.draw?.(e, scene.spriteRenderer, gl, offsetX, offsetY);
+
+      const drawList: { screenY: number; draw: () => void }[] = [];
+
+      for (const e of scene.entities.values()) {
+        const scr = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
+        e.screenY = scr.screenY;
+        drawList.push({
+          screenY: e.screenY,
+          draw: () => e.draw?.(e, scene.spriteRenderer, gl, offsetX, offsetY),
+        });
       }
+
+      for (const w of scene.wallDrawables) {
+        drawList.push({
+          screenY: w.screenY,
+          draw: () => w.draw(scene.spriteRenderer, gl, offsetX, offsetY),
+        });
+      }
+
+      drawList.sort((a, b) => a.screenY - b.screenY);
+      for (const d of drawList) d.draw();
+
       scene.spriteRenderer.end();
     }
 

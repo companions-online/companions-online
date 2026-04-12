@@ -1,6 +1,11 @@
 import { Terrain } from '@shared/terrain.js';
-import type { WorldMap } from '@shared/world/world-map.js';
 import { BlendMode } from './blend-masks.js';
+
+/** Minimal interface for terrain lookups — allows override with effective terrain. */
+export interface TerrainGrid {
+  getTerrain(x: number, y: number): number;
+  inBounds(x: number, y: number): boolean;
+}
 
 /**
  * Draw-order priority per terrain. Higher values are drawn on top of lower:
@@ -14,6 +19,8 @@ export const TERRAIN_PRIORITY: readonly number[] = [
   30, // Sand
   60, // Water
   50, // River
+  70, // WoodenFloor (above all natural terrain)
+  70, // StoneFloor
 ];
 
 /** Blend-mode (mask shape-class) per terrain. Indexed by Terrain enum value. */
@@ -24,6 +31,8 @@ export const TERRAIN_BLEND_MODE: readonly BlendMode[] = [
   BlendMode.Smooth, // Sand
   BlendMode.Short,  // Water
   BlendMode.Short,  // River
+  BlendMode.Smooth, // WoodenFloor (clean man-made edges)
+  BlendMode.Smooth, // StoneFloor
 ];
 
 // ---------------------------------------------------------------------------
@@ -80,9 +89,9 @@ export interface Influence {
 export function gatherInfluences(
   tx: number,
   ty: number,
-  worldMap: WorldMap,
+  terrainGrid: TerrainGrid,
 ): Influence[] {
-  const centerTerrain = worldMap.getTerrain(tx, ty) as number;
+  const centerTerrain = terrainGrid.getTerrain(tx, ty) as number;
   const centerPriority = TERRAIN_PRIORITY[centerTerrain];
 
   const influences = new Map<number, Influence>();
@@ -106,9 +115,9 @@ export function gatherInfluences(
   for (const i of adjacentDirs) {
     const nx = tx + NEIGHBOR_DX[i];
     const ny = ty + NEIGHBOR_DY[i];
-    if (!worldMap.inBounds(nx, ny)) continue;
+    if (!terrainGrid.inBounds(nx, ny)) continue;
 
-    const nTerrain = worldMap.getTerrain(nx, ny) as number;
+    const nTerrain = terrainGrid.getTerrain(nx, ny) as number;
     if (nTerrain === centerTerrain) continue;
 
     const nPriority = TERRAIN_PRIORITY[nTerrain];
@@ -122,9 +131,9 @@ export function gatherInfluences(
   for (const i of diagonalDirs) {
     const nx = tx + NEIGHBOR_DX[i];
     const ny = ty + NEIGHBOR_DY[i];
-    if (!worldMap.inBounds(nx, ny)) continue;
+    if (!terrainGrid.inBounds(nx, ny)) continue;
 
-    const nTerrain = worldMap.getTerrain(nx, ny) as number;
+    const nTerrain = terrainGrid.getTerrain(nx, ny) as number;
     if (nTerrain === centerTerrain) continue;
 
     const nPriority = TERRAIN_PRIORITY[nTerrain];

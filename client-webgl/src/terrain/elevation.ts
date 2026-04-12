@@ -1,6 +1,6 @@
 import { PerlinNoise } from '@shared/world/noise.js';
 import { MAP_SIZE } from '@shared/constants.js';
-import { Terrain } from '@shared/terrain.js';
+import { Terrain, Building } from '@shared/terrain.js';
 import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 
@@ -64,6 +64,27 @@ export function buildElevationGrid(seed: number, mapSize: number, worldMap: Worl
       } else if (waterCount > 0) {
         // Shore vertex — pull down toward water
         grid[vy * size + vx] = Math.min(grid[vy * size + vx], SHORE_HEIGHT);
+      }
+    }
+  }
+
+  // Pass 3: flatten vertices under building footprints. Any vertex that
+  // touches a building tile (wall or floor) is pulled to SHORE_HEIGHT so
+  // the building sits on a level surface.
+  for (let vy = 0; vy < size; vy++) {
+    for (let vx = 0; vx < size; vx++) {
+      let hasBuilding = false;
+      for (let dy = -1; dy <= 0 && !hasBuilding; dy++) {
+        for (let dx = -1; dx <= 0 && !hasBuilding; dx++) {
+          const tx = vx + dx;
+          const ty = vy + dy;
+          if (tx < 0 || tx >= mapSize || ty < 0 || ty >= mapSize) continue;
+          const b = worldMap.getBuilding(tx, ty) as number;
+          if (b !== Building.None) hasBuilding = true;
+        }
+      }
+      if (hasBuilding) {
+        grid[vy * size + vx] = SHORE_HEIGHT;
       }
     }
   }

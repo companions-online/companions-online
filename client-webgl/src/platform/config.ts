@@ -17,8 +17,8 @@ export const GAME_Y = HUD_TOP_H;
 export const GAME_W = CANVAS_W - HUD_RIGHT_W;
 export const GAME_H = CANVAS_H - HUD_TOP_H - HUD_BOTTOM_H;
 
-/** Number of terrain types (matches shared Terrain enum) */
-export const TERRAIN_COUNT = 6;
+/** Number of terrain types (matches shared Terrain enum, including rendering-only floors) */
+export const TERRAIN_COUNT = 8;
 
 /** Procedural tile variants per terrain type, indexed by Terrain enum value */
 export const TERRAIN_VARIANT_COUNTS: readonly number[] = [
@@ -28,6 +28,8 @@ export const TERRAIN_VARIANT_COUNTS: readonly number[] = [
   4, // Sand
   3, // Water
   3, // River
+  4, // WoodenFloor (rendering-only)
+  4, // StoneFloor  (rendering-only)
 ];
 
 /** Water/river animation */
@@ -38,4 +40,4 @@ export const WATER_FRAME_MS = 160;
 export const PX_PER_Z = 16;
 
 /** Draw a subtle dark outline around each tile diamond (grid debug). */
-export const SHOW_TILE_OUTLINES = false;
+export const SHOW_TILE_OUTLINES = true;

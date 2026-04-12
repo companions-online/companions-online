@@ -135,6 +135,24 @@ export function createBuffer(
   return buf;
 }
 
+/**
+ * Create an immutable 2D texture from an OffscreenCanvas. Same NEAREST
+ * filtering as sprite textures. Used for procedurally generated wall sprites.
+ */
+export function createCanvasTexture(gl: WebGL2RenderingContext, canvas: OffscreenCanvas): WebGLTexture {
+  const tex = gl.createTexture();
+  if (!tex) throw new Error('gl.createTexture returned null');
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
 /** Throw if `gl.getError()` reports anything other than `NO_ERROR`. */
 export function checkGLError(gl: WebGL2RenderingContext, context: string): void {
   const err = gl.getError();

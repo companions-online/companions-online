@@ -1,5 +1,6 @@
 import { MAP_SIZE } from '@shared/constants.js';
 import type { WorldMap } from '@shared/world/world-map.js';
+import { Terrain, Building } from '@shared/terrain.js';
 import { TERRAIN_VARIANT_COUNTS } from '../platform/config.js';
 import { tileVariant } from './texture.js';
 import { getTileCorners } from './elevation.js';
@@ -9,6 +10,7 @@ import {
   pickDiagonalMaskIds,
   edgeMaskVariant,
   TERRAIN_BLEND_MODE,
+  type TerrainGrid,
 } from './terrain-blend.js';
 import { maskLayerIndex, type TerrainLayerIndex } from './texture-arrays.js';
 
@@ -56,6 +58,31 @@ export function buildTerrainInstances(
   const H = worldMap.height;
   const tileCount = W * H;
 
+  // Build effective terrain grid: building floors override the visual terrain
+  // for rendering and blendomatic. The natural terrain in worldMap.terrain is
+  // never modified — destroying a building reverts to the underlying terrain.
+  const effectiveTerrain = new Uint8Array(tileCount);
+  for (let i = 0; i < tileCount; i++) {
+    const b = worldMap.buildings[i];
+    if (b === Building.WoodenFloor) {
+      effectiveTerrain[i] = Terrain.WoodenFloor;
+    } else if (b === Building.StoneFloor) {
+      effectiveTerrain[i] = Terrain.StoneFloor;
+    } else if (b === Building.Wall) {
+      // Wall tiles keep their natural terrain so blendomatic does NOT bleed
+      // floor texture outward past the walls. The wall sprite's diamond fully
+      // covers the base terrain tile, so the grass underneath is invisible.
+      effectiveTerrain[i] = worldMap.terrain[i];
+    } else {
+      effectiveTerrain[i] = worldMap.terrain[i];
+    }
+  }
+
+  const effGrid: TerrainGrid = {
+    getTerrain: (x, y) => effectiveTerrain[y * W + x] as Terrain,
+    inBounds: (x, y) => worldMap.inBounds(x, y),
+  };
+
   // Base buffer — one instance per tile, always populated even for water
   // (which just uses frame 0 in this static prototype).
   const baseData = new ArrayBuffer(BASE_INSTANCE_STRIDE * tileCount);
@@ -85,7 +112,7 @@ export function buildTerrainInstances(
   for (let ty = 0; ty < H; ty++) {
     for (let tx = 0; tx < W; tx++) {
       const tileIdx = ty * W + tx;
-      const terrain = worldMap.getTerrain(tx, ty) as number;
+      const terrain = effectiveTerrain[tileIdx];
 
       const corners = getTileCorners(tx, ty, elevationGrid, 0, 0);
 
@@ -112,7 +139,7 @@ export function buildTerrainInstances(
       // --- Overlay instances for each higher-priority neighbor --------
       // gatherInfluences returns an already-ascending-by-priority list; we
       // emit adjacent masks first, then diagonal, matching render-scene.ts.
-      const influences = gatherInfluences(tx, ty, worldMap);
+      const influences = gatherInfluences(tx, ty, effGrid);
       if (influences.length === 0) continue;
 
       const variantOffset = edgeMaskVariant(tx, ty);

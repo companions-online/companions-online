@@ -1,4 +1,4 @@
-import { Terrain } from '../terrain.js';
+import { Terrain, Building } from '../terrain.js';
 import { BlueprintType } from '../blueprints.js';
 import { MAP_SIZE, SPAWN_X, SPAWN_Y } from '../constants.js';
 import { PerlinNoise } from './noise.js';
@@ -213,6 +213,21 @@ export function generateWorld(seed: number): WorldGenResult {
 
   const wandererPos = findNpcTile(30 * scale, 45 * scale);
   if (wandererPos) spawns.push({ ...wandererPos, blueprint: BlueprintType.Wanderer });
+
+  // --- Pass 8: Test building (6×6 near spawn) ---
+  const bx = SPAWN_X + 5;
+  const by = SPAWN_Y + 5;
+  for (let dy = 0; dy < 8; dy++) {
+    for (let dx = 0; dx < 8; dx++) {
+      const tx = bx + dx;
+      const ty = by + dy;
+      if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
+      const isPerimeter = dx === 0 || (dx === 5 && dy !== 2) || dy === 0 || dy === 5;
+      map.setBuilding(tx, ty, isPerimeter ? Building.Wall : Building.WoodenFloor);
+      // Force grass under the building so floor blending looks clean
+      map.setTerrain(tx, ty, Terrain.Grass);
+    }
+  }
 
   return { map, entitySpawns: spawns };
 }

@@ -13,6 +13,8 @@ import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-regis
 import { spawnDeer } from './entities/deer.js';
 import { spawnPlayer } from './entities/player.js';
 import type { ClientEntity } from './entities/client-entity.js';
+import { generateWallTextures } from './buildings/wall-texture.js';
+import { buildWallDrawables, type WallDrawable } from './buildings/wall-sprites.js';
 
 export interface PlayerControls {
   moveTo: (tileX: number, tileY: number) => void;
@@ -28,6 +30,7 @@ export interface Scene {
   spriteRenderer: SpriteRenderer;
   spriteRegistry: SpriteRegistry;
   entities: Map<number, ClientEntity>;
+  wallDrawables: WallDrawable[];
   myEntityId: number | null;
   playerControls: PlayerControls | null;
   time: number;
@@ -61,6 +64,10 @@ export async function createScene(
   // Load every sprite PNG declared in sprite-manifest.ts in parallel.
   const spriteRegistry = await loadSpriteRegistry(gl);
 
+  // Wall textures + drawable list for Y-sort rendering.
+  const wallTextures = generateWallTextures(gl);
+  const wallDrawables = buildWallDrawables(worldMap, wallTextures, elevationGrid);
+
   const camera = new Camera(SPAWN_X, SPAWN_Y);
 
   const entities = new Map<number, ClientEntity>();
@@ -80,6 +87,7 @@ export async function createScene(
     spriteRenderer,
     spriteRegistry,
     entities,
+    wallDrawables,
     myEntityId: playerSpawn.id,
     playerControls: { moveTo: playerSpawn.moveTo },
     time: 0,
