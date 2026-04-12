@@ -38,7 +38,6 @@ const LOC_CORNER_Y     = 2;
 const LOC_SRC_LAYER    = 3;
 const LOC_MASK_LAYER   = 4;
 const LOC_ANIM_STRIDE  = 5;
-const LOC_CORNER_SHADE = 6;
 
 interface BaseUniforms {
   resolution: WebGLUniformLocation;
@@ -149,12 +148,6 @@ export class TerrainRenderer {
     gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, BASE_INSTANCE_STRIDE, 36);
     gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
 
-    // a_cornerShade — vec4 of floats at offset 40 on base instances. Plain
-    // vertexAttribPointer (NOT IPointer) since this is a float attribute.
-    gl.enableVertexAttribArray(LOC_CORNER_SHADE);
-    gl.vertexAttribPointer(LOC_CORNER_SHADE, 4, gl.FLOAT, false, BASE_INSTANCE_STRIDE, 40);
-    gl.vertexAttribDivisor(LOC_CORNER_SHADE, 1);
-
     // --- Overlay VAO ------------------------------------------------------
     const overlayVao = gl.createVertexArray();
     if (!overlayVao) throw new Error('createVertexArray returned null');
@@ -181,11 +174,6 @@ export class TerrainRenderer {
     gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
     gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, OVERLAY_INSTANCE_STRIDE, 40);
     gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
-
-    // a_cornerShade — vec4 of floats at offset 44 on overlay instances.
-    gl.enableVertexAttribArray(LOC_CORNER_SHADE);
-    gl.vertexAttribPointer(LOC_CORNER_SHADE, 4, gl.FLOAT, false, OVERLAY_INSTANCE_STRIDE, 44);
-    gl.vertexAttribDivisor(LOC_CORNER_SHADE, 1);
 
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);

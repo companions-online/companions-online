@@ -317,14 +317,7 @@ function generateWater(
   let g = 44 + streak * 18;
   let b = 112 + streak * 22;
 
-  // Subtle crest highlights — ocean has less visible foam than river.
-  const bright = smoothstep(0.40, 0.75, streak);
-  r += 20 * bright;
-  g += 32 * bright;
-  b += 36 * bright;
-
-  // Stronger dark troughs for "deep water" feel — ocean depth darkens more
-  // than river's shadowed ripples.
+  // Dark troughs for "deep water" feel.
   const dark = smoothstep(-0.40, -0.65, streak);
   r -= 10 * dark;
   g -= 18 * dark;
@@ -383,15 +376,7 @@ function generateRiver(
   let g = 86 + streak * 22;
   let b = 148 + streak * 18;
 
-  // Crest highlights — smoothstep ramp instead of hard threshold so the foam
-  // fades in continuously rather than popping on/off between frames.
-  const bright = smoothstep(0.35, 0.70, streak);
-  r += 40 * bright;
-  g += 52 * bright;
-  b += 48 * bright;
-
-  // Dark troughs — reversed edges so the ramp fires as streak drops below
-  // -0.35 and reaches full strength at -0.60.
+  // Dark troughs for depth.
   const dark = smoothstep(-0.35, -0.60, streak);
   r -= 10 * dark;
   g -= 14 * dark;
