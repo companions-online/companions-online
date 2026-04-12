@@ -34,6 +34,34 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+/** Scan the image for the bounding box of opaque pixels and return the
+ *  horizontal center + one-past-the-bottommost-opaque-row as the foot. */
+function detectFootFromImage(img: HTMLImageElement): { footX: number; footY: number } {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  let minX = w, maxX = 0, maxY = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return {
+    footX: Math.round((minX + maxX) / 2),
+    footY: maxY + 1,
+  };
+}
+
 export async function loadSpriteRegistry(gl: WebGL2RenderingContext): Promise<SpriteRegistry> {
   const sheets = new Map<number, SpriteSheetRef[]>();
 
@@ -41,14 +69,17 @@ export async function loadSpriteRegistry(gl: WebGL2RenderingContext): Promise<Sp
     const refs: SpriteSheetRef[] = await Promise.all(
       Array.from({ length: entry.variantCount }, async (_, v) => {
         const img = await loadImage(pathFor(entry, v));
+        const foot = entry.detectFoot
+          ? detectFootFromImage(img)
+          : { footX: entry.footX, footY: entry.footY };
         return {
           texture: createImageTexture(gl, img),
           sheetW: img.naturalWidth,
           sheetH: img.naturalHeight,
           frameW: entry.frameW,
           frameH: entry.frameH,
-          footX: entry.footX,
-          footY: entry.footY,
+          footX: foot.footX,
+          footY: foot.footY,
         };
       }),
     );
