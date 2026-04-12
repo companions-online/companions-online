@@ -72,7 +72,7 @@ export async function createScene(
   // avoid. Tree ids live in a high range (1000+) to stay out of the way of
   // future creature id growth.
   const { occupiedTiles: treeTiles } = spawnTrees(
-    entities, 60, terrainBlocked, spriteRegistry, 1000, seed,
+    entities, terrainBlocked, spriteRegistry, 1000, seed,
   );
   const isBlocked = (x: number, y: number) =>
     terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x);

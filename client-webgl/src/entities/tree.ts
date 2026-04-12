@@ -55,10 +55,19 @@ function createTree(
   return entity;
 }
 
+// Each entry produces a dense rectangular patch of trees (2*radius+1)² tiles.
+const FOREST_PATCHES = [
+  { radius: 5 },   // 11×11
+  { radius: 4 },   //  9×9
+  { radius: 4 },   //  9×9
+];
+// Minimum distance between forest centers so patches don't overlap.
+const MIN_FOREST_DIST_SQ = 15 * 15;
+
 /**
- * Scatter `count` trees across walkable tiles using a seeded LCG, skipping
- * the tile around spawn. Returns the assigned ids and the Set of occupied
- * tile keys (y * MAP_SIZE + x) so the caller can OR them into `isBlocked`.
+ * Place dense rectangular forest patches on walkable tiles using a seeded LCG.
+ * Returns the assigned ids and the Set of occupied tile keys (y * MAP_SIZE + x)
+ * so the caller can OR them into `isBlocked`.
  *
  * The LCG is the same recipe world-gen uses (shared/src/world/world-gen.ts).
  * We XOR the seed with a constant so tree placement is a different stream
@@ -66,7 +75,6 @@ function createTree(
  */
 export function spawnTrees(
   entities: Map<number, ClientEntity>,
-  count: number,
   isBlocked: (x: number, y: number) => boolean,
   registry: SpriteRegistry,
   startId: number,
@@ -80,30 +88,59 @@ export function spawnTrees(
 
   const occupiedTiles = new Set<number>();
   const ids: number[] = [];
-  const maxAttempts = count * 20;
-  let attempts = 0;
+  const centers: { x: number; y: number }[] = [];
 
-  while (ids.length < count && attempts < maxAttempts) {
-    attempts++;
-    const x = Math.floor(rand() * MAP_SIZE);
-    const y = Math.floor(rand() * MAP_SIZE);
+  for (const patch of FOREST_PATCHES) {
+    // Find a valid center for this forest patch.
+    let cx = 0, cy = 0, found = false;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      cx = Math.floor(rand() * MAP_SIZE);
+      cy = Math.floor(rand() * MAP_SIZE);
 
-    if (isBlocked(x, y)) continue;
+      if (isBlocked(cx, cy)) continue;
 
-    const dx = x - SPAWN_X;
-    const dy = y - SPAWN_Y;
-    if (dx * dx + dy * dy <= SPAWN_CLEAR_RADIUS * SPAWN_CLEAR_RADIUS) continue;
+      const sdx = cx - SPAWN_X;
+      const sdy = cy - SPAWN_Y;
+      if (sdx * sdx + sdy * sdy <= SPAWN_CLEAR_RADIUS * SPAWN_CLEAR_RADIUS) continue;
 
-    const key = y * MAP_SIZE + x;
-    if (occupiedTiles.has(key)) continue;
+      let tooClose = false;
+      for (const c of centers) {
+        const ddx = cx - c.x;
+        const ddy = cy - c.y;
+        if (ddx * ddx + ddy * ddy < MIN_FOREST_DIST_SQ) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
 
-    const variant = Math.floor(rand() * 3);
-    const sheet = registry.resolve(TREE_BLUEPRINT, variant);
+      found = true;
+      break;
+    }
+    if (!found) continue;
+    centers.push({ x: cx, y: cy });
 
-    const id = startId + ids.length;
-    entities.set(id, createTree(id, x, y, sheet));
-    occupiedTiles.add(key);
-    ids.push(id);
+    // Fill the patch rectangle with trees on every eligible tile.
+    for (let dy = -patch.radius; dy <= patch.radius; dy++) {
+      for (let dx = -patch.radius; dx <= patch.radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (x < 0 || x >= MAP_SIZE || y < 0 || y >= MAP_SIZE) continue;
+        if (isBlocked(x, y)) continue;
+
+        const sdx = x - SPAWN_X;
+        const sdy = y - SPAWN_Y;
+        if (sdx * sdx + sdy * sdy <= SPAWN_CLEAR_RADIUS * SPAWN_CLEAR_RADIUS) continue;
+
+        const key = y * MAP_SIZE + x;
+        if (occupiedTiles.has(key)) continue;
+
+        const variant = Math.floor(rand() * 3);
+        const sheet = registry.resolve(TREE_BLUEPRINT, variant);
+
+        const id = startId + ids.length;
+        entities.set(id, createTree(id, x, y, sheet));
+        occupiedTiles.add(key);
+        ids.push(id);
+      }
+    }
   }
 
   return { ids, occupiedTiles };

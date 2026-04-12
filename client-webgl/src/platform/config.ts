@@ -38,4 +38,4 @@ export const WATER_FRAME_MS = 160;
 export const PX_PER_Z = 16;
 
 /** Draw a subtle dark outline around each tile diamond (grid debug). */
-export const SHOW_TILE_OUTLINES = false;
+export const SHOW_TILE_OUTLINES = true;
