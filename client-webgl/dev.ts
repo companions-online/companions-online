@@ -24,7 +24,7 @@ const ctx = await esbuild.context({
 
 const { host, port } = await ctx.serve({
   servedir: path.resolve(__dirname),
-  port: 3002,
+  port: 3003,
 });
 
 console.log(`[client-gl] http://localhost:${port}`);
