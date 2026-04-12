@@ -1,5 +1,4 @@
 import { TILE_W, TILE_H } from '../platform/config.js';
-import { isInsideDiamond } from './texture.js';
 
 const HALF_W = TILE_W / 2;
 const HALF_H = TILE_H / 2;
@@ -151,8 +150,6 @@ function generateMask(modeId: BlendMode, maskId: number): OffscreenCanvas {
 
   for (let py = 0; py < TILE_H; py++) {
     for (let px = 0; px < TILE_W; px++) {
-      if (!isInsideDiamond(px, py)) continue;
-
       const nx = (px - HALF_W + 0.5) / HALF_W;
       const ny = (py - HALF_H + 0.5) / HALF_H;
       const base = shape(nx, ny);
