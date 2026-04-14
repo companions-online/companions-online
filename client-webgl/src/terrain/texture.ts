@@ -48,11 +48,11 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 const VARIANT_TINTS: readonly [number, number, number][] = [
   [  0,  0,  0],
-  [  6, -4,  2],
-  [ -4,  6, -2],
-  [  2, -2,  6],
-  [ -2,  2, -6],
-  [  4, -6,  4],
+  // [  6, -4,  2],
+  // [ -4,  6, -2],
+  // [  2, -2,  6],
+  // [ -2,  2, -6],
+  // [  4, -6,  4],
 ];
 
 function variantTint(variant: number): [number, number, number] {

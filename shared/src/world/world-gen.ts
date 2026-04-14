@@ -223,7 +223,7 @@ export function generateWorld(seed: number): WorldGenResult {
       const ty = by + dy;
       if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
       const isPerimeter = dx === 0 || (dx === 5 && dy !== 2) || dy === 0 || (dy === 5 && dx !== 2);
-      map.setBuilding(tx, ty, isPerimeter ? Building.Wall : Building.StoneFloor);
+      map.setBuilding(tx, ty, isPerimeter ? Building.Wall : Building.WoodenFloor);
       // Force grass under the building so floor blending looks clean
       map.setTerrain(tx, ty, Terrain.Grass);
     }
