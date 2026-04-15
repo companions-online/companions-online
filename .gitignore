@@ -5,3 +5,6 @@ dist/
 scripts/.session
 data/worlds/
 assets/import/
+
+# WSL/Windows NTFS alternate data streams written when files cross the bridge.
+*:Zone.Identifier

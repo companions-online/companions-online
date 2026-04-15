@@ -18,6 +18,7 @@ export interface GameWorldView {
   readonly entities: EntityManager;
   readonly inventoryMgr: InventoryManager;
   readonly occupancy: OccupancyGrid;
+  readonly seed: number;
 }
 
 export interface PlayerConnection {

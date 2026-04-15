@@ -15,7 +15,7 @@ function placeCritter(world: ReturnType<typeof createTestWorld>, bp: BlueprintTy
   world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   world.entities.health.set(eid, { currentHp: bpDef.maxHp ?? 10, maxHp: bpDef.maxHp ?? 10 });
-  world.entities.blueprintId.set(eid, { blueprintId: bp });
+  world.entities.blueprint.set(eid, { blueprintId: bp, variant: 0 });
   world.entities.statusEffects.set(eid, { effects: 0 });
   if (bpDef.speed) world.entities.speed.set(eid, bpDef.speed);
   world.occupancy.set(x, y, eid);
@@ -38,7 +38,7 @@ describe('E2E: Combat', () => {
     let hideCount = 0;
     let meatCount = 0;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       if (!bp) continue;
       const pos = world.entities.position.get(eid);
       if (!pos || pos.tileX !== 10 || pos.tileY !== 10) continue;
@@ -145,7 +145,7 @@ describe('E2E: Combat', () => {
     // Check for at least iron or rock drop
     let hasIronOrRock = false;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       if (bp && (bp.blueprintId === BlueprintType.Iron || bp.blueprintId === BlueprintType.Rock)) {
         const pos = world.entities.position.get(eid);
         if (pos && pos.tileX === 10 && pos.tileY === 10) hasIronOrRock = true;
@@ -210,7 +210,7 @@ describe('E2E: Combat', () => {
     // Sword should be on the ground as an entity at death position
     let swordOnGround = false;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       const pos = world.entities.position.get(eid);
       if (bp?.blueprintId === BlueprintType.IronSword && pos?.tileX === 10 && pos?.tileY === 10) {
         swordOnGround = true;

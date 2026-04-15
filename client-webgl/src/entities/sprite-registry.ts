@@ -1,7 +1,12 @@
-// Sprite registry: loads every PNG declared in sprite-manifest.ts at boot and
-// exposes an O(1) lookup keyed by (blueprintId, variant). No lazy loading,
-// no per-blueprint resolver functions, no within-sheet variant packing.
+// Sprite registry: loads every PNG declared in sprite-manifest.ts plus the
+// unknown-entity fallback at boot, and exposes an O(1) lookup keyed by
+// (blueprintId, variant). No lazy loading.
+//
+// Any blueprint id without a manifest entry resolves to the unknown-entity
+// sheet — a static image at /assets/unknown-entity.png — so that network
+// arrival of a not-yet-supported blueprint type never crashes the renderer.
 
+import { getBlueprint } from '@shared/blueprints.js';
 import { createImageTexture } from '../platform/gl-utils.js';
 import { SPRITE_MANIFEST, type SpriteManifestEntry } from './sprite-manifest.js';
 
@@ -13,14 +18,18 @@ export interface SpriteSheetRef {
   frameH: number;
   footX: number;
   footY: number;
+  /** True only for the unknown-entity fallback sheet. Draw paths that would
+   *  index into a creature walk-cycle layout (8 dir rows × N frame cols)
+   *  must special-case this to a single-frame blit instead. */
+  isFallback?: true;
 }
 
 export interface SpriteRegistry {
   resolve(blueprintId: number, variant: number): SpriteSheetRef;
 }
 
-function pathFor(entry: SpriteManifestEntry, variant: number): string {
-  return entry.variantCount === 1
+function pathFor(entry: SpriteManifestEntry, variantCount: number, variant: number): string {
+  return variantCount === 1
     ? `/assets/${entry.name}.png`
     : `/assets/${entry.name}-${variant}.png`;
 }
@@ -62,35 +71,61 @@ function detectFootFromImage(img: HTMLImageElement): { footX: number; footY: num
   };
 }
 
+async function loadManifestEntry(
+  gl: WebGL2RenderingContext,
+  entry: SpriteManifestEntry,
+): Promise<SpriteSheetRef[]> {
+  const variantCount = getBlueprint(entry.blueprintId)?.variantCount ?? 1;
+  return Promise.all(
+    Array.from({ length: variantCount }, async (_, v) => {
+      const img = await loadImage(pathFor(entry, variantCount, v));
+      const foot = entry.detectFoot
+        ? detectFootFromImage(img)
+        : { footX: entry.footX, footY: entry.footY };
+      return {
+        texture: createImageTexture(gl, img),
+        sheetW: img.naturalWidth,
+        sheetH: img.naturalHeight,
+        frameW: entry.frameW,
+        frameH: entry.frameH,
+        footX: foot.footX,
+        footY: foot.footY,
+      };
+    }),
+  );
+}
+
+async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheetRef> {
+  const img = await loadImage('/assets/unknown-entity.png');
+  // Single-frame sheet: the whole image is one frame, anchored at bottom
+  // center. Renderers that index into it (col/row for creature walk cycles)
+  // will clamp to this single frame via GL texture clamping.
+  return {
+    texture: createImageTexture(gl, img),
+    sheetW: img.naturalWidth,
+    sheetH: img.naturalHeight,
+    frameW: img.naturalWidth,
+    frameH: img.naturalHeight,
+    footX: Math.round(img.naturalWidth / 2),
+    footY: img.naturalHeight,
+    isFallback: true,
+  };
+}
+
 export async function loadSpriteRegistry(gl: WebGL2RenderingContext): Promise<SpriteRegistry> {
   const sheets = new Map<number, SpriteSheetRef[]>();
 
-  await Promise.all(SPRITE_MANIFEST.map(async (entry) => {
-    const refs: SpriteSheetRef[] = await Promise.all(
-      Array.from({ length: entry.variantCount }, async (_, v) => {
-        const img = await loadImage(pathFor(entry, v));
-        const foot = entry.detectFoot
-          ? detectFootFromImage(img)
-          : { footX: entry.footX, footY: entry.footY };
-        return {
-          texture: createImageTexture(gl, img),
-          sheetW: img.naturalWidth,
-          sheetH: img.naturalHeight,
-          frameW: entry.frameW,
-          frameH: entry.frameH,
-          footX: foot.footX,
-          footY: foot.footY,
-        };
-      }),
-    );
-    sheets.set(entry.blueprintId, refs);
-  }));
+  const [_, unknown] = await Promise.all([
+    Promise.all(SPRITE_MANIFEST.map(async (entry) => {
+      sheets.set(entry.blueprintId, await loadManifestEntry(gl, entry));
+    })),
+    loadUnknownSheet(gl),
+  ]);
 
   return {
     resolve(blueprintId, variant) {
       const variants = sheets.get(blueprintId);
-      if (!variants) throw new Error(`no sprites registered for blueprint ${blueprintId}`);
-      // Fall back to variant 0 if a server tells us about an unknown variant.
+      if (!variants) return unknown;
       return variants[variant] ?? variants[0];
     },
   };

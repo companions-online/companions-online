@@ -28,7 +28,7 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
     }
   } else {
     // Critter attacking — use blueprint stats
-    const bp = world.entities.blueprintId.get(attackerId);
+    const bp = world.entities.blueprint.get(attackerId);
     if (bp) {
       const bpDef = getBlueprint(bp.blueprintId);
       if (bpDef?.damage) damage = bpDef.damage;

@@ -34,6 +34,7 @@ interface SavedEntity {
   action: { actionType: number; targetEntity?: number; targetTileX?: number; targetTileY?: number };
   health?: { currentHp: number; maxHp: number };
   blueprintId: number;
+  variant: number;
   statusEffects: number;
   speed?: number;
 }
@@ -89,7 +90,7 @@ export async function saveWorld(
     const wp = world.entities.nextWaypoint.get(eid);
     const act = world.entities.currentAction.get(eid);
     const hp = world.entities.health.get(eid);
-    const bp = world.entities.blueprintId.get(eid);
+    const bp = world.entities.blueprint.get(eid);
     const se = world.entities.statusEffects.get(eid);
     const spd = world.entities.speed.get(eid);
 
@@ -103,6 +104,7 @@ export async function saveWorld(
       action: act ?? { actionType: ActionType.Idle },
       health: hp,
       blueprintId: bp.blueprintId,
+      variant: bp.variant,
       statusEffects: se?.effects ?? 0,
       speed: spd,
     });
@@ -179,7 +181,7 @@ export async function loadWorld(worldDir: string): Promise<{ world: GameWorld; m
     world.entities.nextWaypoint.set(ent.id, ent.waypoint);
     world.entities.currentAction.set(ent.id, ent.action);
     if (ent.health) world.entities.health.set(ent.id, ent.health);
-    world.entities.blueprintId.set(ent.id, { blueprintId: ent.blueprintId });
+    world.entities.blueprint.set(ent.id, { blueprintId: ent.blueprintId, variant: ent.variant ?? 0 });
     world.entities.statusEffects.set(ent.id, { effects: ent.statusEffects });
     if (ent.speed !== undefined) world.entities.speed.set(ent.id, ent.speed);
 
@@ -230,7 +232,7 @@ export async function createNewWorld(
     world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
     world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
     if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-    world.entities.blueprintId.set(eid, { blueprintId: spawn.blueprint });
+    world.entities.blueprint.set(eid, { blueprintId: spawn.blueprint, variant: spawn.variant });
     world.entities.statusEffects.set(eid, { effects: 0 });
     if (bp.speed) world.entities.speed.set(eid, bp.speed);
     world.occupancy.set(spawn.x, spawn.y, eid);

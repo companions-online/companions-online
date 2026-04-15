@@ -4,10 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:server",
+    "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client-gl\"",
     "dev:server": "tsx server/src/main.ts",
-    "dev:client": "tsx client-web/dev.ts",
-    "build:client": "tsx client-web/build.ts",
     "dev:client-gl": "tsx client-webgl/dev.ts",
     "build:client-gl": "tsx client-webgl/build.ts",
     "typecheck": "tsc --noEmit",

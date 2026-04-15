@@ -25,7 +25,7 @@ describe('E2E: Game Events', () => {
     // Spawn a deer adjacent
     const deerEid = world.entities.create();
     world.entities.position.set(deerEid, { tileX: 11, tileY: 10 });
-    world.entities.blueprintId.set(deerEid, { blueprintId: BlueprintType.Deer });
+    world.entities.blueprint.set(deerEid, { blueprintId: BlueprintType.Deer, variant: 0 });
     world.entities.health.set(deerEid, { currentHp: 3, maxHp: 12 });
     world.entities.currentAction.set(deerEid, { actionType: 0 });
     world.occupancy.set(11, 10, deerEid);
@@ -48,7 +48,7 @@ describe('E2E: Game Events', () => {
     // Create wolf with aggro AI
     const wolfEid = world.entities.create();
     world.entities.position.set(wolfEid, { tileX: 13, tileY: 10 });
-    world.entities.blueprintId.set(wolfEid, { blueprintId: BlueprintType.Wolf });
+    world.entities.blueprint.set(wolfEid, { blueprintId: BlueprintType.Wolf, variant: 0 });
     world.entities.health.set(wolfEid, { currentHp: 20, maxHp: 20 });
     world.entities.currentAction.set(wolfEid, { actionType: 0 });
     world.entities.statusEffects.set(wolfEid, { effects: 0 });
@@ -173,7 +173,7 @@ describe('E2E: Game Events', () => {
     // Place campfire adjacent
     const campEid = world.entities.create();
     world.entities.position.set(campEid, { tileX: 11, tileY: 10 });
-    world.entities.blueprintId.set(campEid, { blueprintId: BlueprintType.Campfire });
+    world.entities.blueprint.set(campEid, { blueprintId: BlueprintType.Campfire, variant: 0 });
     world.entities.statusEffects.set(campEid, { effects: 0 });
     world.occupancy.set(11, 10, campEid);
 
@@ -198,7 +198,7 @@ describe('E2E: Game Events', () => {
     // Kill player by setting HP to 0 via combat
     const wolfEid = world.entities.create();
     world.entities.position.set(wolfEid, { tileX: 11, tileY: 10 });
-    world.entities.blueprintId.set(wolfEid, { blueprintId: BlueprintType.Wolf });
+    world.entities.blueprint.set(wolfEid, { blueprintId: BlueprintType.Wolf, variant: 0 });
     world.entities.health.set(wolfEid, { currentHp: 100, maxHp: 100 });
     world.entities.currentAction.set(wolfEid, { actionType: 0 });
     world.occupancy.set(11, 10, wolfEid);
@@ -263,7 +263,7 @@ describe('E2E: Game Events', () => {
     // Place rabbit with flee behavior nearby
     const rabbitEid = world.entities.create();
     world.entities.position.set(rabbitEid, { tileX: 11, tileY: 10 });
-    world.entities.blueprintId.set(rabbitEid, { blueprintId: BlueprintType.Rabbit });
+    world.entities.blueprint.set(rabbitEid, { blueprintId: BlueprintType.Rabbit, variant: 0 });
     world.entities.health.set(rabbitEid, { currentHp: 5, maxHp: 5 });
     world.entities.currentAction.set(rabbitEid, { actionType: 0 });
     world.entities.speed.set(rabbitEid, 3);
@@ -283,14 +283,14 @@ describe('E2E: Game Events', () => {
     // Create two entities: wolf kills deer
     const deerEid = world.entities.create();
     world.entities.position.set(deerEid, { tileX: 12, tileY: 10 });
-    world.entities.blueprintId.set(deerEid, { blueprintId: BlueprintType.Deer });
+    world.entities.blueprint.set(deerEid, { blueprintId: BlueprintType.Deer, variant: 0 });
     world.entities.health.set(deerEid, { currentHp: 1, maxHp: 12 });
     world.entities.currentAction.set(deerEid, { actionType: 0 });
     world.occupancy.set(12, 10, deerEid);
 
     const wolfEid = world.entities.create();
     world.entities.position.set(wolfEid, { tileX: 13, tileY: 10 });
-    world.entities.blueprintId.set(wolfEid, { blueprintId: BlueprintType.Wolf });
+    world.entities.blueprint.set(wolfEid, { blueprintId: BlueprintType.Wolf, variant: 0 });
     world.entities.health.set(wolfEid, { currentHp: 20, maxHp: 20 });
     world.entities.currentAction.set(wolfEid, { actionType: 0 });
     world.occupancy.set(13, 10, wolfEid);

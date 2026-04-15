@@ -44,7 +44,7 @@ export function handleServerMessage(data: ArrayBuffer | Buffer, renderFn: () => 
       const { entityId, components, speed } = msg.data;
       state.entityMap.set(entityId, { ...components, speed });
       const pos = components.position;
-      const bpId = components.blueprintId?.blueprintId;
+      const bpId = components.blueprint?.blueprintId;
       dbg(`← Full #${entityId} bp=${bpId ?? '?'} pos=${pos ? `(${pos.tileX},${pos.tileY})` : '?'}`);
       break;
     }

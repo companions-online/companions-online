@@ -1,5 +1,5 @@
 import { PerlinNoise } from '@shared/world/noise.js';
-import { MAP_SIZE } from '@shared/constants.js';
+import { CHUNK_SIZE, MAP_SIZE } from '@shared/constants.js';
 import { Terrain, Building } from '@shared/terrain.js';
 import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { WorldMap } from '@shared/world/world-map.js';
@@ -10,25 +10,43 @@ const HALF_H = TILE_H / 2;
 const WATER_LEVEL = -0.02;
 const SHORE_HEIGHT = 0.01;
 
+/** Vertex-count for a chunk-local corner grid: (CHUNK_SIZE+1)². */
+export const CHUNK_CORNER_SIZE = CHUNK_SIZE + 1;
+
 /**
- * Build a vertex elevation grid of (mapSize+1)² entries.
- * Vertex (vx, vy) is the N corner of tile (vx, vy) and shared
- * with tiles (vx-1, vy-1), (vx, vy-1), (vx-1, vy).
+ * Build a chunk-local vertex elevation grid of (CHUNK_SIZE+1)² entries.
+ * Corner (lx, ly) in the returned grid corresponds to world corner
+ * (cx*CHUNK_SIZE + lx, cy*CHUNK_SIZE + ly). Per-corner elevation depends on
+ * the surrounding 4 tiles via water/building flatten heuristics, so this
+ * function reads a 1-tile border of worldMap data around the chunk. Tiles
+ * outside the bounded map read as zero (Terrain.Grass) and self-correct when
+ * neighbor chunks arrive and trigger a rebuild.
+ *
+ * Regenerated on-demand per chunk rebuild — not persisted.
  */
-export function buildElevationGrid(seed: number, mapSize: number, worldMap: WorldMap): Float32Array {
-  const size = mapSize + 1;
-  const grid = new Float32Array(size * size);
+export function buildElevationGridChunk(
+  seed: number,
+  worldMap: WorldMap,
+  chunkX: number,
+  chunkY: number,
+): Float32Array {
+  const grid = new Float32Array(CHUNK_CORNER_SIZE * CHUNK_CORNER_SIZE);
 
   const elevation = new PerlinNoise(seed);
-  const scale = mapSize / 128;
+  const scale = MAP_SIZE / 128;
   const elevFreq = 0.03 / scale;
-  const cx = mapSize / 2;
-  const cy = mapSize / 2;
-  const maxDist = mapSize * 0.45;
+  const cx = MAP_SIZE / 2;
+  const cy = MAP_SIZE / 2;
+  const maxDist = MAP_SIZE * 0.45;
 
-  // Pass 1: sample raw elevation at each vertex
-  for (let vy = 0; vy < size; vy++) {
-    for (let vx = 0; vx < size; vx++) {
+  const originX = chunkX * CHUNK_SIZE;
+  const originY = chunkY * CHUNK_SIZE;
+
+  // Pass 1: raw elevation per corner
+  for (let ly = 0; ly < CHUNK_CORNER_SIZE; ly++) {
+    for (let lx = 0; lx < CHUNK_CORNER_SIZE; lx++) {
+      const vx = originX + lx;
+      const vy = originY + ly;
       const dx = vx - cx;
       const dy = vy - cy;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -36,66 +54,58 @@ export function buildElevationGrid(seed: number, mapSize: number, worldMap: Worl
 
       const raw = (elevation.octave2d(vx * elevFreq, vy * elevFreq, 4, 0.5) + 1) / 2;
       const e = raw - (1 - mask);
-      grid[vy * size + vx] = Math.max(e, WATER_LEVEL);
+      grid[ly * CHUNK_CORNER_SIZE + lx] = Math.max(e, WATER_LEVEL);
     }
   }
 
-  // Pass 2: flatten water vertices
-  for (let vy = 0; vy < size; vy++) {
-    for (let vx = 0; vx < size; vx++) {
-      // Check the up-to-4 tiles sharing this vertex:
-      // tile (vx-1,vy-1), (vx,vy-1), (vx-1,vy), (vx,vy)
+  // Pass 2: water flatten. A corner fully surrounded by water tiles is
+  // pulled to WATER_LEVEL; partial shore is pulled down to SHORE_HEIGHT.
+  for (let ly = 0; ly < CHUNK_CORNER_SIZE; ly++) {
+    for (let lx = 0; lx < CHUNK_CORNER_SIZE; lx++) {
+      const vx = originX + lx;
+      const vy = originY + ly;
       let waterCount = 0;
       let tileCount = 0;
       for (let dy = -1; dy <= 0; dy++) {
         for (let dx = -1; dx <= 0; dx++) {
           const tx = vx + dx;
           const ty = vy + dy;
-          if (tx < 0 || tx >= mapSize || ty < 0 || ty >= mapSize) continue;
+          if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
           tileCount++;
           const t = worldMap.getTerrain(tx, ty) as number;
           if (t === Terrain.Water || t === Terrain.River) waterCount++;
         }
       }
-
       if (waterCount === tileCount && tileCount > 0) {
-        // All surrounding tiles are water — flatten to water level
-        grid[vy * size + vx] = WATER_LEVEL;
+        grid[ly * CHUNK_CORNER_SIZE + lx] = WATER_LEVEL;
       } else if (waterCount > 0) {
-        // Shore vertex — pull down toward water
-        grid[vy * size + vx] = Math.min(grid[vy * size + vx], SHORE_HEIGHT);
+        grid[ly * CHUNK_CORNER_SIZE + lx] =
+          Math.min(grid[ly * CHUNK_CORNER_SIZE + lx], SHORE_HEIGHT);
       }
     }
   }
 
-  // Pass 3: flatten vertices under building footprints. Any vertex that
-  // touches a building tile (wall or floor) is pulled to SHORE_HEIGHT so
-  // the building sits on a level surface.
-  for (let vy = 0; vy < size; vy++) {
-    for (let vx = 0; vx < size; vx++) {
+  // Pass 3: flatten corners under building footprints.
+  for (let ly = 0; ly < CHUNK_CORNER_SIZE; ly++) {
+    for (let lx = 0; lx < CHUNK_CORNER_SIZE; lx++) {
+      const vx = originX + lx;
+      const vy = originY + ly;
       let hasBuilding = false;
       for (let dy = -1; dy <= 0 && !hasBuilding; dy++) {
         for (let dx = -1; dx <= 0 && !hasBuilding; dx++) {
           const tx = vx + dx;
           const ty = vy + dy;
-          if (tx < 0 || tx >= mapSize || ty < 0 || ty >= mapSize) continue;
-          const b = worldMap.getBuilding(tx, ty) as number;
-          if (b !== Building.None) hasBuilding = true;
+          if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE) continue;
+          if ((worldMap.getBuilding(tx, ty) as number) !== Building.None) {
+            hasBuilding = true;
+          }
         }
       }
-      if (hasBuilding) {
-        grid[vy * size + vx] = SHORE_HEIGHT;
-      }
+      if (hasBuilding) grid[ly * CHUNK_CORNER_SIZE + lx] = SHORE_HEIGHT;
     }
   }
 
   return grid;
-}
-
-export function getVertexHeight(grid: Float32Array, vx: number, vy: number): number {
-  const size = MAP_SIZE + 1;
-  if (vx < 0 || vx >= size || vy < 0 || vy >= size) return 0;
-  return grid[vy * size + vx];
 }
 
 export interface TileCorners {
@@ -106,18 +116,21 @@ export interface TileCorners {
 }
 
 /**
- * Compute the 4 deformed corner screen positions for tile (tx, ty).
- * Tile corners correspond to vertices: N=(tx,ty), E=(tx+1,ty), S=(tx+1,ty+1), W=(tx,ty+1).
+ * Compute the 4 deformed corner screen positions for tile (tx, ty), reading
+ * elevation from a chunk-local corner grid. (lx, ly) is the chunk-local
+ * coordinate corresponding to world (tx, ty). Tile corners are at grid
+ * vertices (lx, ly), (lx+1, ly), (lx+1, ly+1), (lx, ly+1).
  */
-export function getTileCorners(
+export function getTileCornersLocal(
   tx: number, ty: number,
+  lx: number, ly: number,
   grid: Float32Array,
   offsetX: number, offsetY: number,
 ): TileCorners {
-  const zN = getVertexHeight(grid, tx, ty);
-  const zE = getVertexHeight(grid, tx + 1, ty);
-  const zS = getVertexHeight(grid, tx + 1, ty + 1);
-  const zW = getVertexHeight(grid, tx, ty + 1);
+  const zN = grid[ly * CHUNK_CORNER_SIZE + lx];
+  const zE = grid[ly * CHUNK_CORNER_SIZE + (lx + 1)];
+  const zS = grid[(ly + 1) * CHUNK_CORNER_SIZE + (lx + 1)];
+  const zW = grid[(ly + 1) * CHUNK_CORNER_SIZE + lx];
 
   return {
     nx: (tx - ty) * HALF_W + HALF_W + offsetX,

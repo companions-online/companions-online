@@ -6,6 +6,7 @@ import {
 } from '@shared/protocol/codec.js';
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { Telemetry } from '../telemetry.js';
+import type { GameEvent } from '../events.js';
 
 export class WebSocketConnection implements PlayerConnection {
   constructor(private ws: WebSocket, private telemetry: Telemetry) {}
@@ -28,7 +29,7 @@ export class WebSocketConnection implements PlayerConnection {
     const playerPos = world.entities.position.get(entityId);
     if (!playerPos) return;
 
-    this.send(encodeWelcome(entityId));
+    this.send(encodeWelcome(entityId, world.seed));
 
     // Chunks are sent by GameWorld via onChunkNeeded before this call
 
@@ -77,5 +78,5 @@ export class WebSocketConnection implements PlayerConnection {
     this.send(encodeChatMessage(senderEntityId, message));
   }
 
-  onGameEvent(_entityId: number, _event: import('../events.js').GameEvent): void {}
+  onGameEvent(_entityId: number, _event: GameEvent): void {}
 }

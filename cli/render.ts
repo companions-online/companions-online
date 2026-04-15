@@ -11,8 +11,8 @@ import { renderInventoryLine, renderCraftingLine, renderContainerLine, renderDia
 export function entityAtWorldTile(wx: number, wy: number): { entityId: number; blueprintId: number; isGroundItem?: boolean } | undefined {
   const key = wy * MAP_SIZE + wx;
   for (const [eid, comp] of state.entityMap) {
-    if (!comp.position || comp.blueprintId === undefined) continue;
-    const bpId = getBpId(comp.blueprintId);
+    if (!comp.position || comp.blueprint === undefined) continue;
+    const bpId = getBpId(comp.blueprint);
     if (bpId === undefined) continue;
     if (comp.position.tileY * MAP_SIZE + comp.position.tileX === key && eid !== state.myEntityId) {
       // Ground items (from Drop) have only position+blueprintId; placed entities always have statusEffects
@@ -66,8 +66,8 @@ export function render() {
   // Build entity position lookup
   const entityAtTile = new Map<number, { bp: number; effects: number; dead: boolean }>();
   for (const [, comp] of state.entityMap) {
-    if (comp.position && comp.blueprintId !== undefined) {
-      const bpId = getBpId(comp.blueprintId);
+    if (comp.position && comp.blueprint !== undefined) {
+      const bpId = getBpId(comp.blueprint);
       if (bpId === undefined) continue;
       const effects = getEffects(comp.statusEffects);
       const actionType = getActionType(comp.currentAction);
@@ -146,7 +146,7 @@ export function render() {
       if (chatIdx < recentChat.length) {
         const c = recentChat[chatIdx];
         const senderComp = state.entityMap.get(c.senderEid);
-        const senderBpId = getBpId(senderComp?.blueprintId);
+        const senderBpId = getBpId(senderComp?.blueprint);
         const senderName = senderBpId !== undefined ? (getBlueprint(senderBpId)?.name ?? `Player#${c.senderEid}`) : `Player#${c.senderEid}`;
         const chatText = `${senderName}: ${c.message}`;
         line = `\x1b[93m${chatText.slice(0, mapCols).padEnd(mapCols)}\x1b[0m` + line.slice(mapCols);
@@ -188,7 +188,7 @@ export function render() {
   } else if (isCurrentlyAttacking && myEntity?.currentAction && 'targetEntity' in myEntity.currentAction) {
     const targetEid = myEntity.currentAction.targetEntity!;
     const targetComp = state.entityMap.get(targetEid);
-    const targetBpId = getBpId(targetComp?.blueprintId);
+    const targetBpId = getBpId(targetComp?.blueprint);
     const targetBp = targetBpId !== undefined ? getBlueprint(targetBpId) : undefined;
     const targetHp = getHp(targetComp?.health);
     const thpStr = targetHp ? `${targetHp.currentHp}/${targetHp.maxHp}` : '';

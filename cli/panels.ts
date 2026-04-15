@@ -104,7 +104,7 @@ export function renderDialogueLine(vy: number, _totalRows: number, _maxW: number
   if (!state.dialogueData) return '';
   if (vy === 0) {
     const npcComp = state.entityMap.get(state.dialogueNpcId);
-    const id = getBpId(npcComp?.blueprintId);
+    const id = getBpId(npcComp?.blueprint);
     const name = id !== undefined ? getBlueprint(id)?.name ?? 'NPC' : 'NPC';
     return `\x1b[1m${name}\x1b[0m`;
   }

@@ -72,7 +72,7 @@ describe('E2E: Gather & Craft', () => {
     // Ground entity should exist at player position
     let groundAxe = false;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       if (bp && bp.blueprintId === BlueprintType.Axe) { groundAxe = true; break; }
     }
     expect(groundAxe).toBe(true);

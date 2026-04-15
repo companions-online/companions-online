@@ -61,7 +61,9 @@ export function runRespawns(world: SystemState): void {
       world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
       world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
       if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-      world.entities.blueprintId.set(eid, { blueprintId: entry.blueprintType });
+      const variantCount = bp.variantCount ?? 1;
+      const variant = variantCount > 1 ? Math.floor(rand(world) * variantCount) : 0;
+      world.entities.blueprint.set(eid, { blueprintId: entry.blueprintType, variant });
       world.entities.statusEffects.set(eid, { effects: 0 });
       world.occupancy.set(rx, ry, eid);
 

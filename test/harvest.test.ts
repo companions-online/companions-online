@@ -43,7 +43,7 @@ function createPlayer(w: SystemState, x: number, y: number): number {
   w.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   w.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   w.entities.health.set(eid, { currentHp: 100, maxHp: 100 });
-  w.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
+  w.entities.blueprint.set(eid, { blueprintId: BlueprintType.Player, variant: 0 });
   w.entities.statusEffects.set(eid, { effects: 0 });
   w.entities.speed.set(eid, 20);
   w.occupancy.set(x, y, eid);
@@ -54,7 +54,7 @@ function createPlayer(w: SystemState, x: number, y: number): number {
 function createTree(w: SystemState, x: number, y: number): number {
   const eid = w.entities.create();
   w.entities.position.set(eid, { tileX: x, tileY: y });
-  w.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Tree });
+  w.entities.blueprint.set(eid, { blueprintId: BlueprintType.Tree, variant: 0 });
   w.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
   w.entities.statusEffects.set(eid, { effects: 0 });
   w.occupancy.set(x, y, eid);

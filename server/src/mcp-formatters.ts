@@ -97,7 +97,7 @@ export function formatMap(conn: McpConnection): string {
     const epos = w.entities.position.get(eid);
     if (!epos) continue;
     if (epos.tileX < minX || epos.tileX > maxX || epos.tileY < minY || epos.tileY > maxY) continue;
-    const bp = w.entities.blueprintId.get(eid);
+    const bp = w.entities.blueprint.get(eid);
     if (!bp) continue;
     const se = w.entities.statusEffects.get(eid);
     const key = epos.tileY * 65536 + epos.tileX;
@@ -159,7 +159,7 @@ function categorizeEntity(
   const w = conn.world!;
   const epos = w.entities.position.get(eid);
   if (!epos) return null;
-  const bp = w.entities.blueprintId.get(eid);
+  const bp = w.entities.blueprint.get(eid);
   if (!bp) return null;
 
   const dist = Math.max(Math.abs(epos.tileX - px), Math.abs(epos.tileY - py));
@@ -485,7 +485,7 @@ export function formatContainer(conn: McpConnection): string {
   const inv = conn.world.inventoryMgr.get(containerEid);
   if (!inv) return '<container>\nempty\n</container>';
 
-  const bp = conn.world.entities.blueprintId.get(containerEid);
+  const bp = conn.world.entities.blueprint.get(containerEid);
   const name = bp ? bpName(bp.blueprintId).toLowerCase() : 'container';
 
   const lines: string[] = [];

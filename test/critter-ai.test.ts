@@ -46,7 +46,7 @@ function createCritter(w: SystemState, bp: BlueprintType, x: number, y: number, 
   w.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   w.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   w.entities.health.set(eid, { currentHp: 30, maxHp: 30 });
-  w.entities.blueprintId.set(eid, { blueprintId: bp });
+  w.entities.blueprint.set(eid, { blueprintId: bp, variant: 0 });
   w.entities.statusEffects.set(eid, { effects: 0 });
   w.entities.speed.set(eid, speed);
   w.occupancy.set(x, y, eid);
@@ -118,11 +118,11 @@ describe('Critter AI', () => {
   it('non-critter entities are ignored', () => {
     const tree = w.entities.create();
     w.entities.position.set(tree, { tileX: 64, tileY: 64 });
-    w.entities.blueprintId.set(tree, { blueprintId: BlueprintType.Tree });
+    w.entities.blueprint.set(tree, { blueprintId: BlueprintType.Tree, variant: 0 });
 
     const player = w.entities.create();
     w.entities.position.set(player, { tileX: 60, tileY: 60 });
-    w.entities.blueprintId.set(player, { blueprintId: BlueprintType.Player });
+    w.entities.blueprint.set(player, { blueprintId: BlueprintType.Player, variant: 0 });
 
     w.entities.clearDirty();
     initCritterAI(w);
@@ -153,7 +153,7 @@ describe('Critter AI', () => {
     for (const eid of w.entities.getAllEntities()) {
       const pos = w.entities.position.get(eid);
       if (!pos) continue;
-      const bp = w.entities.blueprintId.get(eid)?.blueprintId;
+      const bp = w.entities.blueprint.get(eid)?.blueprintId;
       if (bp === BlueprintType.Deer && (pos.tileX !== 30 || pos.tileY !== 30)) anyMoved = true;
       if (bp === BlueprintType.Rabbit && (pos.tileX !== 40 || pos.tileY !== 40)) anyMoved = true;
       if (bp === BlueprintType.Fox && (pos.tileX !== 50 || pos.tileY !== 50)) anyMoved = true;

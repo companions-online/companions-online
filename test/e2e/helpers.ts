@@ -45,7 +45,7 @@ export function placeTree(world: GameWorld, x: number, y: number): number {
   world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   world.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
-  world.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Tree });
+  world.entities.blueprint.set(eid, { blueprintId: BlueprintType.Tree, variant: 0 });
   world.entities.statusEffects.set(eid, { effects: 0 });
   world.occupancy.set(x, y, eid);
   initTreeResource(eid, world);
@@ -55,6 +55,6 @@ export function placeTree(world: GameWorld, x: number, y: number): number {
 export function placeGroundItem(world: GameWorld, blueprintId: number, x: number, y: number): number {
   const eid = world.entities.create();
   world.entities.position.set(eid, { tileX: x, tileY: y });
-  world.entities.blueprintId.set(eid, { blueprintId });
+  world.entities.blueprint.set(eid, { blueprintId, variant: 0 });
   return eid;
 }

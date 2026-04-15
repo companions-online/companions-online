@@ -1,6 +1,6 @@
+import { CHUNK_SIZE } from '@shared/constants.js';
 import { Building } from '@shared/terrain.js';
-import { TILE_W, TILE_H } from '../platform/config.js';
-import { getTileCorners } from '../terrain/elevation.js';
+import { getTileCornersLocal } from '../terrain/elevation.js';
 import { WallShape, WALL_HEIGHT, WALL_SPRITE_W, WALL_SPRITE_H } from './wall-texture.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
@@ -21,29 +21,30 @@ function isWall(worldMap: WorldMap, x: number, y: number): boolean {
 }
 
 /**
- * Walk the world map, find all wall tiles, determine their auto-tile shape,
- * and produce a pre-sorted array of drawable wall sprites for the Y-sort pass.
- *
- * Positions are derived from getTileCorners — the same function the terrain
- * renderer uses to bake instance geometry — so walls align pixel-perfectly
- * with the terrain grid.
+ * Build wall drawables for one 16×16 chunk. Reads adjacency one tile outside
+ * the chunk so wall shapes at the chunk border pick up neighbor-chunk walls.
+ * Since wall shape depends on the tile's SE and SW neighbors, a change in
+ * an adjacent chunk requires a rebuild of the chunks that share a seam —
+ * Scene handles that by marking neighbor chunks dirty on any mutation.
  */
-export function buildWallDrawables(
+export function buildWallDrawablesForChunk(
   worldMap: WorldMap,
   wallTextures: Map<WallShape, WebGLTexture>,
-  elevationGrid: Float32Array,
+  elevationLocal: Float32Array,
+  chunkX: number,
+  chunkY: number,
 ): WallDrawable[] {
   const drawables: WallDrawable[] = [];
-  const W = worldMap.width;
-  const H = worldMap.height;
+  const originX = chunkX * CHUNK_SIZE;
+  const originY = chunkY * CHUNK_SIZE;
 
-  for (let ty = 0; ty < H; ty++) {
-    for (let tx = 0; tx < W; tx++) {
+  for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+      const tx = originX + lx;
+      const ty = originY + ly;
       if (worldMap.getBuilding(tx, ty) !== Building.Wall) continue;
 
-      // Determine which faces are visible. The two visible faces in iso are:
-      //   Left face  (SW edge): hidden if SW neighbour (tx, ty+1) is also a wall
-      //   Right face (SE edge): hidden if SE neighbour (tx+1, ty) is also a wall
+      // Hidden faces depend on whether the adjacent SE / SW tile is a wall.
       const hasWallSE = isWall(worldMap, tx + 1, ty);
       const hasWallSW = isWall(worldMap, tx, ty + 1);
 
@@ -55,13 +56,9 @@ export function buildWallDrawables(
 
       const texture = wallTextures.get(shape)!;
 
-      // Use getTileCorners with offset=0 — same baked-world-space coordinates
-      // the terrain renderer uses. The sprite's ground-level diamond (at sprite
-      // row WALL_HEIGHT) must align with the terrain tile. So the sprite top
-      // (the elevated wall-top face) sits WALL_HEIGHT pixels ABOVE the tile.
-      const corners = getTileCorners(tx, ty, elevationGrid, 0, 0);
-      const dstX = corners.wx;                // W corner X = left edge of diamond
-      const dstY = corners.ny - WALL_HEIGHT;  // shift up so ground aligns with tile
+      const corners = getTileCornersLocal(tx, ty, lx, ly, elevationLocal, 0, 0);
+      const dstX = corners.wx;
+      const dstY = corners.ny - WALL_HEIGHT;
 
       drawables.push({
         screenY: corners.ny,
@@ -78,7 +75,5 @@ export function buildWallDrawables(
     }
   }
 
-  // Pre-sort by screenY — walls are static, so sort order never changes.
-  drawables.sort((a, b) => a.screenY - b.screenY);
   return drawables;
 }

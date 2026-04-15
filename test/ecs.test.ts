@@ -67,8 +67,8 @@ describe('Component get/set', () => {
     em.health.set(id, { currentHp: 80, maxHp: 100 });
     expect(em.health.get(id)).toEqual({ currentHp: 80, maxHp: 100 });
 
-    em.blueprintId.set(id, { blueprintId: BlueprintType.Player });
-    expect(em.blueprintId.get(id)).toEqual({ blueprintId: BlueprintType.Player });
+    em.blueprint.set(id, { blueprintId: BlueprintType.Player, variant: 0 });
+    expect(em.blueprint.get(id)).toEqual({ blueprintId: BlueprintType.Player, variant: 0 });
 
     em.statusEffects.set(id, { effects: 0b0101 });
     expect(em.statusEffects.get(id)).toEqual({ effects: 0b0101 });
@@ -140,7 +140,7 @@ describe('getFullState', () => {
     em.nextWaypoint.set(id, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
     em.currentAction.set(id, { actionType: ActionType.Idle });
     em.health.set(id, { currentHp: 100, maxHp: 100 });
-    em.blueprintId.set(id, { blueprintId: BlueprintType.Player });
+    em.blueprint.set(id, { blueprintId: BlueprintType.Player, variant: 0 });
     em.statusEffects.set(id, { effects: 0 });
     em.speed.set(id, 3);
 
@@ -150,7 +150,7 @@ describe('getFullState', () => {
     expect(state.components.nextWaypoint).toEqual({ tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
     expect(state.components.currentAction).toEqual({ actionType: ActionType.Idle });
     expect(state.components.health).toEqual({ currentHp: 100, maxHp: 100 });
-    expect(state.components.blueprintId).toEqual({ blueprintId: BlueprintType.Player });
+    expect(state.components.blueprint).toEqual({ blueprintId: BlueprintType.Player, variant: 0 });
     expect(state.components.statusEffects).toEqual({ effects: 0 });
     expect(state.speed).toBe(3);
   });

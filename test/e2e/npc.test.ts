@@ -14,7 +14,7 @@ function placeNPC(world: ReturnType<typeof createTestWorld>, bp: BlueprintType, 
   world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
   world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   world.entities.health.set(eid, { currentHp: 999, maxHp: 999 });
-  world.entities.blueprintId.set(eid, { blueprintId: bp });
+  world.entities.blueprint.set(eid, { blueprintId: bp, variant: 0 });
   world.entities.statusEffects.set(eid, { effects: 0 });
   world.occupancy.set(x, y, eid);
   return eid;
@@ -69,7 +69,7 @@ describe('E2E: NPC dialogue & trade', () => {
     // Find the trader entity
     let traderEid = 0;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       if (bp?.blueprintId === BlueprintType.Trader) { traderEid = eid; break; }
     }
 

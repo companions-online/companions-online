@@ -84,7 +84,7 @@ describe('E2E: Building placement', () => {
     // Ground entity should exist at player position
     let groundEid: number | undefined;
     for (const eid of world.entities.getAllEntities()) {
-      const bp = world.entities.blueprintId.get(eid);
+      const bp = world.entities.blueprint.get(eid);
       const pos = world.entities.position.get(eid);
       if (bp && bp.blueprintId === BlueprintType.WoodenWall && pos && pos.tileX === 10 && pos.tileY === 10) {
         groundEid = eid;
@@ -110,7 +110,7 @@ describe('E2E: Building placement', () => {
 function placeDoor(world: ReturnType<typeof createTestWorld>, x: number, y: number): number {
   const eid = world.entities.create();
   world.entities.position.set(eid, { tileX: x, tileY: y });
-  world.entities.blueprintId.set(eid, { blueprintId: BlueprintType.WoodenDoor });
+  world.entities.blueprint.set(eid, { blueprintId: BlueprintType.WoodenDoor, variant: 0 });
   world.entities.statusEffects.set(eid, { effects: 0 });
   world.entities.health.set(eid, { currentHp: 30, maxHp: 30 });
   world.occupancy.set(x, y, eid);
@@ -183,7 +183,7 @@ describe('E2E: Door toggle', () => {
 function placeChest(world: ReturnType<typeof createTestWorld>, x: number, y: number): number {
   const eid = world.entities.create();
   world.entities.position.set(eid, { tileX: x, tileY: y });
-  world.entities.blueprintId.set(eid, { blueprintId: BlueprintType.StorageChest });
+  world.entities.blueprint.set(eid, { blueprintId: BlueprintType.StorageChest, variant: 0 });
   world.entities.statusEffects.set(eid, { effects: 0 });
   world.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
   world.occupancy.set(x, y, eid);

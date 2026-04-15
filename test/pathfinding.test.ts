@@ -98,7 +98,7 @@ describe('Occupancy + movement collision', () => {
     w.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
     w.entities.currentAction.set(eid, { actionType: ActionType.Idle });
     w.entities.health.set(eid, { currentHp: 100, maxHp: 100 });
-    w.entities.blueprintId.set(eid, { blueprintId: BlueprintType.Player });
+    w.entities.blueprint.set(eid, { blueprintId: BlueprintType.Player, variant: 0 });
     w.entities.statusEffects.set(eid, { effects: 0 });
     w.entities.speed.set(eid, speed);
     w.occupancy.set(x, y, eid);
@@ -173,7 +173,7 @@ describe('Occupancy + movement collision', () => {
   it('entity paths around tree (static obstacle)', () => {
     const tree = w.entities.create();
     w.entities.position.set(tree, { tileX: 6, tileY: 5 });
-    w.entities.blueprintId.set(tree, { blueprintId: BlueprintType.Tree });
+    w.entities.blueprint.set(tree, { blueprintId: BlueprintType.Tree, variant: 0 });
     w.occupancy.set(6, 5, tree);
 
     const player = createEntity(5, 5, 20);

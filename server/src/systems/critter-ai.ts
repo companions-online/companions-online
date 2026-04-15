@@ -33,7 +33,7 @@ function randRange(state: { rng: number }, min: number, max: number): number {
 
 export function initCritterAI(world: SystemState): void {
   for (const eid of world.entities.getAllEntities()) {
-    const bp = world.entities.blueprintId.get(eid);
+    const bp = world.entities.blueprint.get(eid);
     if (!bp) continue;
     const config = BEHAVIOR_CONFIGS[bp.blueprintId];
     if (!config) continue;
@@ -54,7 +54,7 @@ export interface CritterBehaviorChange {
 export function notifyCritterAttacked(entityId: number, attackerEntityId: number, world: SystemState): CritterBehaviorChange | undefined {
   const state = world.critterStates.get(entityId);
   if (!state) return;
-  const bp = world.entities.blueprintId.get(entityId);
+  const bp = world.entities.blueprint.get(entityId);
   if (!bp) return;
   const config = BEHAVIOR_CONFIGS[bp.blueprintId];
   if (!config) return;
@@ -86,7 +86,7 @@ export function runCritterAI(world: SystemState): CritterBehaviorChange[] {
       continue;
     }
 
-    const bp = world.entities.blueprintId.get(eid);
+    const bp = world.entities.blueprint.get(eid);
     if (!bp) continue;
     const config = BEHAVIOR_CONFIGS[bp.blueprintId];
     if (!config) continue;

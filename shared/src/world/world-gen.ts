@@ -1,5 +1,5 @@
 import { Terrain, Building } from '../terrain.js';
-import { BlueprintType } from '../blueprints.js';
+import { BlueprintType, getBlueprint } from '../blueprints.js';
 import { MAP_SIZE, SPAWN_X, SPAWN_Y } from '../constants.js';
 import { PerlinNoise } from './noise.js';
 import { WorldMap } from './world-map.js';
@@ -8,6 +8,7 @@ export interface EntitySpawn {
   x: number;
   y: number;
   blueprint: BlueprintType;
+  variant: number;
 }
 
 export interface WorldGenResult {
@@ -37,6 +38,11 @@ export function generateWorld(seed: number): WorldGenResult {
   function rand(): number {
     rng = (rng * 1664525 + 1013904223) >>> 0;
     return (rng >>> 0) / 0x100000000;
+  }
+
+  function pickVariant(bp: BlueprintType): number {
+    const count = getBlueprint(bp)?.variantCount ?? 1;
+    return count > 1 ? Math.floor(rand() * count) : 0;
   }
 
   // Scaled noise frequencies (inverse of scale — larger map = lower frequency)
@@ -119,7 +125,7 @@ export function generateWorld(seed: number): WorldGenResult {
       if (sdx * sdx + sdy * sdy < 25) continue; // spawn clear zone (fixed 5 tiles)
 
       treeSet.add(key(x, y));
-      spawns.push({ x, y, blueprint: BlueprintType.Tree });
+      spawns.push({ x, y, blueprint: BlueprintType.Tree, variant: pickVariant(BlueprintType.Tree) });
     }
   }
 
@@ -136,7 +142,7 @@ export function generateWorld(seed: number): WorldGenResult {
       if (!adjRock) continue;
 
       if (rand() < 0.15) {
-        spawns.push({ x, y, blueprint: BlueprintType.Rock });
+        spawns.push({ x, y, blueprint: BlueprintType.Rock, variant: pickVariant(BlueprintType.Rock) });
       }
     }
   }
@@ -164,7 +170,7 @@ export function generateWorld(seed: number): WorldGenResult {
         bp = cv > 0 ? BlueprintType.Deer : BlueprintType.Rabbit;
       }
 
-      spawns.push({ x, y, blueprint: bp });
+      spawns.push({ x, y, blueprint: bp, variant: pickVariant(bp) });
     }
   }
 
@@ -185,7 +191,7 @@ export function generateWorld(seed: number): WorldGenResult {
         map.getTerrain(x, y - 1) === Terrain.Rock ||
         map.getTerrain(x, y + 1) === Terrain.Rock;
       if (adjRock) {
-        spawns.push({ x, y, blueprint: BlueprintType.Skeleton });
+        spawns.push({ x, y, blueprint: BlueprintType.Skeleton, variant: pickVariant(BlueprintType.Skeleton) });
       }
     }
   }
@@ -206,13 +212,13 @@ export function generateWorld(seed: number): WorldGenResult {
   }
 
   const hermitPos = findNpcTile(8, 15 * scale);
-  if (hermitPos) spawns.push({ ...hermitPos, blueprint: BlueprintType.Hermit });
+  if (hermitPos) spawns.push({ ...hermitPos, blueprint: BlueprintType.Hermit, variant: pickVariant(BlueprintType.Hermit) });
 
   const traderPos = findNpcTile(10, 20 * scale);
-  if (traderPos) spawns.push({ ...traderPos, blueprint: BlueprintType.Trader });
+  if (traderPos) spawns.push({ ...traderPos, blueprint: BlueprintType.Trader, variant: pickVariant(BlueprintType.Trader) });
 
   const wandererPos = findNpcTile(30 * scale, 45 * scale);
-  if (wandererPos) spawns.push({ ...wandererPos, blueprint: BlueprintType.Wanderer });
+  if (wandererPos) spawns.push({ ...wandererPos, blueprint: BlueprintType.Wanderer, variant: pickVariant(BlueprintType.Wanderer) });
 
   // --- Pass 8: Test building (6×6 near spawn) ---
   const bx = SPAWN_X + 5;
@@ -229,8 +235,8 @@ export function generateWorld(seed: number): WorldGenResult {
     }
   }
 
-  spawns.push({ x: bx + 5, y: by + 2, blueprint: BlueprintType.WoodenDoor });
-  spawns.push({ x: bx + 2, y: by + 5, blueprint: BlueprintType.WoodenDoor });
+  spawns.push({ x: bx + 5, y: by + 2, blueprint: BlueprintType.WoodenDoor, variant: 0 });
+  spawns.push({ x: bx + 2, y: by + 5, blueprint: BlueprintType.WoodenDoor, variant: 0 });
 
   return { map, entitySpawns: spawns };
 }

@@ -60,10 +60,10 @@ describe('ACTION messages', () => {
 
 describe('WELCOME', () => {
   it('round-trips Welcome', () => {
-    const buf = encodeWelcome(42);
-    expect(buf.byteLength).toBe(3);
+    const buf = encodeWelcome(42, 12345);
+    expect(buf.byteLength).toBe(7);
     const msg = decodeServerMessage(buf);
-    expect(msg).toEqual({ type: 'welcome', entityId: 42 });
+    expect(msg).toEqual({ type: 'welcome', entityId: 42, seed: 12345 });
   });
 });
 
@@ -176,7 +176,7 @@ describe('EntityFullState', () => {
         nextWaypoint: { tileX: 8, tileY: 10 },
         currentAction: { actionType: ActionType.Walking },
         health: { currentHp: 80, maxHp: 100 },
-        blueprintId: { blueprintId: 0 },
+        blueprint: { blueprintId: 0, variant: 0 },
         statusEffects: { effects: 0 },
       },
       48, // speed
@@ -192,7 +192,7 @@ describe('EntityFullState', () => {
       expect(d.components.nextWaypoint).toEqual({ tileX: 8, tileY: 10 });
       expect(d.components.currentAction).toEqual({ actionType: ActionType.Walking });
       expect(d.components.health).toEqual({ currentHp: 80, maxHp: 100 });
-      expect(d.components.blueprintId).toEqual({ blueprintId: 0 });
+      expect(d.components.blueprint).toEqual({ blueprintId: 0, variant: 0 });
       expect(d.components.statusEffects).toEqual({ effects: 0 });
     }
   });
@@ -200,14 +200,14 @@ describe('EntityFullState', () => {
   it('round-trips without speed', () => {
     const buf = encodeEntityFullState(7, {
       position: { tileX: 0, tileY: 0 },
-      blueprintId: { blueprintId: 10 },
+      blueprint: { blueprintId: 10, variant: 2 },
     });
     const msg = decodeServerMessage(buf);
     if (msg.type === 'entityFullState') {
       expect(msg.data.entityId).toBe(7);
       expect(msg.data.speed).toBeUndefined();
       expect(msg.data.components.position).toEqual({ tileX: 0, tileY: 0 });
-      expect(msg.data.components.blueprintId).toEqual({ blueprintId: 10 });
+      expect(msg.data.components.blueprint).toEqual({ blueprintId: 10, variant: 2 });
     }
   });
 });

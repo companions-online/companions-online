@@ -4,7 +4,7 @@ export { Terrain, Building, isWalkable } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
 export { StatusEffect } from './status-effects.js';
 export { ComponentBit, WAYPOINT_NONE } from './components.js';
-export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintIdData, StatusEffectsData } from './components.js';
+export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintData, StatusEffectsData } from './components.js';
 export { BlueprintType, getBlueprint } from './blueprints.js';
 export type { Blueprint, BlueprintCategory, EquipSlot } from './blueprints.js';
 export { getRecipe, getAllRecipes } from './recipes.js';

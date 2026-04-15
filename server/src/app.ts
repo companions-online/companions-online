@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { decodeClientMessage, encodePong } from '@shared/protocol/codec.js';
+import type { WebSocket } from 'ws';
 import type { GameWorld } from './game-world.js';
 import { McpConnection } from './connections/mcp-connection.js';
 import { WebSocketConnection } from './connections/ws-connection.js';
@@ -54,7 +56,7 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
 
   // --- WebSocket for game clients ---
 
-  const wsUpgrade = (rawWs: import('ws').WebSocket) => {
+  const wsUpgrade = (rawWs: WebSocket) => {
     wsConnectionCount++;
     const conn = new WebSocketConnection(rawWs, telemetry);
     const entityId = world.addPlayer(conn);
@@ -79,6 +81,11 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
       world.removePlayer(entityId);
     });
   };
+
+  // --- Static client (served from client-webgl/) ---
+  // Registered LAST so /mcp and the /ws upgrade take precedence. Path is
+  // relative to the server's CWD — launch the server from the repo root.
+  app.use('/*', serveStatic({ root: './client-webgl', index: 'index.html' }));
 
   return { app, wsUpgrade, getWsConnectionCount: () => wsConnectionCount };
 }

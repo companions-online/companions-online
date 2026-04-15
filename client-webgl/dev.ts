@@ -2,6 +2,10 @@ import * as esbuild from 'esbuild';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// Watch-mode build. The game server (server/src/main.ts) serves
+// client-webgl/ as static files same-origin on its own port, so this script
+// does not open a dev server — it just rebuilds dist/main.js on change.
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ctx = await esbuild.context({
@@ -22,9 +26,5 @@ const ctx = await esbuild.context({
   }],
 });
 
-const { host, port } = await ctx.serve({
-  servedir: path.resolve(__dirname),
-  port: 3003,
-});
-
-console.log(`[client-gl] http://localhost:${port}`);
+await ctx.watch();
+console.log('[client-gl] watching src/ — rebuilds on change. Server serves client-webgl/ at its own port.');

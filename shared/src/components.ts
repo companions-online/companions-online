@@ -8,7 +8,7 @@ export const enum ComponentBit {
   NextWaypoint  = 2,
   CurrentAction = 3,
   Health        = 4,
-  BlueprintId   = 5,
+  Blueprint     = 5,
   StatusEffects = 6,
 }
 
@@ -42,8 +42,9 @@ export interface HealthData {
   maxHp: number;      // uint16
 }
 
-export interface BlueprintIdData {
+export interface BlueprintData {
   blueprintId: number;  // uint16
+  variant: number;      // uint8, 0..blueprint.variantCount-1
 }
 
 export interface StatusEffectsData {

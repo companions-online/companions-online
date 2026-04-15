@@ -3,7 +3,7 @@ import { ComponentBit } from '../components.js';
 import { ActionType, ClientAction } from '../actions.js';
 import type {
   PositionData, DirectionData, NextWaypointData,
-  CurrentActionData, HealthData, BlueprintIdData, StatusEffectsData,
+  CurrentActionData, HealthData, BlueprintData, StatusEffectsData,
 } from '../components.js';
 
 // --- Buffer helpers ---
@@ -89,7 +89,7 @@ export interface EntityComponents {
   nextWaypoint?: NextWaypointData;
   currentAction?: CurrentActionData;
   health?: HealthData;
-  blueprintId?: BlueprintIdData;
+  blueprint?: BlueprintData;
   statusEffects?: StatusEffectsData;
 }
 
@@ -174,7 +174,7 @@ function encodeComponents(w: BufferWriter, components: EntityComponents): number
   if (components.nextWaypoint !== undefined) bitmask |= (1 << ComponentBit.NextWaypoint);
   if (components.currentAction !== undefined) bitmask |= (1 << ComponentBit.CurrentAction);
   if (components.health !== undefined) bitmask |= (1 << ComponentBit.Health);
-  if (components.blueprintId !== undefined) bitmask |= (1 << ComponentBit.BlueprintId);
+  if (components.blueprint !== undefined) bitmask |= (1 << ComponentBit.Blueprint);
   if (components.statusEffects !== undefined) bitmask |= (1 << ComponentBit.StatusEffects);
 
   w.writeU8(bitmask);
@@ -197,8 +197,9 @@ function encodeComponents(w: BufferWriter, components: EntityComponents): number
     w.writeU16(components.health.currentHp);
     w.writeU16(components.health.maxHp);
   }
-  if (components.blueprintId !== undefined) {
-    w.writeU16(components.blueprintId.blueprintId);
+  if (components.blueprint !== undefined) {
+    w.writeU16(components.blueprint.blueprintId);
+    w.writeU8(components.blueprint.variant);
   }
   if (components.statusEffects !== undefined) {
     w.writeU16(components.statusEffects.effects);
@@ -241,8 +242,8 @@ function decodeComponents(r: BufferReader, bitmask: number): EntityComponents {
   if (bitmask & (1 << ComponentBit.Health)) {
     out.health = { currentHp: r.readU16(), maxHp: r.readU16() };
   }
-  if (bitmask & (1 << ComponentBit.BlueprintId)) {
-    out.blueprintId = { blueprintId: r.readU16() };
+  if (bitmask & (1 << ComponentBit.Blueprint)) {
+    out.blueprint = { blueprintId: r.readU16(), variant: r.readU8() };
   }
   if (bitmask & (1 << ComponentBit.StatusEffects)) {
     out.statusEffects = { effects: r.readU16() };
@@ -375,10 +376,11 @@ export function encodePong(clientTime: number): ArrayBuffer {
   return w.getBuffer();
 }
 
-export function encodeWelcome(entityId: number): ArrayBuffer {
-  const w = new BufferWriter(3);
+export function encodeWelcome(entityId: number, seed: number): ArrayBuffer {
+  const w = new BufferWriter(7);
   w.writeU8(ServerOpcode.Welcome);
   w.writeU16(entityId);
+  w.writeU32(seed);
   return w.getBuffer();
 }
 
@@ -524,7 +526,7 @@ export function encodeChunk(
 // --- Decoders ---
 
 export type DecodedServerMessage =
-  | { type: 'welcome'; entityId: number }
+  | { type: 'welcome'; entityId: number; seed: number }
   | { type: 'pong'; clientTime: number }
   | { type: 'worldDelta'; data: DecodedWorldDelta }
   | { type: 'entityFullState'; data: DecodedEntityFullState }
@@ -556,7 +558,7 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
       return { type: 'chunk', data: decodeChunk(r) };
 
     case ServerOpcode.Welcome:
-      return { type: 'welcome', entityId: r.readU16() };
+      return { type: 'welcome', entityId: r.readU16(), seed: r.readU32() };
 
     case ServerOpcode.InventorySync:
       return { type: 'inventorySync', items: readItems(r, r.readU8()) };

@@ -1,137 +1,311 @@
-import { MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
-import { generateWorld } from '@shared/world/world-gen.js';
-import type { WorldMap } from '@shared/world/world-map.js';
+// The scene is a passive container for replicated server state plus the
+// rendering machinery that draws it. createScene() generates the static
+// rendering assets (tile textures, blend masks, wall textures) up front —
+// these have no worldMap dependency. Everything else fills in via the on*()
+// mutators fed by connection.ts.
+//
+// Chunk visuals (terrain instances + wall drawables) are chunk-sparse: the
+// scene holds at most CHUNK_CAPACITY chunks worth of data, sized for the
+// player's interest range plus a just-in-time overlap margin. Eviction on
+// player movement keeps the working set bounded regardless of map size.
+
+import { CHUNK_SIZE, INTEREST_RANGE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
+import { WorldMap } from '@shared/world/world-map.js';
+import type {
+  DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
+} from '@shared/protocol/codec.js';
 import { Camera } from './platform/camera.js';
-import { generateRawTerrainTiles } from './terrain/texture.js';
-import { generateBlendMasks } from './terrain/blend-masks.js';
-import { buildElevationGrid } from './terrain/elevation.js';
-import { buildTerrainTextureArray, buildMaskTextureArray, type TerrainTextureArray, type MaskTextureArray } from './terrain/texture-arrays.js';
-import { buildTerrainInstances } from './terrain/terrain-instances.js';
-import { TerrainRenderer } from './terrain/terrain-renderer.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
-import { spawnDeer } from './entities/deer.js';
-import { spawnPlayer } from './entities/player.js';
-import { spawnTrees, placeTree } from './entities/tree.js';
-import { TREE_BLUEPRINT } from './entities/sprite-manifest.js';
 import type { ClientEntity } from './entities/client-entity.js';
-import { generateWallTextures } from './buildings/wall-texture.js';
-import { buildWallDrawables, type WallDrawable } from './buildings/wall-sprites.js';
-import { BlueprintType } from '@shared/blueprints.js';
-import { DOOR_BLUEPRINT } from './entities/sprite-manifest.js';
-import { detectDoorFacing, placeDoor } from './entities/door.js';
+import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
 
-export interface PlayerControls {
-  moveTo: (tileX: number, tileY: number) => void;
+import { generateRawTerrainTiles } from './terrain/texture.js';
+import { generateBlendMasks } from './terrain/blend-masks.js';
+import {
+  buildTerrainTextureArray,
+  buildMaskTextureArray,
+  type TerrainTextureArray,
+  type MaskTextureArray,
+} from './terrain/texture-arrays.js';
+import { TerrainRenderer } from './terrain/terrain-renderer.js';
+import { buildElevationGridChunk } from './terrain/elevation.js';
+import {
+  buildChunkTerrainData,
+  BASE_INSTANCE_STRIDE,
+  OVERLAY_INSTANCE_STRIDE,
+  type ChunkTerrainData,
+} from './terrain/terrain-instances.js';
+import { generateWallTextures } from './buildings/wall-texture.js';
+import type { WallShape } from './buildings/wall-texture.js';
+import { buildWallDrawablesForChunk, type WallDrawable } from './buildings/wall-sprites.js';
+
+/** Chunks needed in each direction at a given instant: full interest range
+ *  plus one extra ring so new chunks load just-in-time as the player's
+ *  chunk slides. Squared → peak concurrent chunks. Plus a small margin for
+ *  safety. At INTEREST_RANGE=32 CHUNK_SIZE=16 → radius 3, peak 49, +4 = 53. */
+const INTEREST_RADIUS_CHUNKS = Math.ceil(INTEREST_RANGE / CHUNK_SIZE) + 1;
+const PEAK_CONCURRENT_CHUNKS = (2 * INTEREST_RADIUS_CHUNKS + 1) ** 2;
+const CHUNK_CAPACITY = PEAK_CONCURRENT_CHUNKS + 4;
+const TILES_PER_CHUNK = CHUNK_SIZE * CHUNK_SIZE;
+
+function chunkKey(cx: number, cy: number): number {
+  return cy * 1024 + cx;
 }
 
 export interface Scene {
   gl: WebGL2RenderingContext;
-  worldMap: WorldMap;
   camera: Camera;
+  worldMap: WorldMap;
+  spriteRegistry: SpriteRegistry;
+  spriteRenderer: SpriteRenderer;
+  terrainRenderer: TerrainRenderer;
   terrainTexture: TerrainTextureArray;
   maskTexture: MaskTextureArray;
-  terrainRenderer: TerrainRenderer;
-  spriteRenderer: SpriteRenderer;
-  spriteRegistry: SpriteRegistry;
+  wallTextures: Map<WallShape, WebGLTexture>;
   entities: Map<number, ClientEntity>;
-  wallDrawables: WallDrawable[];
+  wallDrawablesByChunk: Map<number, WallDrawable[]>;
   myEntityId: number | null;
-  playerControls: PlayerControls | null;
-  toggleDoorAt: (tx: number, ty: number) => boolean;
+  seed: number | null;
   time: number;
+
+  // --- Network mutators ---
+  onWelcome(entityId: number, seed: number): void;
+  onChunk(data: DecodedChunk): void;
+  onEntityFull(data: DecodedEntityFullState): void;
+  onEntityUpdate(update: DecodedEntityUpdate): void;
+  onEntityRemoval(entityId: number): void;
+  onTileUpdate(tu: DecodedTileUpdate): void;
+
+  /** Process dirty chunks: rebuild elevation/instances/walls, reconcile
+   *  eviction based on player chunk position, upload to GPU. Called once
+   *  per frame by the renderer. */
+  processDirtyChunks(): void;
 }
 
-/**
- * One-shot async scene build: world-gen + terrain/mask texture uploads +
- * instance buffers + sprite registry load + player + wander deer spawn.
- */
-export async function createScene(
-  gl: WebGL2RenderingContext,
-  seed: number,
-): Promise<Scene> {
-  const { map: worldMap, entitySpawns } = generateWorld(seed);
-
-  // CPU-side texture + mask generation — pure logic, no GL calls.
-  const rawTiles = generateRawTerrainTiles();
-  const masks = generateBlendMasks();
-
-  // Upload to GL as texture arrays.
-  const terrainTexture = await buildTerrainTextureArray(gl, rawTiles);
-  const maskTexture = await buildMaskTextureArray(gl, masks);
-
-  // Elevation grid + instance buffers (one-time CPU walk over the map).
-  const elevationGrid = buildElevationGrid(seed, MAP_SIZE, worldMap);
-  const instances = buildTerrainInstances(worldMap, elevationGrid, terrainTexture.layerIndex);
-
-  const terrainRenderer = new TerrainRenderer(gl, instances);
+export async function createScene(gl: WebGL2RenderingContext): Promise<Scene> {
+  const worldMap = new WorldMap(MAP_SIZE, MAP_SIZE);
+  const camera = new Camera(SPAWN_X, SPAWN_Y);
   const spriteRenderer = new SpriteRenderer(gl);
-
-  // Load every sprite PNG declared in sprite-manifest.ts in parallel.
   const spriteRegistry = await loadSpriteRegistry(gl);
 
-  // Wall textures + drawable list for Y-sort rendering.
+  // Static rendering assets — pure CPU, no worldMap dependency.
+  const rawTiles = generateRawTerrainTiles();
+  const blendMasks = generateBlendMasks();
+  const terrainTexture = await buildTerrainTextureArray(gl, rawTiles);
+  const maskTexture = await buildMaskTextureArray(gl, blendMasks);
   const wallTextures = generateWallTextures(gl);
-  const wallDrawables = buildWallDrawables(worldMap, wallTextures, elevationGrid);
-
-  const camera = new Camera(SPAWN_X, SPAWN_Y);
+  const terrainRenderer = new TerrainRenderer(gl);
 
   const entities = new Map<number, ClientEntity>();
-  const terrainBlocked = (x: number, y: number) => !worldMap.isWalkable(x, y);
+  const wallDrawablesByChunk = new Map<number, WallDrawable[]>();
 
-  // Trees first: they register occupied tiles that creature pathfinding must
-  // avoid. Tree ids live in a high range (1000+) to stay out of the way of
-  // future creature id growth.
-  const { occupiedTiles: treeTiles } = spawnTrees(
-    entities, terrainBlocked, spriteRegistry, 1000, seed,
-  );
-  const doorBlockedTiles = new Set<number>();
-  const isBlocked = (x: number, y: number) =>
-    terrainBlocked(x, y) || treeTiles.has(y * MAP_SIZE + x) || doorBlockedTiles.has(y * MAP_SIZE + x);
+  // Per-chunk CPU-side terrain data. Concatenated into GPU buffers on
+  // terrain rebuild.
+  const chunkTerrainData = new Map<number, ChunkTerrainData>();
+  const dirtyChunks = new Set<number>();
+  /** True when eviction or chunk removal changed the active set — forces a
+   *  full GPU buffer re-concat even if no dirty chunks are rebuilding. */
+  let layoutDirty = false;
+  /** Last player-chunk we evicted against. Re-run eviction only when this
+   *  changes, not every frame. Null means "eviction not yet run". */
+  let lastEvictionChunk: { cx: number; cy: number } | null = null;
 
-  // 3 showcase trees near spawn, one of each variant, side by side.
-  for (let v = 0; v < 3; v++) {
-    const id = 900 + v;
-    const sheet = spriteRegistry.resolve(TREE_BLUEPRINT, v);
-    entities.set(id, placeTree(id, SPAWN_X + 3 + v, SPAWN_Y - 3, sheet));
-    treeTiles.add((SPAWN_Y - 3) * MAP_SIZE + (SPAWN_X + 3 + v));
+  function markChunkAndNeighborsDirty(cx: number, cy: number): void {
+    dirtyChunks.add(chunkKey(cx, cy));
+    dirtyChunks.add(chunkKey(cx - 1, cy));
+    dirtyChunks.add(chunkKey(cx + 1, cy));
+    dirtyChunks.add(chunkKey(cx, cy - 1));
+    dirtyChunks.add(chunkKey(cx, cy + 1));
   }
 
-  // Doors — spawn from world-gen entity list.
-  const doorToggles = new Map<number, () => void>(); // tileKey → toggle fn
-  let doorId = 800;
-  const doorSheet = spriteRegistry.resolve(DOOR_BLUEPRINT, 0);
-  for (const spawn of entitySpawns) {
-    if (spawn.blueprint !== BlueprintType.WoodenDoor) continue;
-    const facing = detectDoorFacing(spawn.x, spawn.y, worldMap);
-    const { entity, toggle } = placeDoor(doorId++, spawn.x, spawn.y, facing, doorSheet, elevationGrid, doorBlockedTiles);
-    entities.set(entity.id, entity);
-    doorToggles.set(spawn.y * MAP_SIZE + spawn.x, toggle);
+  function evictOutOfRange(playerChunkX: number, playerChunkY: number): void {
+    let evicted = 0;
+    for (const key of [...chunkTerrainData.keys()]) {
+      const cx = key % 1024;
+      const cy = (key - cx) / 1024;
+      if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > INTEREST_RADIUS_CHUNKS) {
+        chunkTerrainData.delete(key);
+        wallDrawablesByChunk.delete(key);
+        evicted++;
+      }
+    }
+    if (evicted > 0) layoutDirty = true;
   }
 
-  // Player — becomes scene.myEntityId. Wander herd takes ids 2..6.
-  const playerSpawn = spawnPlayer(entities, SPAWN_X, SPAWN_Y, isBlocked, spriteRegistry, 1);
-  spawnDeer(entities, 5, isBlocked, spriteRegistry, 2);
+  function rebuildChunk(cx: number, cy: number): void {
+    // Only rebuild chunks actually inside the map. Negative or out-of-range
+    // neighbors fall through silently — they were marked only because a
+    // valid chunk at the edge has them as neighbors.
+    const cols = Math.ceil(MAP_SIZE / CHUNK_SIZE);
+    if (cx < 0 || cy < 0 || cx >= cols || cy >= cols) return;
 
-  return {
+    if (scene.seed === null) return; // seed required for elevation noise
+    const elevation = buildElevationGridChunk(scene.seed, worldMap, cx, cy);
+    const terrainData = buildChunkTerrainData(
+      worldMap, elevation, cx, cy, terrainTexture.layerIndex,
+    );
+    chunkTerrainData.set(chunkKey(cx, cy), terrainData);
+    wallDrawablesByChunk.set(
+      chunkKey(cx, cy),
+      buildWallDrawablesForChunk(worldMap, wallTextures, elevation, cx, cy),
+    );
+  }
+
+  /**
+   * Rebuild GPU buffers from every chunk's CPU data. Called when any chunk
+   * was (re)built or a chunk was evicted. Over-capacity is a correctness
+   * bug: eviction should keep the active set bounded by CHUNK_CAPACITY.
+   */
+  function uploadTerrain(): void {
+    const count = chunkTerrainData.size;
+    if (count > CHUNK_CAPACITY) {
+      throw new Error(
+        `chunk capacity exceeded: ${count} > ${CHUNK_CAPACITY}. Eviction broken?`,
+      );
+    }
+    if (count === 0) {
+      terrainRenderer.uploadInstances(new ArrayBuffer(0), 0, new ArrayBuffer(0), 0);
+      return;
+    }
+
+    const baseCount = count * TILES_PER_CHUNK;
+    const baseBuf = new ArrayBuffer(baseCount * BASE_INSTANCE_STRIDE);
+    const baseBytes = new Uint8Array(baseBuf);
+    let baseOff = 0;
+
+    let totalOverlays = 0;
+    for (const cd of chunkTerrainData.values()) totalOverlays += cd.overlayCount;
+    const overlayBuf = new ArrayBuffer(totalOverlays * OVERLAY_INSTANCE_STRIDE);
+    const overlayBytes = new Uint8Array(overlayBuf);
+    let overlayOff = 0;
+
+    for (const cd of chunkTerrainData.values()) {
+      baseBytes.set(new Uint8Array(cd.baseData), baseOff);
+      baseOff += cd.baseData.byteLength;
+      overlayBytes.set(new Uint8Array(cd.overlayData), overlayOff);
+      overlayOff += cd.overlayData.byteLength;
+    }
+
+    terrainRenderer.uploadInstances(baseBuf, baseCount, overlayBuf, totalOverlays);
+  }
+
+  const scene: Scene = {
     gl,
-    worldMap,
     camera,
+    worldMap,
+    spriteRegistry,
+    spriteRenderer,
+    terrainRenderer,
     terrainTexture,
     maskTexture,
-    terrainRenderer,
-    spriteRenderer,
-    spriteRegistry,
+    wallTextures,
     entities,
-    wallDrawables,
-    myEntityId: playerSpawn.id,
-    playerControls: { moveTo: playerSpawn.moveTo },
-    toggleDoorAt(tx, ty) {
-      const key = ty * MAP_SIZE + tx;
-      const toggle = doorToggles.get(key);
-      if (toggle) { toggle(); return true; }
-      return false;
-    },
+    wallDrawablesByChunk,
+    myEntityId: null,
+    seed: null,
     time: 0,
+
+    onWelcome(entityId, seed) {
+      this.myEntityId = entityId;
+      this.seed = seed;
+    },
+
+    onChunk(data) {
+      const { chunkX, chunkY, terrain, buildings, buildingMeta } = data;
+      const sx = chunkX * CHUNK_SIZE;
+      const sy = chunkY * CHUNK_SIZE;
+      for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+          const gi = (sy + ly) * MAP_SIZE + (sx + lx);
+          const ci = ly * CHUNK_SIZE + lx;
+          worldMap.terrain[gi] = terrain[ci];
+          worldMap.buildings[gi] = buildings[ci];
+          worldMap.buildingMeta[gi] = buildingMeta[ci];
+        }
+      }
+      markChunkAndNeighborsDirty(chunkX, chunkY);
+    },
+
+    onEntityFull(data) {
+      const e = createEntityFromNetwork(data.entityId, data.components, spriteRegistry, worldMap);
+      entities.set(data.entityId, e);
+    },
+
+    onEntityUpdate(update) {
+      const existing = entities.get(update.entityId);
+      if (existing) {
+        applyComponentsToEntity(existing, update.components);
+        return;
+      }
+      if (update.components.blueprint) {
+        entities.set(update.entityId,
+          createEntityFromNetwork(update.entityId, update.components, spriteRegistry, worldMap));
+      }
+    },
+
+    onEntityRemoval(entityId) {
+      entities.delete(entityId);
+    },
+
+    onTileUpdate(tu) {
+      const gi = tu.tileY * MAP_SIZE + tu.tileX;
+      if (tu.terrain !== undefined) worldMap.terrain[gi] = tu.terrain;
+      if (tu.building !== undefined) worldMap.buildings[gi] = tu.building;
+      if (tu.buildingMeta !== undefined) worldMap.buildingMeta[gi] = tu.buildingMeta;
+      markChunkAndNeighborsDirty(
+        Math.floor(tu.tileX / CHUNK_SIZE),
+        Math.floor(tu.tileY / CHUNK_SIZE),
+      );
+    },
+
+    processDirtyChunks() {
+      // Eviction step: if the player moved into a new chunk, drop anything
+      // outside the interest radius.
+      if (this.myEntityId !== null) {
+        const me = entities.get(this.myEntityId);
+        if (me?.position) {
+          const pcx = Math.floor(me.position.tileX / CHUNK_SIZE);
+          const pcy = Math.floor(me.position.tileY / CHUNK_SIZE);
+          if (!lastEvictionChunk || lastEvictionChunk.cx !== pcx || lastEvictionChunk.cy !== pcy) {
+            evictOutOfRange(pcx, pcy);
+            lastEvictionChunk = { cx: pcx, cy: pcy };
+          }
+        }
+      }
+
+      // Rebuild each dirty chunk that still has worldMap data. A chunk is
+      // "interesting" if we've received a chunk message for it — i.e. we
+      // have terrain bytes set non-zero somewhere in it. We use the
+      // presence of the chunk in chunkTerrainData OR a non-Grass terrain
+      // byte as a cheap proxy. Simpler: rebuild whenever dirty; rebuilds
+      // for untouched chunks produce zero-data quickly.
+      let didWork = false;
+      if (dirtyChunks.size > 0) {
+        for (const key of dirtyChunks) {
+          const cx = key % 1024;
+          const cy = (key - cx) / 1024;
+          // Only rebuild chunks that are in-interest — the player may not
+          // yet be positioned, in which case no eviction has happened and
+          // all received chunks are valid.
+          if (this.myEntityId !== null && lastEvictionChunk) {
+            if (Math.max(Math.abs(cx - lastEvictionChunk.cx),
+                         Math.abs(cy - lastEvictionChunk.cy)) > INTEREST_RADIUS_CHUNKS) {
+              continue;
+            }
+          }
+          rebuildChunk(cx, cy);
+          didWork = true;
+        }
+        dirtyChunks.clear();
+      }
+
+      if (didWork || layoutDirty) {
+        uploadTerrain();
+        layoutDirty = false;
+      }
+    },
   };
+
+  return scene;
 }

@@ -12,7 +12,7 @@ function resolveHarvestContext(
 ): { context: HarvestContext; targetEntityId?: number } | null {
   const targetEid = world.occupancy.get(targetX, targetY);
   if (targetEid) {
-    const bpData = world.entities.blueprintId.get(targetEid);
+    const bpData = world.entities.blueprint.get(targetEid);
     if (bpData) {
       if (bpData.blueprintId === BlueprintType.Tree) {
         const tickCost = equippedBpId === BlueprintType.Axe ? 4 : 10;

@@ -1,6 +1,6 @@
 import { MAP_SIZE } from '../shared/src/constants.js';
 import type { EntityComponents, SyncedInventoryItem } from '../shared/src/protocol/codec.js';
-import type { HealthData, BlueprintIdData, StatusEffectsData, CurrentActionData } from '../shared/src/components.js';
+import type { HealthData, BlueprintData, StatusEffectsData, CurrentActionData } from '../shared/src/components.js';
 
 // --- Types ---
 
@@ -37,7 +37,7 @@ export function getHp(comp: EntityComponents[keyof EntityComponents] | undefined
 export function getBpId(comp: EntityComponents[keyof EntityComponents] | undefined): number | undefined {
   if (comp === undefined) return undefined;
   if (typeof comp === 'number') return comp;
-  const b = comp as BlueprintIdData;
+  const b = comp as BlueprintData;
   if (typeof b.blueprintId === 'number') return b.blueprintId;
   return undefined;
 }
