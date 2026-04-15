@@ -5,9 +5,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': path.resolve(__dirname, 'shared/src'),
+      '@client-webgl': path.resolve(__dirname, 'client-webgl/src'),
     },
   },
   test: {
     include: ['test/**/*.test.ts'],
+    globalSetup: ['./scripts/vitest-global-setup.ts'],
   },
 });

@@ -96,8 +96,11 @@ function drawDoor(
   const uvX = isOpen * uvW;
   const uvY = facing * uvH;
 
-  const dstX = screen.screenX + offsetX + TILE_W / 2 - s.footX;
-  const dstY = screen.screenY + offsetY + TILE_H / 2 - s.footY;
+  // Anchor the door so its bottom sits at the tile's south vertex (wall line),
+  // not tile center. Elevation is flattened under doors because placement
+  // requires a floor tile — see worldgen Pass 3 in elevation.ts.
+  const dstX = screen.screenX + offsetX;
+  const dstY = screen.screenY + offsetY - (s.frameH - TILE_H);
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);

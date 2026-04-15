@@ -13,6 +13,7 @@ import { CHUNK_SIZE, INTEREST_RANGE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/
 import { WorldMap } from '@shared/world/world-map.js';
 import type {
   DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
+  SyncedInventoryItem,
 } from '@shared/protocol/codec.js';
 import { Camera } from './platform/camera.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
@@ -53,6 +54,16 @@ function chunkKey(cx: number, cy: number): number {
   return cy * 1024 + cx;
 }
 
+/** Chat log cap — matches the CLI's 50-entry rolling window. */
+const CHAT_LOG_MAX = 50;
+
+export interface ChatLogEntry {
+  senderEntityId: number;
+  message: string;
+  /** `Date.now()` at arrival. UI uses this to age-out recent-chat overlays. */
+  receivedAt: number;
+}
+
 export interface Scene {
   gl: WebGL2RenderingContext;
   camera: Camera;
@@ -69,6 +80,20 @@ export interface Scene {
   seed: number | null;
   time: number;
 
+  // --- Replicated sync state (Phase 9) ---
+  /** The player's inventory. Empty until the server's first InventorySync. */
+  inventory: SyncedInventoryItem[];
+  /** Open container entity id + its items; null while no container is open. */
+  containerEntityId: number | null;
+  containerItems: SyncedInventoryItem[];
+  /** NPC whose dialogue is currently open + the server-sent dialogue blob.
+   *  Shape lives server-side (`onDialogueOpen` param) — kept here as
+   *  unknown until the UI pass pulls in the exact type. */
+  dialogueNpcId: number | null;
+  dialogue: unknown;
+  /** Rolling chat log, capped at CHAT_LOG_MAX (oldest dropped first). */
+  chatLog: ChatLogEntry[];
+
   // --- Network mutators ---
   onWelcome(entityId: number, seed: number): void;
   onChunk(data: DecodedChunk): void;
@@ -76,6 +101,10 @@ export interface Scene {
   onEntityUpdate(update: DecodedEntityUpdate): void;
   onEntityRemoval(entityId: number): void;
   onTileUpdate(tu: DecodedTileUpdate): void;
+  onInventorySync(items: SyncedInventoryItem[]): void;
+  onContainerOpen(containerEntityId: number, items: SyncedInventoryItem[]): void;
+  onDialogueOpen(npcEntityId: number, dialogue: unknown): void;
+  onChatMessage(senderEntityId: number, message: string): void;
 
   /** Process dirty chunks: rebuild elevation/instances/walls, reconcile
    *  eviction based on player chunk position, upload to GPU. Called once
@@ -83,18 +112,48 @@ export interface Scene {
   processDirtyChunks(): void;
 }
 
-export async function createScene(gl: WebGL2RenderingContext): Promise<Scene> {
-  const worldMap = new WorldMap(MAP_SIZE, MAP_SIZE);
-  const camera = new Camera(SPAWN_X, SPAWN_Y);
-  const spriteRenderer = new SpriteRenderer(gl);
-  const spriteRegistry = await loadSpriteRegistry(gl);
+export interface StaticAssets {
+  terrainTexture: TerrainTextureArray;
+  maskTexture: MaskTextureArray;
+  wallTextures: Map<WallShape, WebGLTexture>;
+}
 
-  // Static rendering assets — pure CPU, no worldMap dependency.
+/**
+ * Generate the render-time static assets: terrain tile textures, blend
+ * masks, wall face textures. Pure CPU + GL uploads; no worldMap
+ * dependency. Split out from createScene so tests can inject stubs.
+ */
+export async function loadStaticAssets(gl: WebGL2RenderingContext): Promise<StaticAssets> {
   const rawTiles = generateRawTerrainTiles();
   const blendMasks = generateBlendMasks();
   const terrainTexture = await buildTerrainTextureArray(gl, rawTiles);
   const maskTexture = await buildMaskTextureArray(gl, blendMasks);
   const wallTextures = generateWallTextures(gl);
+  return { terrainTexture, maskTexture, wallTextures };
+}
+
+export interface CreateSceneOptions {
+  /** Pre-built sprite registry. Tests inject a fake registry that skips
+   *  PNG fetching + Image decoding; production omits this and boots the
+   *  real registry from /assets/. */
+  spriteRegistry?: SpriteRegistry;
+  /** Pre-built static render assets. Tests inject stubs that skip
+   *  OffscreenCanvas / image-bitmap generation; production omits this and
+   *  builds them on the fly. */
+  staticAssets?: StaticAssets;
+}
+
+export async function createScene(
+  gl: WebGL2RenderingContext,
+  opts: CreateSceneOptions = {},
+): Promise<Scene> {
+  const worldMap = new WorldMap(MAP_SIZE, MAP_SIZE);
+  const camera = new Camera(SPAWN_X, SPAWN_Y);
+  const spriteRenderer = new SpriteRenderer(gl);
+  const spriteRegistry = opts.spriteRegistry ?? await loadSpriteRegistry(gl);
+
+  const { terrainTexture, maskTexture, wallTextures } =
+    opts.staticAssets ?? await loadStaticAssets(gl);
   const terrainRenderer = new TerrainRenderer(gl);
 
   const entities = new Map<number, ClientEntity>();
@@ -206,9 +265,37 @@ export async function createScene(gl: WebGL2RenderingContext): Promise<Scene> {
     seed: null,
     time: 0,
 
+    inventory: [],
+    containerEntityId: null,
+    containerItems: [],
+    dialogueNpcId: null,
+    dialogue: null,
+    chatLog: [],
+
     onWelcome(entityId, seed) {
       this.myEntityId = entityId;
       this.seed = seed;
+    },
+
+    onInventorySync(items) {
+      this.inventory = items;
+    },
+
+    onContainerOpen(containerEntityId, items) {
+      this.containerEntityId = containerEntityId;
+      this.containerItems = items;
+    },
+
+    onDialogueOpen(npcEntityId, dialogue) {
+      this.dialogueNpcId = npcEntityId;
+      this.dialogue = dialogue;
+    },
+
+    onChatMessage(senderEntityId, message) {
+      this.chatLog.push({ senderEntityId, message, receivedAt: Date.now() });
+      if (this.chatLog.length > CHAT_LOG_MAX) {
+        this.chatLog.splice(0, this.chatLog.length - CHAT_LOG_MAX);
+      }
     },
 
     onChunk(data) {
@@ -235,7 +322,7 @@ export async function createScene(gl: WebGL2RenderingContext): Promise<Scene> {
     onEntityUpdate(update) {
       const existing = entities.get(update.entityId);
       if (existing) {
-        applyComponentsToEntity(existing, update.components);
+        applyComponentsToEntity(existing, update.components, this.time);
         return;
       }
       if (update.components.blueprint) {

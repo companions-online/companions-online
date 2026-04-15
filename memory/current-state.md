@@ -41,7 +41,26 @@
 
 **All 17 game actions + 19 MCP tools implemented.**
 
-## 184 Tests across 16 files — all passing
+## WebGL client — fully network-driven
+
+Second client under `client-webgl/`, alongside the CLI. Same backend,
+same shared protocol. Boots into an empty scene and fills in from
+server messages; no client-side world-gen, no local entity simulation.
+Chunk-sparse rendering with player-distance eviction bounds GPU memory
+to the interest-range working set (not map size). Movement
+interpolation, shared action-resolver controls with local turn
+prediction, inventory/container/dialogue/chat replication — full
+parity with the CLI's logic, minus the UI.
+
+Served same-origin by the game server (`app.ts` static handler), so
+no cross-origin config and `PORT=3002` "just works" for a parallel
+session.
+
+Test harness at `test/client-gl/` — vitest with mock GL and fakes; no
+browser needed for most work. Puppeteer reserved for actual rendering
+regressions. See `memory/clientgl/` for full orientation.
+
+## 217 Tests across 20 files — all passing
 
 ## Known Issues
 - Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds. Fix: lower to ~0.50
@@ -56,6 +75,8 @@
 3. Critter alive zones: only run AI for critters near players
 
 ### Future
+- WebGL client UI (HUD, inventory, dialogue panel, chat — state is all wired, UI is the next pass)
+- Bend-only waypoint server optimization (plan in `docs/plans/bend-only-waypoints.md`)
 - 2D asset pipeline (web client)
 - Campfire burn timer
 - More NPC types

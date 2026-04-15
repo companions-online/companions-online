@@ -34,10 +34,32 @@ export function createEntityFromNetwork(
   }
 }
 
-/** Merge a partial component update into an existing entity. Only fields
- *  present in `next` overwrite — undefined fields preserve current state. */
-export function applyComponentsToEntity(e: ClientEntity, next: EntityComponents): void {
-  if (next.position !== undefined) e.position = next.position;
+/**
+ * Merge a partial component update into an existing entity. Only fields
+ * present in `next` overwrite — undefined fields preserve current state.
+ *
+ * If `position` changed, snapshots the entity's current visual position as
+ * the lerp origin and records `checkpointMs`. Creature-entity's tick reads
+ * these to lerp visualX/visualY toward the new position over one tile's
+ * worth of traversal time (1 / blueprint.speed seconds).
+ */
+export function applyComponentsToEntity(
+  e: ClientEntity,
+  next: EntityComponents,
+  checkpointMs: number,
+): void {
+  if (next.position !== undefined) {
+    const prev = e.position;
+    const moved = !prev
+      || prev.tileX !== next.position.tileX
+      || prev.tileY !== next.position.tileY;
+    if (moved) {
+      e.lerpFromX = e.visualX;
+      e.lerpFromY = e.visualY;
+      e.checkpointMs = checkpointMs;
+    }
+    e.position = next.position;
+  }
   if (next.direction !== undefined) e.direction = next.direction;
   if (next.nextWaypoint !== undefined) e.nextWaypoint = next.nextWaypoint;
   if (next.currentAction !== undefined) e.currentAction = next.currentAction;

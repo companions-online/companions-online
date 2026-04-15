@@ -3,12 +3,19 @@
 // direction, currentAction, and statusEffects from server-delivered
 // EntityComponents and renders via the shared 8-row directional walk sheet.
 //
-// Phase 5: snap-to-tile on every position update (no interp). Walk-cycle
-// animation advances while currentAction.actionType === Walking. Phase 7
-// replaces the snap with a lerp from lerpFromX/Y toward nextWaypoint at
-// blueprint.speed.
+// Movement visuals use linear interpolation from the previous server
+// checkpoint toward the latest `position`. Checkpointing happens in
+// applyComponentsToEntity whenever position changes; the tick here just
+// reads lerpFromX/Y + checkpointMs + position + blueprint.speed.
+//
+// Under per-tile server sync (current), each server update advances
+// position by one tile and the lerp smoothly covers that tile over
+// `1 / speed` seconds — natural per-tile smoothing. When the server switches
+// to bend-only waypoints (see docs/plans/bend-only-waypoints.md), this same
+// code will cover multi-tile straight runs between bends.
 
 import { ActionType } from '@shared/actions.js';
+import { getBlueprint } from '@shared/blueprints.js';
 import { Direction } from '@shared/direction.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { TILE_W, TILE_H } from '../platform/config.js';
@@ -19,6 +26,7 @@ import type { SpriteSheetRef } from './sprite-registry.js';
 
 const WALK_FRAMES = 6;
 const WALK_FRAME_DURATION = 0.08;
+const DEFAULT_SPEED_TILES_PER_SEC = 3;
 
 function isMoving(e: ClientEntity): boolean {
   return e.currentAction?.actionType === ActionType.Walking;
@@ -42,11 +50,13 @@ export function createCreatureEntity(
     spriteSheet: sheet,
     walkFrame: 0,
     frameTimer: 0,
+    // Snap to starting position — no lerp state is set, so the tick's
+    // fallback produces t=1 on the first frame.
     visualX: pos?.tileX ?? 0,
     visualY: pos?.tileY ?? 0,
     screenY: 0,
 
-    tick(self, dt) {
+    tick(self, dt, scene) {
       if (isMoving(self)) {
         self.frameTimer += dt;
         while (self.frameTimer >= WALK_FRAME_DURATION) {
@@ -57,12 +67,27 @@ export function createCreatureEntity(
         self.walkFrame = 0;
         self.frameTimer = 0;
       }
-      // Snap-to-tile: visual position equals logical position. Phase 7
-      // replaces this with a lerp from the previous checkpoint.
-      if (self.position) {
-        self.visualX = self.position.tileX;
-        self.visualY = self.position.tileY;
-      }
+
+      if (!self.position) return;
+
+      const targetX = self.position.tileX;
+      const targetY = self.position.tileY;
+      const fromX = self.lerpFromX ?? targetX;
+      const fromY = self.lerpFromY ?? targetY;
+      const checkpoint = self.checkpointMs ?? scene.time;
+      const speed = getBlueprint(self.blueprint?.blueprintId ?? -1)?.speed
+        ?? DEFAULT_SPEED_TILES_PER_SEC;
+
+      // Duration is one tile at `speed` tiles/sec. Under per-tile server
+      // sync the next position update arrives ~1 tile/speed seconds later,
+      // so the entity reaches target just as the next leg begins. Diagonal
+      // moves are not sqrt(2)-compensated here — the visual ticks slightly
+      // ahead on diagonals, a minor error we'll revisit if it looks bad.
+      const durationMs = 1000 / speed;
+      const elapsed = scene.time - checkpoint;
+      const t = Math.min(Math.max(elapsed / durationMs, 0), 1);
+      self.visualX = fromX + (targetX - fromX) * t;
+      self.visualY = fromY + (targetY - fromY) * t;
     },
 
     draw(self, sprites, gl, offsetX, offsetY) {
@@ -73,10 +98,6 @@ export function createCreatureEntity(
   return entity;
 }
 
-/**
- * Standard creature sprite draw: 8-row direction × (1+N)-col (idle, walk×N).
- * The `moving` argument determines idle vs walk-cycle frame selection.
- */
 function drawCreatureSprite(
   e: ClientEntity,
   sprites: SpriteRenderer,
@@ -96,7 +117,6 @@ function drawCreatureSprite(
   gl.bindTexture(gl.TEXTURE_2D, sheet.texture);
 
   if (sheet.isFallback) {
-    // Unknown-entity sheet: single-frame image, no dir rows, no walk cols.
     sprites.drawSprite(dstX, dstY, sheet.frameW, sheet.frameH, 0, 0, 1, 1);
     return;
   }

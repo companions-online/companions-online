@@ -3,6 +3,7 @@ dist/
 *.js.map
 .vite/
 scripts/.session
+.build-number
 data/worlds/
 assets/import/
 

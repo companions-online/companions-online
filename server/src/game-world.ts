@@ -825,6 +825,18 @@ export class GameWorld implements SystemState {
         this.inventoryMgr.removeItem(eid, itemId, 1);
         this.map.setBuilding(tileX, tileY, buildingType);
       } else {
+        // Doors must stand in a wall gap — floor underneath, walls on opposite
+        // sides. Relied on for both elevation flattening (floor corners are
+        // flattened in Pass 3) and facing detection (two-wall neighbors).
+        if (item.blueprintId === BlueprintType.WoodenDoor) {
+          const floor = this.map.getBuilding(tileX, tileY);
+          if (floor !== Building.WoodenFloor && floor !== Building.StoneFloor) return;
+          const wallAt = (x: number, y: number) =>
+            this.map.inBounds(x, y) && this.map.getBuilding(x, y) === Building.Wall;
+          const ns = wallAt(tileX, tileY - 1) && wallAt(tileX, tileY + 1);
+          const ew = wallAt(tileX - 1, tileY) && wallAt(tileX + 1, tileY);
+          if (!ns && !ew) return;
+        }
         // Interactive placeables (campfire, door, chest) — remain entities
         this.inventoryMgr.removeItem(eid, itemId, 1);
         const newEid = this.entities.create();

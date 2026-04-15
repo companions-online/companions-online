@@ -17,11 +17,13 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
   if (ctx.entityAtTarget) {
     const bp = getBlueprint(ctx.entityAtTarget.blueprintId);
     if (bp) {
-      if (bp.category === 'item' || bp.category === 'resource' || (bp.category === 'placeable' && ctx.entityAtTarget.isGroundItem)) {
-        return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
-      }
+      // Placed Tree → Harvest. Must precede the generic resource→Pickup below,
+      // since Tree's category is 'resource' (same as dropped Wood/Rock/etc).
       if (ctx.entityAtTarget.blueprintId === BlueprintType.Tree) {
         return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
+      }
+      if (bp.category === 'item' || bp.category === 'resource' || (bp.category === 'placeable' && ctx.entityAtTarget.isGroundItem)) {
+        return { action: ClientAction.Pickup, entityId: ctx.entityAtTarget.entityId };
       }
       // Living creature (not tree, not player) → Attack
       if (bp.category === 'creature' && ctx.entityAtTarget.blueprintId !== BlueprintType.Player) {
