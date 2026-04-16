@@ -118,6 +118,11 @@ const CREATURES: Record<string, CreatureConfig> = {
     walkSuffix: (dir) => `_walk_${dir}.gif`,
     outputName: 'player.png',
   },
+  wolf: {
+    prefix: 'adult_gray_wolf_large_lean_quadruped_standing_aler',
+    walkSuffix: (dir) => `_walk-6-frames_${dir}.gif`,
+    outputName: 'wolf.png',
+  },
 };
 
 async function main() {

@@ -238,5 +238,12 @@ export function generateWorld(seed: number): WorldGenResult {
   spawns.push({ x: bx + 5, y: by + 2, blueprint: BlueprintType.WoodenDoor, variant: 0 });
   spawns.push({ x: bx + 2, y: by + 5, blueprint: BlueprintType.WoodenDoor, variant: 0 });
 
+  spawns.push({ x: bx + 1, y: by + 1, blueprint: BlueprintType.Wood,    variant: 0 });
+  spawns.push({ x: bx + 2, y: by + 1, blueprint: BlueprintType.Rock,    variant: 0 });
+  spawns.push({ x: bx + 3, y: by + 1, blueprint: BlueprintType.Iron,    variant: 0 });
+  spawns.push({ x: bx + 1, y: by + 3, blueprint: BlueprintType.Hide,    variant: 0 });
+  spawns.push({ x: bx + 2, y: by + 3, blueprint: BlueprintType.RawMeat, variant: 0 });
+  spawns.push({ x: bx + 3, y: by + 3, blueprint: BlueprintType.RawFish, variant: 0 });
+
   return { map, entitySpawns: spawns };
 }

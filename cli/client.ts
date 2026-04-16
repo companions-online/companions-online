@@ -5,7 +5,7 @@ import { render } from './render.js';
 import { setupInput } from './input.js';
 
 // --- Connect ---
-const host = process.argv[2] || 'localhost:3010';
+const host = process.argv[2] || 'localhost:3001';
 const ws = new WebSocket(`ws://${host}/ws`);
 ws.binaryType = 'arraybuffer';
 

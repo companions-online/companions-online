@@ -31,7 +31,14 @@ export interface SpriteManifestEntry {
 
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Deer,       name: 'deer',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
+  { blueprintId: BlueprintType.Wolf,       name: 'wolf',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Player,     name: 'player', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true },
   { blueprintId: BlueprintType.WoodenDoor, name: 'door',   frameW: 64, frameH: 64,  footX: 32, footY: 64 },
+  { blueprintId: BlueprintType.Wood,       name: 'wood',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  { blueprintId: BlueprintType.Rock,       name: 'rock',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  { blueprintId: BlueprintType.Iron,       name: 'iron',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  { blueprintId: BlueprintType.Hide,       name: 'hide',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  { blueprintId: BlueprintType.RawMeat,    name: 'rawmeat', frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  { blueprintId: BlueprintType.RawFish,    name: 'fish',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
 ];

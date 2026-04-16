@@ -155,15 +155,15 @@ describe('creature-entity interpolation', () => {
     expect(e.lerpFromY).toBeUndefined();
   });
 
-  it('walk frame advances while moving, idle resets when stopping', async () => {
+  it('walk frame advances while Walking, idle resets when stopping', async () => {
     const { scene, conn } = await createTestScene();
     scene.time = 0;
     const e = spawnPlayer(scene, conn, 1, 0, 0); // spawns Walking
-    // Enough dt to advance several frames.
+    // currentAction === Walking → animation advances even without movement.
     tickEntity(scene, e, 0.3);
     expect(e.walkFrame).toBeGreaterThan(0);
 
-    // Switch to Idle via delta; next tick resets frame to 0.
+    // Server flips to Idle and visual is already at position → animation stops.
     conn.deliver({
       type: 'worldDelta',
       data: {
@@ -176,6 +176,49 @@ describe('creature-entity interpolation', () => {
         tileUpdates: [],
       },
     });
+    tickEntity(scene, e, 0.01);
+    expect(e.walkFrame).toBe(0);
+  });
+
+  it('keeps animating while visual lags position even after server says Idle', async () => {
+    // Reproduces the "slides into final tile" case: server flips to Idle in
+    // the same delta as the final position update; the lerp still has work
+    // to do and the visual-lag check keeps animation alive.
+    const { scene, conn } = await createTestScene();
+    scene.time = 0;
+    const e = spawnPlayer(scene, conn, 1, 0, 0);
+    // Idle the entity at origin so currentAction alone can't drive animation.
+    conn.deliver({
+      type: 'worldDelta',
+      data: {
+        tick: 1,
+        entityUpdates: [{
+          entityId: 1,
+          components: { currentAction: { actionType: ActionType.Idle } },
+        }],
+        entityRemovals: [],
+        tileUpdates: [],
+      },
+    });
+    tickEntity(scene, e, 0.01);
+    expect(e.walkFrame).toBe(0);
+
+    // Final-tile delta: position jumps to (1,0) but action is already Idle.
+    conn.deliver({
+      type: 'worldDelta',
+      data: {
+        tick: 2,
+        entityUpdates: [{ entityId: 1, components: { position: { tileX: 1, tileY: 0 } } }],
+        entityRemovals: [],
+        tileUpdates: [],
+      },
+    });
+    scene.time = DURATION_MS / 2;
+    tickEntity(scene, e, 0.3);
+    expect(e.walkFrame).toBeGreaterThan(0);
+
+    // Visual catches up → animation stops on its own.
+    scene.time = DURATION_MS * 2;
     tickEntity(scene, e, 0.01);
     expect(e.walkFrame).toBe(0);
   });

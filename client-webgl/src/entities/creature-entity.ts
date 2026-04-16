@@ -15,7 +15,7 @@
 // code will cover multi-tile straight runs between bends.
 
 import { ActionType } from '@shared/actions.js';
-import { getBlueprint } from '@shared/blueprints.js';
+import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { Direction } from '@shared/direction.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { TILE_W, TILE_H } from '../platform/config.js';
@@ -28,8 +28,20 @@ const WALK_FRAMES = 6;
 const WALK_FRAME_DURATION = 0.08;
 const DEFAULT_SPEED_TILES_PER_SEC = 3;
 
+// Animation runs while the server says we're walking OR while the visual is
+// still catching up to the latest position. Two signals because:
+//  - currentAction === Walking covers the steady mid-path case (no flicker
+//    in the ~10–100 ms gap between visual catching up and the next per-tile
+//    delta arriving).
+//  - On the final arrival tick the server flips Walking → Idle in the same
+//    delta as the final position; the visual-lag check keeps the animation
+//    running until the lerp actually completes (no silent slide-to-final).
 function isMoving(e: ClientEntity): boolean {
-  return e.currentAction?.actionType === ActionType.Walking;
+  if (e.currentAction?.actionType === ActionType.Walking) return true;
+  if (!e.position) return false;
+  const dx = e.position.tileX - e.visualX;
+  const dy = e.position.tileY - e.visualY;
+  return dx * dx + dy * dy > 0.0001;
 }
 
 export function createCreatureEntity(
@@ -57,7 +69,31 @@ export function createCreatureEntity(
     screenY: 0,
 
     tick(self, dt, scene) {
+      if (self.position) {
+        const targetX = self.position.tileX;
+        const targetY = self.position.tileY;
+        const fromX = self.lerpFromX ?? targetX;
+        const fromY = self.lerpFromY ?? targetY;
+        const checkpoint = self.checkpointMs ?? scene.time;
+        const speed = getBlueprint(self.blueprint?.blueprintId ?? -1)?.speed
+          ?? DEFAULT_SPEED_TILES_PER_SEC;
+
+        // Duration is one tile at `speed` tiles/sec. Under per-tile server
+        // sync the next position update arrives ~1 tile/speed seconds later,
+        // so the entity reaches target just as the next leg begins. Diagonal
+        // moves are not sqrt(2)-compensated here — the visual ticks slightly
+        // ahead on diagonals, a minor error we'll revisit if it looks bad.
+        const durationMs = 1000 / speed;
+        const elapsed = scene.time - checkpoint;
+        const t = Math.min(Math.max(elapsed / durationMs, 0), 1);
+        self.visualX = fromX + (targetX - fromX) * t;
+        self.visualY = fromY + (targetY - fromY) * t;
+      }
+
+      // Animation decision reads the post-lerp visual so the tick that
+      // completes a lerp also resets walkFrame on the same pass.
       if (isMoving(self)) {
+
         self.frameTimer += dt;
         while (self.frameTimer >= WALK_FRAME_DURATION) {
           self.frameTimer -= WALK_FRAME_DURATION;
@@ -67,27 +103,6 @@ export function createCreatureEntity(
         self.walkFrame = 0;
         self.frameTimer = 0;
       }
-
-      if (!self.position) return;
-
-      const targetX = self.position.tileX;
-      const targetY = self.position.tileY;
-      const fromX = self.lerpFromX ?? targetX;
-      const fromY = self.lerpFromY ?? targetY;
-      const checkpoint = self.checkpointMs ?? scene.time;
-      const speed = getBlueprint(self.blueprint?.blueprintId ?? -1)?.speed
-        ?? DEFAULT_SPEED_TILES_PER_SEC;
-
-      // Duration is one tile at `speed` tiles/sec. Under per-tile server
-      // sync the next position update arrives ~1 tile/speed seconds later,
-      // so the entity reaches target just as the next leg begins. Diagonal
-      // moves are not sqrt(2)-compensated here — the visual ticks slightly
-      // ahead on diagonals, a minor error we'll revisit if it looks bad.
-      const durationMs = 1000 / speed;
-      const elapsed = scene.time - checkpoint;
-      const t = Math.min(Math.max(elapsed / durationMs, 0), 1);
-      self.visualX = fromX + (targetX - fromX) * t;
-      self.visualY = fromY + (targetY - fromY) * t;
     },
 
     draw(self, sprites, gl, offsetX, offsetY) {
