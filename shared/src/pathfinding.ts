@@ -13,8 +13,7 @@ function heuristic(ax: number, ay: number, bx: number, by: number): number {
   const dy = Math.abs(ay - by);
   const diag = Math.min(dx, dy);
   const straight = dx + dy - 2 * diag;
-  // Diagonal steps cost 1.5 on average (alternating 1,2)
-  return straight + diag * 1.5;
+  return straight + diag * 1.4;
 }
 
 interface Node {
@@ -23,7 +22,6 @@ interface Node {
   g: number;
   f: number;
   parentKey: number;
-  diagonalCheap: boolean;
 }
 
 const NO_PARENT = -1;
@@ -116,7 +114,7 @@ export function findPath(
   const startNode: Node = {
     x: startX, y: startY, g: 0,
     f: heuristic(startX, startY, goalX, goalY),
-    parentKey: NO_PARENT, diagonalCheap: true,
+    parentKey: NO_PARENT,
   };
   gScore.set(startKey, 0);
   nodes.set(startKey, startNode);
@@ -157,25 +155,18 @@ export function findPath(
         if (isBlocked(cx1, cy1) || isBlocked(cx2, cy2)) continue;
       }
 
-      // Alternating diagonal cost
-      let stepCost: number;
-      if (!isDiag) {
-        stepCost = 1;
-      } else {
-        stepCost = current.diagonalCheap ? 1 : 2;
-      }
+      const stepCost = isDiag ? 1.4 : 1;
 
       const tentativeG = current.g + stepCost;
       const prevG = gScore.get(nKey);
       if (prevG !== undefined && tentativeG >= prevG) continue;
 
-      const newDiagCheap = isDiag ? !current.diagonalCheap : current.diagonalCheap;
       const f = tentativeG + heuristic(nx, ny, goalX, goalY);
 
       gScore.set(nKey, tentativeG);
       nodes.set(nKey, {
         x: nx, y: ny, g: tentativeG, f,
-        parentKey: currentKey, diagonalCheap: newDiagCheap,
+        parentKey: currentKey,
       });
       pushOpen(nKey, f);
     }

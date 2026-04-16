@@ -12,7 +12,6 @@ export interface MovementState {
   pathIndex: number;
   waitTicks: number;
   cooldownRemaining: number;
-  diagonalCheap: boolean;
 }
 
 // Per-entity harvest channel state

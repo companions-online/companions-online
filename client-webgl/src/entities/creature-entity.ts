@@ -16,7 +16,8 @@
 
 import { ActionType } from '@shared/actions.js';
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
-import { Direction } from '@shared/direction.js';
+import { TICK_RATE } from '@shared/constants.js';
+import { Direction, isDiagonal } from '@shared/direction.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { TILE_W, TILE_H } from '../platform/config.js';
 import type { EntityComponents } from '@shared/protocol/codec.js';
@@ -77,13 +78,11 @@ export function createCreatureEntity(
         const checkpoint = self.checkpointMs ?? scene.time;
         const speed = getBlueprint(self.blueprint?.blueprintId ?? -1)?.speed
           ?? DEFAULT_SPEED_TILES_PER_SEC;
-
-        // Duration is one tile at `speed` tiles/sec. Under per-tile server
-        // sync the next position update arrives ~1 tile/speed seconds later,
-        // so the entity reaches target just as the next leg begins. Diagonal
-        // moves are not sqrt(2)-compensated here — the visual ticks slightly
-        // ahead on diagonals, a minor error we'll revisit if it looks bad.
-        const durationMs = 1000 / speed;
+        const ticksPerStep = Math.max(1, Math.round(TICK_RATE / speed));
+        const dir = self.direction?.dir;
+        const diag = dir !== undefined && isDiagonal(dir);
+        const stepTicks = diag ? Math.round(ticksPerStep * 1.4) : ticksPerStep;
+        const durationMs = stepTicks * (1000 / TICK_RATE);
         const elapsed = scene.time - checkpoint;
         const t = Math.min(Math.max(elapsed / durationMs, 0), 1);
         self.visualX = fromX + (targetX - fromX) * t;

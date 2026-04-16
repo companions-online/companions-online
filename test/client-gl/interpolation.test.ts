@@ -1,16 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
+import { TICK_RATE } from '@shared/constants.js';
 import { ActionType } from '@shared/actions.js';
 import { createTestScene } from './harness.js';
 import type { ClientEntity } from '@client-webgl/entities/client-entity.js';
 import type { Scene } from '@client-webgl/scene.js';
 import type { FakeConnection } from './fake-connection.js';
 
-// Phase 7 lerps each tile over 1/speed seconds. Player speed = 3, so one tile
-// takes 333.33ms. Tests below drive scene.time in ms and invoke the entity's
-// tick manually — the renderer isn't involved.
+// Cardinal lerp duration matches the server's tick-quantized step time.
+// Player speed = 3, TICK_RATE = 20 → ticksPerStep = round(20/3) = 7 → 350ms.
 const PLAYER_SPEED = getBlueprint(BlueprintType.Player)!.speed!;
-const DURATION_MS = 1000 / PLAYER_SPEED;
+const TICKS_PER_STEP = Math.max(1, Math.round(TICK_RATE / PLAYER_SPEED));
+const DURATION_MS = TICKS_PER_STEP * (1000 / TICK_RATE);
 
 function tickEntity(scene: Scene, e: ClientEntity, dt: number): void {
   e.tick?.(e, dt, scene);

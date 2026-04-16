@@ -27,7 +27,6 @@ export function setMoveTarget(
     pathIndex: 0,
     waitTicks: 0,
     cooldownRemaining: 0,
-    diagonalCheap: true,
   });
 
   const next = result.path[0];
@@ -122,12 +121,8 @@ export function runMovement(world: SystemState): void {
     const speed = world.entities.speed.get(eid) ?? 3;
     const ticksPerStep = Math.max(1, Math.round(TICK_RATE / speed));
     const diag = dir !== undefined && isDiagonal(dir);
-    if (diag) {
-      state.cooldownRemaining = state.diagonalCheap ? ticksPerStep - 1 : ticksPerStep * 2 - 1;
-      state.diagonalCheap = !state.diagonalCheap;
-    } else {
-      state.cooldownRemaining = ticksPerStep - 1;
-    }
+    const stepTicks = diag ? Math.round(ticksPerStep * 1.4) : ticksPerStep;
+    state.cooldownRemaining = stepTicks - 1;
 
     world.entities.currentAction.set(eid, { actionType: ActionType.Walking });
     world.entities.nextWaypoint.set(eid, { tileX: state.targetX, tileY: state.targetY });
