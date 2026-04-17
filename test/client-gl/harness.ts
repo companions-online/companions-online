@@ -6,10 +6,24 @@
 
 import { createScene, type Scene } from '@client-webgl/scene.js';
 import { wireSceneToConnection } from '@client-webgl/network/wire-scene.js';
+import type { TextSurfaceFactory } from '@client-webgl/effects/text-surface.js';
 import { createMockGL } from './mock-gl.js';
 import { createFakeSpriteRegistry, type FakeRegistryOptions } from './fake-sprite-registry.js';
 import { createFakeStaticAssets } from './fake-static-assets.js';
 import { createFakeConnection, type FakeConnection } from './fake-connection.js';
+
+export function createFakeTextSurfaceFactory(): TextSurfaceFactory {
+  return {
+    create(opts) {
+      return {
+        texture: 0 as unknown as WebGLTexture,
+        width: opts.text.length * 6,
+        height: opts.fontPx,
+      };
+    },
+    release() {},
+  };
+}
 
 export interface TestSceneOptions {
   spriteRegistry?: FakeRegistryOptions;
@@ -29,7 +43,8 @@ export async function createTestScene(opts: TestSceneOptions = {}): Promise<Test
   const gl = createMockGL();
   const spriteRegistry = createFakeSpriteRegistry(opts.spriteRegistry);
   const staticAssets = createFakeStaticAssets();
-  const scene = await createScene(gl, { spriteRegistry, staticAssets });
+  const textSurfaceFactory = createFakeTextSurfaceFactory();
+  const scene = await createScene(gl, { spriteRegistry, staticAssets, textSurfaceFactory });
   const conn = createFakeConnection();
   wireSceneToConnection(scene, conn);
   return { scene, conn };

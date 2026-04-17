@@ -38,11 +38,12 @@ precision highp float;
 
 in vec2 v_uv;
 uniform sampler2D u_texture;
+uniform float u_alpha;
 out vec4 outColor;
 
 void main() {
   vec4 c = texture(u_texture, v_uv);
   if (c.a < 0.01) discard;
-  outColor = c;
+  outColor = vec4(c.rgb, c.a * u_alpha);
 }
 `;
