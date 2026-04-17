@@ -19,6 +19,7 @@ interface SpriteUniforms {
   dstRect: WebGLUniformLocation;
   srcRect: WebGLUniformLocation;
   texture: WebGLUniformLocation;
+  alpha: WebGLUniformLocation;
 }
 
 function getUniformOrThrow(
@@ -67,6 +68,7 @@ export class SpriteRenderer {
       dstRect: getUniformOrThrow(gl, this.program, 'u_dstRect'),
       srcRect: getUniformOrThrow(gl, this.program, 'u_srcRect'),
       texture: getUniformOrThrow(gl, this.program, 'u_texture'),
+      alpha: getUniformOrThrow(gl, this.program, 'u_alpha'),
     };
   }
 
@@ -80,6 +82,12 @@ export class SpriteRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform2f(this.uniforms.resolution, resolution[0], resolution[1]);
     gl.uniform1i(this.uniforms.texture, 0);
+    gl.uniform1f(this.uniforms.alpha, 1.0);
+  }
+
+  /** Set per-sprite alpha multiplier (0..1). Resets to 1.0 on begin(). */
+  setAlpha(a: number): void {
+    this.gl.uniform1f(this.uniforms.alpha, a);
   }
 
   /**

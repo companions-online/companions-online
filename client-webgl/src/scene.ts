@@ -18,6 +18,12 @@ import type {
 import { Camera } from './platform/camera.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
+import { EffectManager } from './effects/effect.js';
+import { createTextSurfaceFactory, type TextSurfaceFactory } from './effects/text-surface.js';
+import { createDamageNumber } from './effects/damage-number.js';
+import { createPickupText } from './effects/pickup-text.js';
+import { createChatBubble } from './effects/chat-bubble.js';
+import { getBlueprint } from '@shared/blueprints.js';
 import type { ClientEntity } from './entities/client-entity.js';
 import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
 
@@ -79,6 +85,8 @@ export interface Scene {
   myEntityId: number | null;
   seed: number | null;
   time: number;
+  effects: EffectManager;
+  textSurfaceFactory: TextSurfaceFactory;
 
   // --- Replicated sync state (Phase 9) ---
   /** The player's inventory. Empty until the server's first InventorySync. */
@@ -141,6 +149,9 @@ export interface CreateSceneOptions {
    *  OffscreenCanvas / image-bitmap generation; production omits this and
    *  builds them on the fly. */
   staticAssets?: StaticAssets;
+  /** Text surface factory for effects. Tests inject a fake that skips
+   *  OffscreenCanvas; production omits this and uses the real implementation. */
+  textSurfaceFactory?: TextSurfaceFactory;
 }
 
 export async function createScene(
@@ -155,6 +166,9 @@ export async function createScene(
   const { terrainTexture, maskTexture, wallTextures } =
     opts.staticAssets ?? await loadStaticAssets(gl);
   const terrainRenderer = new TerrainRenderer(gl);
+
+  const effects = new EffectManager();
+  const textSurfaceFactory = opts.textSurfaceFactory ?? createTextSurfaceFactory(gl);
 
   const entities = new Map<number, ClientEntity>();
   const wallDrawablesByChunk = new Map<number, WallDrawable[]>();
@@ -264,6 +278,8 @@ export async function createScene(
     myEntityId: null,
     seed: null,
     time: 0,
+    effects,
+    textSurfaceFactory,
 
     inventory: [],
     containerEntityId: null,
@@ -278,6 +294,31 @@ export async function createScene(
     },
 
     onInventorySync(items) {
+      // Diff by blueprintId total quantity — spawn pickup text for increases.
+      if (this.myEntityId !== null) {
+        const me = entities.get(this.myEntityId);
+        if (me) {
+          const prevQty = new Map<number, number>();
+          for (const it of this.inventory) {
+            prevQty.set(it.blueprintId, (prevQty.get(it.blueprintId) ?? 0) + it.quantity);
+          }
+          const newQty = new Map<number, number>();
+          for (const it of items) {
+            newQty.set(it.blueprintId, (newQty.get(it.blueprintId) ?? 0) + it.quantity);
+          }
+          let offsetIndex = 0;
+          for (const [bpId, qty] of newQty) {
+            const prev = prevQty.get(bpId) ?? 0;
+            if (qty > prev) {
+              const delta = qty - prev;
+              const name = getBlueprint(bpId)?.name ?? 'item';
+              effects.spawn(createPickupText(
+                me, `+${delta} ${name}`, this.time, textSurfaceFactory, offsetIndex++,
+              ));
+            }
+          }
+        }
+      }
       this.inventory = items;
     },
 
@@ -296,6 +337,7 @@ export async function createScene(
       if (this.chatLog.length > CHAT_LOG_MAX) {
         this.chatLog.splice(0, this.chatLog.length - CHAT_LOG_MAX);
       }
+      effects.spawn(createChatBubble(senderEntityId, message, this.time, textSurfaceFactory));
     },
 
     onChunk(data) {
@@ -322,7 +364,19 @@ export async function createScene(
     onEntityUpdate(update) {
       const existing = entities.get(update.entityId);
       if (existing) {
+        const prevHp = existing.health?.currentHp;
         applyComponentsToEntity(existing, update.components, this.time);
+
+        // Damage number: spawn when HP decreased.
+        if (prevHp !== undefined
+          && update.components.health !== undefined
+          && update.components.health.currentHp < prevHp) {
+          const delta = prevHp - update.components.health.currentHp;
+          effects.spawn(createDamageNumber(
+            existing, delta, this.time, textSurfaceFactory,
+            { largeFont: existing.id === this.myEntityId },
+          ));
+        }
         return;
       }
       if (update.components.blueprint) {

@@ -83,6 +83,9 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
       scene.spriteRenderer.end();
     }
 
+    scene.effects.tick(scene);
+    scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, resolution);
+
     gl.disable(gl.SCISSOR_TEST);
     drawHud(gl);
 
