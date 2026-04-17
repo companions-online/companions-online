@@ -1,13 +1,16 @@
 import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z } from './platform/config.js';
 import { tileToScreen } from '@shared/coordinates.js';
+import { resolveAction, describeAction } from '@shared/action-resolver.js';
+import { buildCursorContext } from './controls/cursor-context.js';
 import type { Scene } from './scene.js';
+import type { KeyboardState } from './controls/keyboard.js';
 import { drawHud } from './ui/hud.js';
 
 /**
  * RAF loop: tick entities, drain dirty chunks, draw terrain + Y-sorted
- * sprites (entities + walls) + HUD. One frame per requestAnimationFrame.
+ * sprites (entities + walls) + effects + HUD. One frame per requestAnimationFrame.
  */
-export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
+export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard: KeyboardState) {
   const gl = scene.gl;
   let lastTime = 0;
 
@@ -20,6 +23,15 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
   gl.clearColor(0.067, 0.067, 0.067, 1.0); // #111
 
   const resolution: [number, number] = [CANVAS_W, CANVAS_H];
+
+  // Mouse position tracking for debug overlay.
+  let mouseCanvasX = 0;
+  let mouseCanvasY = 0;
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseCanvasX = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    mouseCanvasY = (ev.clientY - rect.top) * (canvas.height / rect.height);
+  });
 
   function frame(now: number) {
     const dt = lastTime === 0 ? 0 : (now - lastTime) / 1000;
@@ -88,11 +100,26 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
       scene.spriteRenderer.end();
     }
 
+    // Effects pass (chat bubbles, damage numbers, pickup text).
     scene.effects.tick(scene);
     scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, resolution);
 
     gl.disable(gl.SCISSOR_TEST);
-    drawHud(gl);
+
+    // Debug overlay: resolve action under mouse cursor.
+    let debugLabel: string | null = null;
+    if (keyboard.debugMode) {
+      const tile = scene.camera.tileAt(mouseCanvasX, mouseCanvasY);
+      if (tile) {
+        const ctx = buildCursorContext(scene, tile.tx, tile.ty);
+        if (ctx) {
+          const action = resolveAction(ctx);
+          debugLabel = describeAction(action, ctx);
+        }
+      }
+    }
+
+    drawHud(gl, scene, scene.spriteRenderer, keyboard, resolution, debugLabel);
 
     requestAnimationFrame(frame);
   }

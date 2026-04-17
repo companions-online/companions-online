@@ -2,6 +2,7 @@ import { createScene } from './scene.js';
 import { createRenderer } from './renderer.js';
 import { checkGLError } from './platform/gl-utils.js';
 import { attachMouseControls } from './controls/mouse.js';
+import { attachKeyboardControls } from './controls/keyboard.js';
 import { connect } from './network/connection.js';
 import { wireSceneToConnection } from './network/wire-scene.js';
 
@@ -18,9 +19,13 @@ checkGLError(gl, 'after scene init');
 const conn = connect();
 wireSceneToConnection(scene, conn);
 attachMouseControls(canvas, scene, conn);
+const keyboard = attachKeyboardControls(canvas, conn);
 
-const renderer = createRenderer(canvas, scene);
+const renderer = createRenderer(canvas, scene, keyboard);
 renderer.start();
+
+// Focus the canvas so it receives keyboard events immediately.
+canvas.focus();
 
 // Debug hook: scene + connection on window for headless / devtools probing.
 (window as unknown as { __scene: typeof scene; __conn: typeof conn }).__scene = scene;

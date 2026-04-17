@@ -8,8 +8,9 @@ import type { TextSurface, TextSurfaceFactory } from './text-surface.js';
 const CHAT_DURATION_MS = 5000;
 const CHAT_FONT_PX = 13;
 const LINE_HEIGHT = CHAT_FONT_PX + 4;
-/** Vertical offset above the entity's tile center. */
-const BASE_OFFSET_Y = 40;
+/** Vertical offset above the entity's tile north vertex — high enough to
+ *  clear the player sprite (92px frame, footY 82 → head at ~66px above). */
+const BASE_OFFSET_Y = 76;
 
 export interface ChatBubbleEffect extends Effect {
   senderEntityId: number;
