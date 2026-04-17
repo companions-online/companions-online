@@ -32,12 +32,15 @@ export interface ClientEntity extends EntityComponents {
   // Per-frame logic. Each entity type provides its own.
   tick?: (e: ClientEntity, dt: number, scene: Scene) => void;
   // Per-frame draw. Each entity type owns its sprite math (frame columns/rows, foot anchor).
+  // `scene` is threaded through so the draw path can sample ground elevation
+  // under the entity (see scene.getGroundZ).
   draw?: (
     e: ClientEntity,
     sprites: SpriteRenderer,
     gl: WebGL2RenderingContext,
     offsetX: number,
     offsetY: number,
+    scene: Scene,
   ) => void;
 
   // ===== Future network use — declared but unused this round =====

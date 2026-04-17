@@ -1,6 +1,6 @@
 import { tileToScreen } from '@shared/coordinates.js';
 import { MAP_SIZE } from '@shared/constants.js';
-import { TILE_W, TILE_H, GAME_X, GAME_Y, GAME_W, GAME_H } from './config.js';
+import { TILE_W, TILE_H, GAME_X, GAME_Y, GAME_W, GAME_H, PX_PER_Z } from './config.js';
 
 /**
  * Minimal follow camera. The getOffset() value is the world→screen pixel
@@ -9,18 +9,24 @@ import { TILE_W, TILE_H, GAME_X, GAME_Y, GAME_W, GAME_H } from './config.js';
  * HUD chrome regions sit outside the game area.
  */
 export class Camera {
+  /** Ground elevation under the followed tile. The viewport translates by
+   *  -z * PX_PER_Z so the player's feet stay visually centered when walking
+   *  over uneven terrain. Defaults to 0 → flat-iso behavior. */
+  centerZ = 0;
+
   constructor(public centerTileX: number, public centerTileY: number) {}
 
-  follow(tileX: number, tileY: number): void {
+  follow(tileX: number, tileY: number, z = 0): void {
     this.centerTileX = tileX;
     this.centerTileY = tileY;
+    this.centerZ = z;
   }
 
   getOffset(): [number, number] {
     const center = tileToScreen(this.centerTileX, this.centerTileY, TILE_W, TILE_H);
     return [
       Math.floor(GAME_X + GAME_W / 2 - center.screenX),
-      Math.floor(GAME_Y + GAME_H / 2 - center.screenY),
+      Math.floor(GAME_Y + GAME_H / 2 - center.screenY + this.centerZ * PX_PER_Z),
     ];
   }
 

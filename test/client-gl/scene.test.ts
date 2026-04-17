@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { BlueprintType } from '@shared/blueprints.js';
 import { CHUNK_SIZE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
-import { Terrain } from '@shared/terrain.js';
+import { Terrain, Building } from '@shared/terrain.js';
 import { createTestScene } from './harness.js';
 
 describe('scene network wiring', () => {
@@ -143,6 +143,68 @@ describe('scene chunk capacity + eviction', () => {
     // Wall set has one entry per built chunk (ignoring the seam-only
     // neighbor chunks that are outside the interest radius).
     expect(scene.wallDrawablesByChunk.size).toBeGreaterThan(0);
+  });
+});
+
+describe('scene.getGroundZ', () => {
+  it('returns 0 for unloaded chunks', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({ type: 'welcome', entityId: 1, seed: 1 });
+    // No chunk delivered — sampler falls through to flat-iso baseline.
+    expect(scene.getGroundZ(SPAWN_X, SPAWN_Y)).toBe(0);
+  });
+
+  it('reads a non-zero perlin-derived value from a loaded chunk', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({ type: 'welcome', entityId: 1, seed: 1 });
+
+    const terrain = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE).fill(Terrain.Grass);
+    const buildings = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const buildingMeta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const pcx = Math.floor(SPAWN_X / CHUNK_SIZE);
+    const pcy = Math.floor(SPAWN_Y / CHUNK_SIZE);
+    conn.deliver({
+      type: 'chunk',
+      data: { chunkX: pcx, chunkY: pcy, terrain, buildings, buildingMeta },
+    });
+    scene.processDirtyChunks();
+
+    // Sample each tile in the chunk interior — at least one should have a
+    // perceptible perlin-derived elevation (not trivially zero).
+    let maxAbs = 0;
+    for (let ly = 1; ly < CHUNK_SIZE - 1; ly++) {
+      for (let lx = 1; lx < CHUNK_SIZE - 1; lx++) {
+        maxAbs = Math.max(maxAbs, Math.abs(scene.getGroundZ(pcx * CHUNK_SIZE + lx, pcy * CHUNK_SIZE + ly)));
+      }
+    }
+    expect(maxAbs).toBeGreaterThan(0);
+  });
+
+  it('returns SHORE_HEIGHT (0.01) under a building footprint', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({ type: 'welcome', entityId: 1, seed: 1 });
+
+    const terrain = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE).fill(Terrain.Grass);
+    const buildings = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const buildingMeta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    // Fill a 4×4 interior of building tiles so all 4 corners of the center
+    // tile (and its neighbors) are flattened by elevation Pass 3.
+    for (let ly = 4; ly < 8; ly++) {
+      for (let lx = 4; lx < 8; lx++) {
+        buildings[ly * CHUNK_SIZE + lx] = Building.WoodenFloor;
+      }
+    }
+    const pcx = Math.floor(SPAWN_X / CHUNK_SIZE);
+    const pcy = Math.floor(SPAWN_Y / CHUNK_SIZE);
+    conn.deliver({
+      type: 'chunk',
+      data: { chunkX: pcx, chunkY: pcy, terrain, buildings, buildingMeta },
+    });
+    scene.processDirtyChunks();
+
+    // Center tile of the building — all 4 corners flattened to SHORE_HEIGHT.
+    const z = scene.getGroundZ(pcx * CHUNK_SIZE + 5, pcy * CHUNK_SIZE + 5);
+    expect(z).toBeCloseTo(0.01, 5);
   });
 });
 

@@ -10,12 +10,13 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { Building } from '@shared/terrain.js';
 import { StatusEffect } from '@shared/status-effects.js';
 import { tileToScreen } from '@shared/coordinates.js';
-import { TILE_W, TILE_H } from '../platform/config.js';
+import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import type { EntityComponents } from '@shared/protocol/codec.js';
 import type { ClientEntity } from './client-entity.js';
 import type { SpriteRenderer } from './sprite-renderer.js';
 import type { SpriteSheetRef } from './sprite-registry.js';
+import type { Scene } from '../scene.js';
 
 export function createStaticEntity(
   id: number,
@@ -36,11 +37,11 @@ export function createStaticEntity(
     visualY: pos?.tileY ?? 0,
     screenY: 0,
 
-    draw(self, sprites, gl, offsetX, offsetY) {
+    draw(self, sprites, gl, offsetX, offsetY, scene) {
       if (self.blueprint?.blueprintId === BlueprintType.WoodenDoor) {
-        drawDoor(self, sprites, gl, offsetX, offsetY, worldMap);
+        drawDoor(self, sprites, gl, offsetX, offsetY, worldMap, scene);
       } else {
-        drawSingleFrame(self, sprites, gl, offsetX, offsetY);
+        drawSingleFrame(self, sprites, gl, offsetX, offsetY, scene);
       }
     },
   };
@@ -54,13 +55,16 @@ function drawSingleFrame(
   gl: WebGL2RenderingContext,
   offsetX: number,
   offsetY: number,
+  scene: Scene,
 ): void {
   const s = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
-  e.screenY = screen.screenY;
+  const z = scene.getGroundZ(e.visualX, e.visualY);
+  e.screenY = screen.screenY - z * PX_PER_Z;
 
+  const anchorY = s.align === 'south' ? TILE_H : TILE_H / 2;
   const dstX = screen.screenX + offsetX + TILE_W / 2 - s.footX;
-  const dstY = screen.screenY + offsetY + TILE_H / 2 - s.footY;
+  const dstY = screen.screenY + offsetY + anchorY - s.footY - z * PX_PER_Z;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -82,10 +86,12 @@ function drawDoor(
   offsetX: number,
   offsetY: number,
   worldMap: WorldMap,
+  scene: Scene,
 ): void {
   const s = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
-  e.screenY = screen.screenY;
+  const z = scene.getGroundZ(e.visualX, e.visualY);
+  e.screenY = screen.screenY - z * PX_PER_Z;
 
   const tx = e.position?.tileX ?? Math.round(e.visualX);
   const ty = e.position?.tileY ?? Math.round(e.visualY);
@@ -97,10 +103,11 @@ function drawDoor(
   const uvY = facing * uvH;
 
   // Anchor the door so its bottom sits at the tile's south vertex (wall line),
-  // not tile center. Elevation is flattened under doors because placement
-  // requires a floor tile — see worldgen Pass 3 in elevation.ts.
+  // not tile center. The door now honors sampled ground elevation; Pass 3's
+  // flatten under buildings keeps interior doors visually level but is no
+  // longer load-bearing for correctness.
   const dstX = screen.screenX + offsetX;
-  const dstY = screen.screenY + offsetY - (s.frameH - TILE_H);
+  const dstY = screen.screenY + offsetY - (s.frameH - TILE_H) - z * PX_PER_Z;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);

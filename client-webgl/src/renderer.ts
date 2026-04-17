@@ -1,4 +1,4 @@
-import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H } from './platform/config.js';
+import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z } from './platform/config.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import type { Scene } from './scene.js';
 import { drawHud } from './ui/hud.js';
@@ -36,10 +36,11 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
     }
 
     // Camera follows the player entity once it arrives from the server;
-    // otherwise stays at its initial SPAWN position.
+    // otherwise stays at its initial SPAWN position. Pass ground z so the
+    // viewport translates up/down with the player's hill height.
     if (scene.myEntityId !== null) {
       const me = scene.entities.get(scene.myEntityId);
-      if (me) scene.camera.follow(me.visualX, me.visualY);
+      if (me) scene.camera.follow(me.visualX, me.visualY, scene.getGroundZ(me.visualX, me.visualY));
     }
 
     const [offsetX, offsetY] = scene.camera.getOffset();
@@ -58,13 +59,17 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene) {
     );
 
     // Sprite pass — Y-sorted. Entities + walls from every live chunk.
+    // Pre-populate screenY with elevation applied so the sort matches what
+    // the draw path will render (walls bake elevation into screenY at build
+    // time too — keeping both sides consistent is what makes Y-sort work).
     const drawList: { screenY: number; draw: () => void }[] = [];
     for (const e of scene.entities.values()) {
       const scr = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
-      e.screenY = scr.screenY;
+      const z = scene.getGroundZ(e.visualX, e.visualY);
+      e.screenY = scr.screenY - z * PX_PER_Z;
       drawList.push({
         screenY: e.screenY,
-        draw: () => e.draw?.(e, scene.spriteRenderer, gl, offsetX, offsetY),
+        draw: () => e.draw?.(e, scene.spriteRenderer, gl, offsetX, offsetY, scene),
       });
     }
     for (const walls of scene.wallDrawablesByChunk.values()) {

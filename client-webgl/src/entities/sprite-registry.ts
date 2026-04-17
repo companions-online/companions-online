@@ -8,7 +8,7 @@
 
 import { getBlueprint } from '@shared/blueprints.js';
 import { createImageTexture } from '../platform/gl-utils.js';
-import { SPRITE_MANIFEST, type SpriteManifestEntry } from './sprite-manifest.js';
+import { SPRITE_MANIFEST, type SpriteManifestEntry, type SpriteAlign } from './sprite-manifest.js';
 
 export interface SpriteSheetRef {
   texture: WebGLTexture;
@@ -18,6 +18,8 @@ export interface SpriteSheetRef {
   frameH: number;
   footX: number;
   footY: number;
+  /** Tile-diamond anchor: `'center'` (default) or `'south'`. */
+  align: SpriteAlign;
   /** True only for the unknown-entity fallback sheet. Draw paths that would
    *  index into a creature walk-cycle layout (8 dir rows × N frame cols)
    *  must special-case this to a single-frame blit instead. */
@@ -82,14 +84,23 @@ async function loadManifestEntry(
       const foot = entry.detectFoot
         ? detectFootFromImage(img)
         : { footX: entry.footX, footY: entry.footY };
+      // For static single-image entries, foot coords from detectFoot are in
+      // image-pixel space. Scale to frame-pixel space when the render frame
+      // differs from the source PNG (e.g. 32×32 frame from a 64×64 PNG).
+      // Animation sheets (layout 'sheet') have manual foot values already in
+      // frame space — no scaling.
+      const isStatic = (entry.layout ?? 'sheet') === 'static';
+      const scaleX = isStatic ? entry.frameW / img.naturalWidth : 1;
+      const scaleY = isStatic ? entry.frameH / img.naturalHeight : 1;
       return {
         texture: createImageTexture(gl, img),
         sheetW: img.naturalWidth,
         sheetH: img.naturalHeight,
         frameW: entry.frameW,
         frameH: entry.frameH,
-        footX: foot.footX,
-        footY: foot.footY,
+        footX: Math.round(foot.footX * scaleX),
+        footY: Math.round(foot.footY * scaleY),
+        align: entry.align ?? 'center',
       };
     }),
   );
@@ -108,6 +119,7 @@ async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheet
     frameH: img.naturalHeight,
     footX: Math.round(img.naturalWidth / 2),
     footY: img.naturalHeight,
+    align: 'center',
     isFallback: true,
   };
 }

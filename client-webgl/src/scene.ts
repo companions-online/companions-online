@@ -30,7 +30,7 @@ import {
   type MaskTextureArray,
 } from './terrain/texture-arrays.js';
 import { TerrainRenderer } from './terrain/terrain-renderer.js';
-import { buildElevationGridChunk } from './terrain/elevation.js';
+import { buildElevationGridChunk, CHUNK_CORNER_SIZE } from './terrain/elevation.js';
 import {
   buildChunkTerrainData,
   BASE_INSTANCE_STRIDE,
@@ -76,6 +76,11 @@ export interface Scene {
   wallTextures: Map<WallShape, WebGLTexture>;
   entities: Map<number, ClientEntity>;
   wallDrawablesByChunk: Map<number, WallDrawable[]>;
+  /** Per-chunk corner elevation grid ((CHUNK_SIZE+1)² floats). Stored so
+   *  sprite draw paths + camera follow can sample ground z under a tile —
+   *  terrain + walls already bake elevation at build time via
+   *  getTileCornersLocal, but sprites anchor at draw time. */
+  chunkElevation: Map<number, Float32Array>;
   myEntityId: number | null;
   seed: number | null;
   time: number;
@@ -110,6 +115,11 @@ export interface Scene {
    *  eviction based on player chunk position, upload to GPU. Called once
    *  per frame by the renderer. */
   processDirtyChunks(): void;
+
+  /** Bilinearly interpolated ground elevation under tile (tileX, tileY),
+   *  sampled at the tile center. Returns 0 if the chunk is not loaded —
+   *  the caller (sprite draw / camera) falls through to baseline iso. */
+  getGroundZ(tileX: number, tileY: number): number;
 }
 
 export interface StaticAssets {
@@ -162,6 +172,10 @@ export async function createScene(
   // Per-chunk CPU-side terrain data. Concatenated into GPU buffers on
   // terrain rebuild.
   const chunkTerrainData = new Map<number, ChunkTerrainData>();
+  // Per-chunk corner elevation. Same lifecycle as chunkTerrainData —
+  // populated in rebuildChunk, cleared on eviction. Read at draw time by
+  // getGroundZ.
+  const chunkElevation = new Map<number, Float32Array>();
   const dirtyChunks = new Set<number>();
   /** True when eviction or chunk removal changed the active set — forces a
    *  full GPU buffer re-concat even if no dirty chunks are rebuilding. */
@@ -186,6 +200,7 @@ export async function createScene(
       if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > INTEREST_RADIUS_CHUNKS) {
         chunkTerrainData.delete(key);
         wallDrawablesByChunk.delete(key);
+        chunkElevation.delete(key);
         evicted++;
       }
     }
@@ -204,9 +219,11 @@ export async function createScene(
     const terrainData = buildChunkTerrainData(
       worldMap, elevation, cx, cy, terrainTexture.layerIndex,
     );
-    chunkTerrainData.set(chunkKey(cx, cy), terrainData);
+    const key = chunkKey(cx, cy);
+    chunkTerrainData.set(key, terrainData);
+    chunkElevation.set(key, elevation);
     wallDrawablesByChunk.set(
-      chunkKey(cx, cy),
+      key,
       buildWallDrawablesForChunk(worldMap, wallTextures, elevation, cx, cy),
     );
   }
@@ -249,6 +266,19 @@ export async function createScene(
     terrainRenderer.uploadInstances(baseBuf, baseCount, overlayBuf, totalOverlays);
   }
 
+  // Corner-grid sampler. Corner (cornerX, cornerY) is shared across the
+  // chunks that border it — pick whichever chunk owns the integer corner.
+  // Unloaded chunks return 0, so partial-map edges degrade to baseline iso.
+  function sampleCorner(cornerX: number, cornerY: number): number {
+    const ccx = Math.floor(cornerX / CHUNK_SIZE);
+    const ccy = Math.floor(cornerY / CHUNK_SIZE);
+    const grid = chunkElevation.get(chunkKey(ccx, ccy));
+    if (!grid) return 0;
+    const lx = cornerX - ccx * CHUNK_SIZE;
+    const ly = cornerY - ccy * CHUNK_SIZE;
+    return grid[ly * CHUNK_CORNER_SIZE + lx];
+  }
+
   const scene: Scene = {
     gl,
     camera,
@@ -261,6 +291,7 @@ export async function createScene(
     wallTextures,
     entities,
     wallDrawablesByChunk,
+    chunkElevation,
     myEntityId: null,
     seed: null,
     time: 0,
@@ -391,6 +422,23 @@ export async function createScene(
         uploadTerrain();
         layoutDirty = false;
       }
+    },
+
+    getGroundZ(tileX, tileY) {
+      // Sprite feet anchor at the tile center (screen.screenY + TILE_H/2),
+      // so sample the corner grid at tile center in world-corner coords.
+      const cx = tileX + 0.5;
+      const cy = tileY + 0.5;
+      const cx0 = Math.floor(cx);
+      const cy0 = Math.floor(cy);
+      const fx = cx - cx0;
+      const fy = cy - cy0;
+      const z00 = sampleCorner(cx0,     cy0);
+      const z10 = sampleCorner(cx0 + 1, cy0);
+      const z01 = sampleCorner(cx0,     cy0 + 1);
+      const z11 = sampleCorner(cx0 + 1, cy0 + 1);
+      return (z00 * (1 - fx) + z10 * fx) * (1 - fy)
+           + (z01 * (1 - fx) + z11 * fx) * fy;
     },
   };
 

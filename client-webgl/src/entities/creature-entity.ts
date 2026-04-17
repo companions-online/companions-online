@@ -19,11 +19,12 @@ import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { TICK_RATE } from '@shared/constants.js';
 import { Direction, isDiagonal } from '@shared/direction.js';
 import { tileToScreen } from '@shared/coordinates.js';
-import { TILE_W, TILE_H } from '../platform/config.js';
+import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { EntityComponents } from '@shared/protocol/codec.js';
 import type { ClientEntity } from './client-entity.js';
 import type { SpriteRenderer } from './sprite-renderer.js';
 import type { SpriteSheetRef } from './sprite-registry.js';
+import type { Scene } from '../scene.js';
 
 const WALK_FRAMES = 6;
 const WALK_FRAME_DURATION = 0.08;
@@ -104,8 +105,8 @@ export function createCreatureEntity(
       }
     },
 
-    draw(self, sprites, gl, offsetX, offsetY) {
-      drawCreatureSprite(self, sprites, gl, offsetX, offsetY, isMoving(self));
+    draw(self, sprites, gl, offsetX, offsetY, scene) {
+      drawCreatureSprite(self, sprites, gl, offsetX, offsetY, isMoving(self), scene);
     },
   };
 
@@ -119,13 +120,15 @@ function drawCreatureSprite(
   offsetX: number,
   offsetY: number,
   moving: boolean,
+  scene: Scene,
 ): void {
   const sheet = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
-  e.screenY = screen.screenY;
+  const z = scene.getGroundZ(e.visualX, e.visualY);
+  e.screenY = screen.screenY - z * PX_PER_Z;
 
   const dstX = screen.screenX + offsetX + TILE_W / 2 - sheet.footX;
-  const dstY = screen.screenY + offsetY + TILE_H / 2 - sheet.footY;
+  const dstY = screen.screenY + offsetY + TILE_H / 2 - sheet.footY - z * PX_PER_Z;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sheet.texture);

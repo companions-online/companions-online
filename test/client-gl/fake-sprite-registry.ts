@@ -18,6 +18,7 @@ function defaultSheet(): SpriteSheetRef {
     frameH: 92,
     footX: 46,
     footY: 82,
+    align: 'center',
   };
 }
 
@@ -27,6 +28,7 @@ function fallbackSheet(): SpriteSheetRef {
     sheetW: 64, sheetH: 64,
     frameW: 64, frameH: 64,
     footX: 32, footY: 64,
+    align: 'center',
     isFallback: true,
   };
 }

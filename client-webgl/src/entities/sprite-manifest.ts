@@ -15,6 +15,15 @@
 
 import { BlueprintType } from '@shared/blueprints.js';
 
+/** Where the sprite's foot anchors relative to the tile diamond.
+ *  - `'center'` — foot at diamond center (TILE_H/2). Right for vertically-
+ *    extended objects whose base sits at the tile's 3D midpoint: trees,
+ *    characters, tall structures.
+ *  - `'south'` — foot at diamond south vertex (TILE_H). Right for items
+ *    lying on the ground that should visually rest on the tile's nearest
+ *    edge: dropped resources, ground loot. */
+export type SpriteAlign = 'center' | 'south';
+
 export interface SpriteManifestEntry {
   blueprintId: number;
   name: string;
@@ -27,18 +36,29 @@ export interface SpriteManifestEntry {
    *  above are ignored. Useful for static sprites where the "foot" is simply
    *  the bottom of the visible pixels. */
   detectFoot?: boolean;
+  /** Tile-diamond anchor point. Defaults to `'center'`. */
+  align?: SpriteAlign;
+  /** Whether the PNG is a single static image or a multi-frame animation /
+   *  variant sheet. When `'static'`, foot coordinates detected from the image
+   *  are scaled by `frameW/imageW` and `frameH/imageH` at load time so they
+   *  match the rendered frame size. Defaults to `'sheet'` (no scaling). */
+  layout?: 'static' | 'sheet';
 }
 
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
+  // Creatures — use drawCreatureSprite (align doesn't apply, kept default).
   { blueprintId: BlueprintType.Deer,       name: 'deer',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Wolf,       name: 'wolf',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Player,     name: 'player', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
-  { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true },
+  // Tall structures — base at tile center. Single static image.
+  { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true, layout: 'static' },
+  // Door — has its own drawDoor path (anchors at south vertex internally).
   { blueprintId: BlueprintType.WoodenDoor, name: 'door',   frameW: 64, frameH: 64,  footX: 32, footY: 64 },
-  { blueprintId: BlueprintType.Wood,       name: 'wood',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
-  { blueprintId: BlueprintType.Rock,       name: 'rock',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
-  { blueprintId: BlueprintType.Iron,       name: 'iron',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
-  { blueprintId: BlueprintType.Hide,       name: 'hide',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
-  { blueprintId: BlueprintType.RawMeat,    name: 'rawmeat', frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
-  { blueprintId: BlueprintType.RawFish,    name: 'fish',    frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true },
+  // Ground items — half-size render (64px PNGs → 32px display), south-vertex anchor.
+  { blueprintId: BlueprintType.Wood,       name: 'wood',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Rock,       name: 'rock',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Iron,       name: 'iron',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Hide,       name: 'hide',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.RawMeat,    name: 'rawmeat', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.RawFish,    name: 'fish',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
 ];
