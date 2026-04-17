@@ -1,6 +1,6 @@
 import { tileToScreen } from '@shared/coordinates.js';
 import { MAP_SIZE } from '@shared/constants.js';
-import { TILE_W, TILE_H, GAME_X, GAME_Y, GAME_W, GAME_H, PX_PER_Z } from './config.js';
+import { TILE_W, TILE_H, GAME_X, GAME_Y, GAME_W, GAME_H, PX_PER_Z, GAME_ZOOM } from './config.js';
 
 /**
  * Minimal follow camera. The getOffset() value is the world→screen pixel
@@ -25,8 +25,8 @@ export class Camera {
   getOffset(): [number, number] {
     const center = tileToScreen(this.centerTileX, this.centerTileY, TILE_W, TILE_H);
     return [
-      Math.floor(GAME_X + GAME_W / 2 - center.screenX),
-      Math.floor(GAME_Y + GAME_H / 2 - center.screenY + this.centerZ * PX_PER_Z),
+      Math.floor(GAME_X / GAME_ZOOM + GAME_W / (2 * GAME_ZOOM) - center.screenX),
+      Math.floor(GAME_Y / GAME_ZOOM + GAME_H / (2 * GAME_ZOOM) - center.screenY + this.centerZ * PX_PER_Z),
     ];
   }
 
@@ -47,8 +47,9 @@ export class Camera {
     // N vertex of tile (0,0) sits at (HALF_W + offsetX, offsetY) — see
     // getTileCorners in elevation.ts. Subtract that origin to get world-iso
     // coords, then apply the inverse of tileToScreen.
-    const sx = canvasX - offsetX - hw;
-    const sy = canvasY - offsetY;
+    // Convert canvas coords to virtual-pixel space before inverse projection.
+    const sx = canvasX / GAME_ZOOM - offsetX - hw;
+    const sy = canvasY / GAME_ZOOM - offsetY;
 
     const tx = Math.floor((sx / hw + sy / hh) / 2);
     const ty = Math.floor((sy / hh - sx / hw) / 2);

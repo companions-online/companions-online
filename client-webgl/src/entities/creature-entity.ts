@@ -68,7 +68,10 @@ export function createCreatureEntity(
     // fallback produces t=1 on the first frame.
     visualX: pos?.tileX ?? 0,
     visualY: pos?.tileY ?? 0,
+    screenX: 0,
     screenY: 0,
+    screenW: 0,
+    screenH: 0,
 
     tick(self, dt, scene) {
       if (self.position) {
@@ -125,10 +128,15 @@ function drawCreatureSprite(
   const sheet = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
   const z = scene.getGroundZ(e.visualX, e.visualY);
-  e.screenY = screen.screenY - z * PX_PER_Z;
 
   const dstX = screen.screenX + offsetX + TILE_W / 2 - sheet.footX;
   const dstY = screen.screenY + offsetY + TILE_H / 2 - sheet.footY - z * PX_PER_Z;
+
+  // AABB bounding box — actual draw position in virtual-pixel space.
+  e.screenX = dstX;
+  e.screenY = dstY;
+  e.screenW = sheet.frameW;
+  e.screenH = sheet.frameH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sheet.texture);

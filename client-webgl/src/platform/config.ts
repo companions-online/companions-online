@@ -41,3 +41,8 @@ export const PX_PER_Z = 16;
 
 /** Draw a subtle dark outline around each tile diamond (grid debug). */
 export const SHOW_TILE_OUTLINES = false;
+
+/** Game area zoom factor. 1 = native (~20×20 tiles visible),
+ *  2 = 2× zoom (~10×10 tiles). Fractional values work but produce
+ *  bilinear-filtered (slightly soft) pixel art. */
+export const GAME_ZOOM = 2;

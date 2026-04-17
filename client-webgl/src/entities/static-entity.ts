@@ -35,7 +35,10 @@ export function createStaticEntity(
     frameTimer: 0,
     visualX: pos?.tileX ?? 0,
     visualY: pos?.tileY ?? 0,
+    screenX: 0,
     screenY: 0,
+    screenW: 0,
+    screenH: 0,
 
     draw(self, sprites, gl, offsetX, offsetY, scene) {
       if (self.blueprint?.blueprintId === BlueprintType.WoodenDoor) {
@@ -60,11 +63,15 @@ function drawSingleFrame(
   const s = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
   const z = scene.getGroundZ(e.visualX, e.visualY);
-  e.screenY = screen.screenY - z * PX_PER_Z;
 
   const anchorY = s.align === 'south' ? TILE_H : TILE_H / 2;
   const dstX = screen.screenX + offsetX + TILE_W / 2 - s.footX;
   const dstY = screen.screenY + offsetY + anchorY - s.footY - z * PX_PER_Z;
+
+  e.screenX = dstX;
+  e.screenY = dstY;
+  e.screenW = s.frameW;
+  e.screenH = s.frameH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -91,7 +98,6 @@ function drawDoor(
   const s = e.spriteSheet;
   const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
   const z = scene.getGroundZ(e.visualX, e.visualY);
-  e.screenY = screen.screenY - z * PX_PER_Z;
 
   const tx = e.position?.tileX ?? Math.round(e.visualX);
   const ty = e.position?.tileY ?? Math.round(e.visualY);
@@ -108,6 +114,11 @@ function drawDoor(
   // longer load-bearing for correctness.
   const dstX = screen.screenX + offsetX;
   const dstY = screen.screenY + offsetY - (s.frameH - TILE_H) - z * PX_PER_Z;
+
+  e.screenX = dstX;
+  e.screenY = dstY;
+  e.screenW = s.frameW;
+  e.screenH = s.frameH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);

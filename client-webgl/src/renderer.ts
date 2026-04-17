@@ -1,7 +1,8 @@
-import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z } from './platform/config.js';
+import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z, GAME_ZOOM } from './platform/config.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { resolveAction, describeAction } from '@shared/action-resolver.js';
-import { buildCursorContext } from './controls/cursor-context.js';
+import { buildCursorContext, buildContextFromEntity } from './controls/cursor-context.js';
+import { hitTestEntities } from './controls/mouse.js';
 import type { Scene } from './scene.js';
 import type { KeyboardState } from './controls/keyboard.js';
 import { drawHud } from './ui/hud.js';
@@ -22,7 +23,10 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
   gl.disable(gl.CULL_FACE);
   gl.clearColor(0.067, 0.067, 0.067, 1.0); // #111
 
-  const resolution: [number, number] = [CANVAS_W, CANVAS_H];
+  // Virtual resolution for the game pass — everything renders at GAME_ZOOM×.
+  // HUD pass uses native canvas resolution so text stays crisp.
+  const gameResolution: [number, number] = [CANVAS_W / GAME_ZOOM, CANVAS_H / GAME_ZOOM];
+  const hudResolution: [number, number] = [CANVAS_W, CANVAS_H];
 
   // Mouse position tracking for debug overlay.
   let mouseCanvasX = 0;
@@ -63,7 +67,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     gl.scissor(GAME_X, CANVAS_H - GAME_Y - GAME_H, GAME_W, GAME_H);
 
     scene.terrainRenderer.render(
-      resolution,
+      gameResolution,
       [offsetX, offsetY],
       scene.terrainTexture.texture,
       scene.maskTexture.texture,
@@ -94,7 +98,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     }
 
     if (drawList.length > 0) {
-      scene.spriteRenderer.begin(resolution);
+      scene.spriteRenderer.begin(gameResolution);
       drawList.sort((a, b) => a.screenY - b.screenY);
       for (const d of drawList) d.draw();
       scene.spriteRenderer.end();
@@ -102,24 +106,41 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
 
     // Effects pass (chat bubbles, damage numbers, pickup text).
     scene.effects.tick(scene);
-    scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, resolution);
+    scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, gameResolution);
 
     gl.disable(gl.SCISSOR_TEST);
 
     // Debug overlay: resolve action under mouse cursor.
+    // Sprite-first AABB hit test, then tile-based fallback.
     let debugLabel: string | null = null;
     if (keyboard.debugMode) {
-      const tile = scene.camera.tileAt(mouseCanvasX, mouseCanvasY);
-      if (tile) {
-        const ctx = buildCursorContext(scene, tile.tx, tile.ty);
+      const vx = mouseCanvasX / GAME_ZOOM;
+      const vy = mouseCanvasY / GAME_ZOOM;
+      const hit = hitTestEntities(scene, vx, vy);
+      if (hit?.blueprint) {
+        const ctx = buildContextFromEntity(scene, {
+          entityId: hit.id,
+          blueprintId: hit.blueprint.blueprintId,
+          isGroundItem: !hit.statusEffects,
+        });
         if (ctx) {
           const action = resolveAction(ctx);
           debugLabel = describeAction(action, ctx);
         }
       }
+      // if (!debugLabel) {
+      //   const tile = scene.camera.tileAt(mouseCanvasX, mouseCanvasY);
+      //   if (tile) {
+      //     const ctx = buildCursorContext(scene, tile.tx, tile.ty);
+      //     if (ctx) {
+      //       const action = resolveAction(ctx);
+      //       debugLabel = describeAction(action, ctx);
+      //     }
+      //   }
+      // }
     }
 
-    drawHud(gl, scene, scene.spriteRenderer, keyboard, resolution, debugLabel);
+    drawHud(gl, scene, scene.spriteRenderer, keyboard, hudResolution, debugLabel);
 
     requestAnimationFrame(frame);
   }

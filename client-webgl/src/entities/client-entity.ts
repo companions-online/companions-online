@@ -26,8 +26,13 @@ export interface ClientEntity extends EntityComponents {
   visualX: number;
   visualY: number;
 
-  // Y-sort cache, populated during render pass
+  // Screen-space bounding box, populated during draw. Used for Y-sort
+  // and AABB click/hover hit testing. Coordinates are in virtual-pixel
+  // space (pre-zoom).
+  screenX: number;
   screenY: number;
+  screenW: number;
+  screenH: number;
 
   // Per-frame logic. Each entity type provides its own.
   tick?: (e: ClientEntity, dt: number, scene: Scene) => void;

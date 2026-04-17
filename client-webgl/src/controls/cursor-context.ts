@@ -7,6 +7,39 @@ import { Terrain, Building } from '@shared/terrain.js';
 import type { ActionContext } from '@shared/action-resolver.js';
 import type { Scene } from '../scene.js';
 
+/**
+ * Build an ActionContext from a known entity hit (from AABB sprite
+ * hit testing). Reads terrain/building at the entity's tile for
+ * isWalkable + equipped hand item, but skips the entity-at-tile scan.
+ */
+export function buildContextFromEntity(
+  scene: Scene,
+  entity: { entityId: number; blueprintId: number; isGroundItem: boolean },
+): ActionContext | null {
+  const e = scene.entities.get(entity.entityId);
+  if (!e?.position) return null;
+  const tx = e.position.tileX;
+  const ty = e.position.tileY;
+  if (!scene.worldMap.inBounds(tx, ty)) return null;
+
+  const t = scene.worldMap.getTerrain(tx, ty) as Terrain;
+  const b = scene.worldMap.getBuilding(tx, ty) as Building;
+  const isWalkable =
+    !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
+    && (b === Building.None || b === Building.WoodenFloor || b === Building.StoneFloor);
+
+  const handItem = scene.inventory.find(i => i.equippedSlot === 1);
+
+  return {
+    targetX: tx,
+    targetY: ty,
+    isWalkable,
+    terrainType: t,
+    entityAtTarget: entity,
+    equippedHandBlueprintId: handItem?.blueprintId,
+  };
+}
+
 function entityAtTile(
   scene: Scene,
   tx: number,
