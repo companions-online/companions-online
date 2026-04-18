@@ -16,6 +16,8 @@ function defaultSheet(): SpriteSheetRef {
     sheetH: 92 * 8,   // 8 direction rows
     frameW: 92,
     frameH: 92,
+    renderW: 92,
+    renderH: 92,
     footX: 46,
     footY: 82,
     align: 'center',
@@ -27,6 +29,7 @@ function fallbackSheet(): SpriteSheetRef {
     texture: handleCounter++ as unknown as WebGLTexture,
     sheetW: 64, sheetH: 64,
     frameW: 64, frameH: 64,
+    renderW: 64, renderH: 64,
     footX: 32, footY: 64,
     align: 'center',
     isFallback: true,

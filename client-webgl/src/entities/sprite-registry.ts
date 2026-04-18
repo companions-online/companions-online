@@ -10,16 +10,35 @@ import { getBlueprint } from '@shared/blueprints.js';
 import { createImageTexture } from '../platform/gl-utils.js';
 import { SPRITE_MANIFEST, type SpriteManifestEntry, type SpriteAlign } from './sprite-manifest.js';
 
+/** Animation playback metadata stored on a loaded sheet. `frameMs` is the
+ *  per-frame interval (= 1000 / fps), pre-computed so the tick loop doesn't
+ *  divide every frame. */
+export interface SpriteAnimationRef {
+  cols: number;
+  rows: number;
+  frameCount: number;
+  frameMs: number;
+}
+
 export interface SpriteSheetRef {
   texture: WebGLTexture;
   sheetW: number;
   sheetH: number;
+  /** Source-pixel slice size — the size of one frame in sheet/UV space.
+   *  Stays untouched by `scale`; used by all UV math (col/row indexing). */
   frameW: number;
   frameH: number;
+  /** Render-pixel destination quad size (= frameW * scale). Used for the
+   *  draw destination rectangle and the hit-test AABB. */
+  renderW: number;
+  renderH: number;
+  /** Foot anchor in render-pixel space (already multiplied by scale). */
   footX: number;
   footY: number;
   /** Tile-diamond anchor: `'center'` (default) or `'south'`. */
   align: SpriteAlign;
+  /** Present when this sheet is an animation. */
+  animation?: SpriteAnimationRef;
   /** True only for the unknown-entity fallback sheet. Draw paths that would
    *  index into a creature walk-cycle layout (8 dir rows × N frame cols)
    *  must special-case this to a single-frame blit instead. */
@@ -92,15 +111,26 @@ async function loadManifestEntry(
       const isStatic = (entry.layout ?? 'sheet') === 'static';
       const scaleX = isStatic ? entry.frameW / img.naturalWidth : 1;
       const scaleY = isStatic ? entry.frameH / img.naturalHeight : 1;
+      const userScale = entry.scale ?? 1;
       return {
         texture: createImageTexture(gl, img),
         sheetW: img.naturalWidth,
         sheetH: img.naturalHeight,
         frameW: entry.frameW,
         frameH: entry.frameH,
-        footX: Math.round(foot.footX * scaleX),
-        footY: Math.round(foot.footY * scaleY),
+        renderW: entry.frameW * userScale,
+        renderH: entry.frameH * userScale,
+        footX: Math.round(foot.footX * scaleX * userScale),
+        footY: Math.round(foot.footY * scaleY * userScale),
         align: entry.align ?? 'center',
+        animation: entry.animation
+          ? {
+              cols: entry.animation.cols,
+              rows: entry.animation.rows,
+              frameCount: entry.animation.frameCount,
+              frameMs: 1000 / entry.animation.fps,
+            }
+          : undefined,
       };
     }),
   );
@@ -117,6 +147,8 @@ async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheet
     sheetH: img.naturalHeight,
     frameW: img.naturalWidth,
     frameH: img.naturalHeight,
+    renderW: img.naturalWidth,
+    renderH: img.naturalHeight,
     footX: Math.round(img.naturalWidth / 2),
     footY: img.naturalHeight,
     align: 'center',

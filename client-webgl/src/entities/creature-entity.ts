@@ -135,15 +135,15 @@ function drawCreatureSprite(
   // AABB bounding box — actual draw position in virtual-pixel space.
   e.screenX = dstX;
   e.screenY = dstY;
-  e.screenW = sheet.frameW;
-  e.screenH = sheet.frameH;
+  e.screenW = sheet.renderW;
+  e.screenH = sheet.renderH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sheet.texture);
   sprites.setSpriteTile(e.visualX, e.visualY);
 
   if (sheet.isFallback) {
-    sprites.drawSprite(dstX, dstY, sheet.frameW, sheet.frameH, 0, 0, 1, 1);
+    sprites.drawSprite(dstX, dstY, sheet.renderW, sheet.renderH, 0, 0, 1, 1);
     return;
   }
 
@@ -154,7 +154,7 @@ function drawCreatureSprite(
   const sy = row * sheet.frameH;
 
   sprites.drawSprite(
-    dstX, dstY, sheet.frameW, sheet.frameH,
+    dstX, dstY, sheet.renderW, sheet.renderH,
     sx / sheet.sheetW, sy / sheet.sheetH,
     sheet.frameW / sheet.sheetW, sheet.frameH / sheet.sheetH,
   );

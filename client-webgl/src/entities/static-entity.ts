@@ -1,6 +1,14 @@
 // Network-driven static entity factory. Covers blueprint categories
 // 'placeable', 'item', and 'resource' — trees, doors, ground items, chests,
-// campfires, etc. No animation; just a single sprite blit at the tile.
+// campfires, etc.
+//
+// Three draw paths, picked at construction:
+//   - Door (BlueprintType.WoodenDoor): own 2×2 sheet, facing detected from
+//     worldMap, open/closed picks the column.
+//   - Animated (sheet.animation present): looping cols×rows sheet. The
+//     entity's tick advances `walkFrame` and the draw slices UVs by col/row.
+//     Used for placeables like the campfire.
+//   - Single-frame (default): one blit, full-sheet UV.
 //
 // Doors: facing is detected at draw time from adjacent building tiles in
 // the worldMap (NE if a wall sits above or below, SW otherwise). The
@@ -43,13 +51,31 @@ export function createStaticEntity(
     draw(self, sprites, gl, offsetX, offsetY, scene) {
       if (self.blueprint?.blueprintId === BlueprintType.WoodenDoor) {
         drawDoor(self, sprites, gl, offsetX, offsetY, worldMap, scene);
+      } else if (self.spriteSheet.animation) {
+        drawAnimatedStatic(self, sprites, gl, offsetX, offsetY, scene);
       } else {
         drawSingleFrame(self, sprites, gl, offsetX, offsetY, scene);
       }
     },
   };
 
+  if (sheet.animation) {
+    entity.tick = tickAnimatedStatic;
+  }
+
   return entity;
+}
+
+/** Tick for entities whose sheet has an animation block. Advances
+ *  `walkFrame` modulo `frameCount`. `dt` is in seconds. */
+function tickAnimatedStatic(self: ClientEntity, dt: number): void {
+  const a = self.spriteSheet.animation;
+  if (!a) return;
+  self.frameTimer += dt * 1000;
+  while (self.frameTimer >= a.frameMs) {
+    self.frameTimer -= a.frameMs;
+    self.walkFrame = (self.walkFrame + 1) % a.frameCount;
+  }
 }
 
 function drawSingleFrame(
@@ -70,13 +96,52 @@ function drawSingleFrame(
 
   e.screenX = dstX;
   e.screenY = dstY;
-  e.screenW = s.frameW;
-  e.screenH = s.frameH;
+  e.screenW = s.renderW;
+  e.screenH = s.renderH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
   sprites.setSpriteTile(e.visualX, e.visualY);
-  sprites.drawSprite(dstX, dstY, s.frameW, s.frameH, 0, 0, 1, 1);
+  sprites.drawSprite(dstX, dstY, s.renderW, s.renderH, 0, 0, 1, 1);
+}
+
+/** Same anchor math as drawSingleFrame, but slices UVs by the entity's
+ *  current frame index. Frame layout is left-to-right, top-to-bottom. */
+function drawAnimatedStatic(
+  e: ClientEntity,
+  sprites: SpriteRenderer,
+  gl: WebGL2RenderingContext,
+  offsetX: number,
+  offsetY: number,
+  scene: Scene,
+): void {
+  const s = e.spriteSheet;
+  const a = s.animation;
+  if (!a) {
+    drawSingleFrame(e, sprites, gl, offsetX, offsetY, scene);
+    return;
+  }
+  const screen = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
+  const z = scene.getGroundZ(e.visualX, e.visualY);
+
+  const anchorY = s.align === 'south' ? TILE_H : TILE_H / 2;
+  const dstX = screen.screenX + offsetX + TILE_W / 2 - s.footX;
+  const dstY = screen.screenY + offsetY + anchorY - s.footY - z * PX_PER_Z;
+
+  e.screenX = dstX;
+  e.screenY = dstY;
+  e.screenW = s.renderW;
+  e.screenH = s.renderH;
+
+  const col = e.walkFrame % a.cols;
+  const row = Math.floor(e.walkFrame / a.cols);
+  const uvW = s.frameW / s.sheetW;
+  const uvH = s.frameH / s.sheetH;
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, s.texture);
+  sprites.setSpriteTile(e.visualX, e.visualY);
+  sprites.drawSprite(dstX, dstY, s.renderW, s.renderH, col * uvW, row * uvH, uvW, uvH);
 }
 
 /** Facing row in the 2×2 door sheet: 0 = NE (wall runs horizontally),
@@ -114,15 +179,15 @@ function drawDoor(
   // flatten under buildings keeps interior doors visually level but is no
   // longer load-bearing for correctness.
   const dstX = screen.screenX + offsetX;
-  const dstY = screen.screenY + offsetY - (s.frameH - TILE_H) - z * PX_PER_Z;
+  const dstY = screen.screenY + offsetY - (s.renderH - TILE_H) - z * PX_PER_Z;
 
   e.screenX = dstX;
   e.screenY = dstY;
-  e.screenW = s.frameW;
-  e.screenH = s.frameH;
+  e.screenW = s.renderW;
+  e.screenH = s.renderH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
   sprites.setSpriteTile(tx, ty);
-  sprites.drawSprite(dstX, dstY, s.frameW, s.frameH, uvX, uvY, uvW, uvH);
+  sprites.drawSprite(dstX, dstY, s.renderW, s.renderH, uvX, uvY, uvW, uvH);
 }

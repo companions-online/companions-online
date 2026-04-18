@@ -24,6 +24,17 @@ import { BlueprintType } from '@shared/blueprints.js';
  *    edge: dropped resources, ground loot. */
 export type SpriteAlign = 'center' | 'south';
 
+/** Animated sprite-sheet metadata. Frames are laid out left-to-right,
+ *  top-to-bottom in a `cols × rows` grid, advancing one frame every
+ *  `1000 / fps` ms and looping at `frameCount`. Trailing cells beyond
+ *  `frameCount` are ignored. */
+export interface SpriteAnimation {
+  cols: number;
+  rows: number;
+  frameCount: number;
+  fps: number;
+}
+
 export interface SpriteManifestEntry {
   blueprintId: number;
   name: string;
@@ -43,23 +54,30 @@ export interface SpriteManifestEntry {
    *  are scaled by `frameW/imageW` and `frameH/imageH` at load time so they
    *  match the rendered frame size. Defaults to `'sheet'` (no scaling). */
   layout?: 'static' | 'sheet';
+  /** Render-pixel multiplier on top of frameW/frameH. Default 1. Use to make
+   *  a sprite render larger or smaller without touching the asset (e.g. fox
+   *  at 0.6 → renders at 60 % of its sheet frame size). Foot anchor scales
+   *  with it so the sprite still lands on its tile. */
+  scale?: number;
+  /** Present when this sheet is an animation. The renderer ticks a frame
+   *  counter and slices the sheet by col/row. */
+  animation?: SpriteAnimation;
 }
 
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   // Creatures — use drawCreatureSprite (align doesn't apply, kept default).
   { blueprintId: BlueprintType.Deer,       name: 'deer',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
-  { blueprintId: BlueprintType.Rabbit,     name: 'rabbit', frameW: 92, frameH: 92,  footX: 46, footY: 70 },
-  { blueprintId: BlueprintType.Fox,        name: 'fox',    frameW: 92, frameH: 92,  footX: 46, footY: 70 },
+  { blueprintId: BlueprintType.Rabbit,     name: 'rabbit', frameW: 92, frameH: 92,  footX: 46, footY: 70, scale: 0.6  },
+  { blueprintId: BlueprintType.Fox,        name: 'fox',    frameW: 92, frameH: 92,  footX: 46, footY: 70, scale: 0.8 },
   { blueprintId: BlueprintType.Wolf,       name: 'wolf',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Player,     name: 'player', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   // Tall structures — base at tile center. Single static image.
   { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true, layout: 'static' },
   // Door — has its own drawDoor path (anchors at south vertex internally).
   { blueprintId: BlueprintType.WoodenDoor, name: 'door',   frameW: 64, frameH: 64,  footX: 32, footY: 64 },
-  // Campfire: sprite asset not yet produced — falls back to unknown-entity
-  // at runtime. Light emission is driven by blueprint.lightRadius regardless
-  // of sprite, so placing a campfire still casts light. Add the manifest entry
-  // once a `fire-*.png` asset exists.
+  // Campfire — 3×3 grid of 9 frames at 64×64 each. Looping animation; foot
+  // sits at the bottom of the logs (south vertex of the tile diamond).
+  { blueprintId: BlueprintType.Campfire,   name: 'campfire', frameW: 64, frameH: 64, footX: 32, footY: 64, align: 'south', animation: { cols: 3, rows: 3, frameCount: 9, fps: 9 } },
   // Ground items — half-size render (64px PNGs → 32px display), south-vertex anchor.
   { blueprintId: BlueprintType.Wood,       name: 'wood',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.Rock,       name: 'rock',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },

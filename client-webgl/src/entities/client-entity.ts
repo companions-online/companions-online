@@ -17,7 +17,12 @@ import type { Scene } from '../scene.js';
 export interface ClientEntity extends EntityComponents {
   id: number;
 
-  // Visual sprite state
+  // Visual sprite state. `walkFrame` and `frameTimer` are generic
+  // animation-frame state — used by the creature walk cycle (advance while
+  // moving) and by animated statics like the campfire (advance always at
+  // the sheet's fps). `frameTimer` is in milliseconds for animated statics
+  // and in seconds for the creature walk cycle (the two paths never share
+  // an entity).
   spriteSheet: SpriteSheetRef;
   walkFrame: number;
   frameTimer: number;
