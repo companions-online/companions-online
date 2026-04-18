@@ -113,10 +113,20 @@ const CREATURES: Record<string, CreatureConfig> = {
     walkSuffix: (dir) => `_walk-6-frames_${dir}.gif`,
     outputName: 'deer.png',
   },
+  fox: {
+    prefix: 'adult_red_fox_slender_quadruped_standing_alert_pos',
+    walkSuffix: (dir) => `_walk-6-frames_${dir}.gif`,
+    outputName: 'fox.png',
+  },
   player: {
     prefix: 'adult_catgirl_adventurer_upright_bipedal_humanoid',
     walkSuffix: (dir) => `_walk_${dir}.gif`,
     outputName: 'player.png',
+  },
+  rabbit: {
+    prefix: 'adult_cottontail_rabbit_small_compact_quadruped_he',
+    walkSuffix: (dir) => `_custom-bunny hops on four legs_${dir}.gif`,
+    outputName: 'rabbit.png',
   },
   wolf: {
     prefix: 'adult_gray_wolf_large_lean_quadruped_standing_aler',

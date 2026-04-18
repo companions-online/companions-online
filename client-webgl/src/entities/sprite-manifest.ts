@@ -48,6 +48,8 @@ export interface SpriteManifestEntry {
 export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   // Creatures — use drawCreatureSprite (align doesn't apply, kept default).
   { blueprintId: BlueprintType.Deer,       name: 'deer',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
+  { blueprintId: BlueprintType.Rabbit,     name: 'rabbit', frameW: 92, frameH: 92,  footX: 46, footY: 70 },
+  { blueprintId: BlueprintType.Fox,        name: 'fox',    frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Wolf,       name: 'wolf',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Player,     name: 'player', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   // Tall structures — base at tile center. Single static image.
