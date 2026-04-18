@@ -3,7 +3,9 @@ import { INTEREST_RANGE } from '@shared/constants.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
   encodeWorldDelta, encodeInventorySync, encodeContainerOpen, encodeDialogueOpen, encodeChatMessage,
+  encodeEntityMeta,
 } from '@shared/protocol/codec.js';
+import type { MetaKey } from '@shared/entity-meta.js';
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { Telemetry } from '../telemetry.js';
 import type { GameEvent } from '../events.js';
@@ -33,7 +35,7 @@ export class WebSocketConnection implements PlayerConnection {
 
     // Chunks are sent by GameWorld via onChunkNeeded before this call
 
-    // Send EntityFullState for entities in interest range
+    // Send EntityFullState (and any meta) for entities in interest range
     for (const eid of world.entities.getAllEntities()) {
       const pos = world.entities.position.get(eid);
       if (!pos) continue;
@@ -41,6 +43,7 @@ export class WebSocketConnection implements PlayerConnection {
           Math.abs(pos.tileY - playerPos.tileY) <= INTEREST_RANGE) {
         const { components, speed } = world.entities.getFullState(eid);
         this.send(encodeEntityFullState(eid, components, speed));
+        this.sendMetaFor(eid, world);
       }
     }
 
@@ -48,16 +51,25 @@ export class WebSocketConnection implements PlayerConnection {
     this.send(encodeInventorySync(world.inventoryMgr.getSyncData(entityId)));
   }
 
+  private sendMetaFor(eid: number, world: GameWorldView): void {
+    const bucket = world.entityMeta.get(eid);
+    if (!bucket) return;
+    for (const [key, value] of bucket) {
+      this.send(encodeEntityMeta(eid, key, value));
+    }
+  }
+
   onInventoryChanged(entityId: number, world: GameWorldView): void {
     this.send(encodeInventorySync(world.inventoryMgr.getSyncData(entityId)));
   }
 
-  onTick(entityId: number, world: GameWorldView, delta: TickDelta): void {
+  onTick(_entityId: number, world: GameWorldView, delta: TickDelta): void {
 
-    // Send EntityFullState for entered entities
+    // Send EntityFullState (and any meta) for entered entities
     for (const eid of delta.entered) {
       const { components, speed } = world.entities.getFullState(eid);
       this.send(encodeEntityFullState(eid, components, speed));
+      this.sendMetaFor(eid, world);
     }
 
     // Send WorldDelta with updates, removals, and tile changes
@@ -79,4 +91,8 @@ export class WebSocketConnection implements PlayerConnection {
   }
 
   onGameEvent(_entityId: number, _event: GameEvent): void {}
+
+  onEntityMeta(_entityId: number, targetEntityId: number, key: MetaKey, value: string): void {
+    this.send(encodeEntityMeta(targetEntityId, key, value));
+  }
 }

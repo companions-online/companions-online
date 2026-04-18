@@ -31,7 +31,18 @@ export function attachKeyboardControls(
     if (state.chatActive) {
       if (ev.key === 'Enter') {
         if (state.chatBuffer.length > 0) {
-          connection.send({ action: ClientAction.Say, message: state.chatBuffer });
+          if (state.chatBuffer.startsWith('/')) {
+            const m = state.chatBuffer.slice(1).match(/^(\S+)\s*([\s\S]*)$/);
+            if (m) {
+              connection.send({
+                action: ClientAction.ServerCommand,
+                command: m[1],
+                parameter: m[2],
+              });
+            }
+          } else {
+            connection.send({ action: ClientAction.Say, message: state.chatBuffer });
+          }
         }
         state.chatBuffer = '';
         state.chatActive = false;

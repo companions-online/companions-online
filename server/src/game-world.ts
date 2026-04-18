@@ -9,7 +9,9 @@ import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import { StatusEffect } from '@shared/status-effects.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade, DecodedActionUseConsumable, DecodedActionSay } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade, DecodedActionUseConsumable, DecodedActionSay, DecodedActionServerCommand } from '@shared/protocol/codec.js';
+import { MetaKey } from '@shared/entity-meta.js';
+import { dispatchServerCommand } from './server-commands.js';
 import { getDialogue } from './npc-dialogues.js';
 import { getLootTable } from '@shared/loot-tables.js';
 import { getRecipe } from '@shared/recipes.js';
@@ -71,6 +73,7 @@ export class GameWorld implements SystemState {
   readonly treeResources = new Map<number, number>();
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
   readonly playerRespawnTimers = new Map<number, number>();
+  readonly entityMeta = new Map<number, Map<MetaKey, string>>();
 
   readonly telemetry = new Telemetry();
 
@@ -108,6 +111,40 @@ export class GameWorld implements SystemState {
     return getBlueprint(blueprintId)?.name ?? 'Unknown';
   }
 
+  // --- Entity meta (names, titles, ownership, etc.) ---
+
+  getEntityMeta(eid: number, key: MetaKey): string | undefined {
+    return this.entityMeta.get(eid)?.get(key);
+  }
+
+  setEntityMeta(eid: number, key: MetaKey, value: string): void {
+    const bucket = this.entityMeta.get(eid);
+    const oldValue = bucket?.get(key);
+    if (oldValue === value) return;
+
+    if (value === '') {
+      if (!bucket) return;
+      bucket.delete(key);
+      if (bucket.size === 0) this.entityMeta.delete(eid);
+    } else {
+      if (bucket) bucket.set(key, value);
+      else this.entityMeta.set(eid, new Map([[key, value]]));
+    }
+
+    const pos = this.entities.position.get(eid);
+    if (!pos) return;
+    for (const [otherEid, otherSlot] of this.players) {
+      const otherPos = this.entities.position.get(otherEid);
+      if (!otherPos) continue;
+      if (Math.abs(pos.tileX - otherPos.tileX) > INTEREST_RANGE ||
+          Math.abs(pos.tileY - otherPos.tileY) > INTEREST_RANGE) continue;
+      otherSlot.connection.onEntityMeta(otherEid, eid, key, value);
+      this.emitEvent(otherEid, this.makeEvent('entity_meta_changed', {
+        entityId: eid, key, oldValue, newValue: value,
+      }));
+    }
+  }
+
   // --- Player lifecycle ---
 
   addPlayer(connection: PlayerConnection): number {
@@ -135,6 +172,10 @@ export class GameWorld implements SystemState {
     this.inventoryMgr.create(eid, 50);
     this.inventoryMgr.addItem(eid, BlueprintType.Wood, 2);
     this.inventoryMgr.addItem(eid, BlueprintType.Rock, 1);
+
+    // Default display name. Direct mutation — no broadcast, no event; the
+    // name will ride along with the first EntityFullState via sendMetaFor.
+    this.entityMeta.set(eid, new Map([[MetaKey.Name, 'Player']]));
 
     const slot: PlayerSlot = {
       entityId: eid,
@@ -177,6 +218,7 @@ export class GameWorld implements SystemState {
     this.pendingPickups.delete(entityId);
     this.pendingInteracts.delete(entityId);
     this.inventoryMgr.destroy(entityId);
+    this.entityMeta.delete(entityId);
     this.players.delete(entityId);
   }
 
@@ -419,6 +461,12 @@ export class GameWorld implements SystemState {
       return;
     }
 
+    // Server commands (/nick, etc.) are instant and must not cancel other actions
+    if (action.action === ClientAction.ServerCommand) {
+      this.handleServerCommand(eid, slot, action);
+      return;
+    }
+
     this.cancelConflictingStates(eid, action);
 
     switch (action.action) {
@@ -576,6 +624,7 @@ export class GameWorld implements SystemState {
     const msg = a.message.slice(0, 200);
     const pos = this.entities.position.get(eid);
     if (!pos) return;
+    const senderName = this.getEntityMeta(eid, MetaKey.Name) ?? 'Player';
     for (const [otherEid, otherSlot] of this.players) {
       const otherPos = this.entities.position.get(otherEid);
       if (!otherPos) continue;
@@ -583,9 +632,17 @@ export class GameWorld implements SystemState {
           Math.abs(pos.tileY - otherPos.tileY) <= INTEREST_RANGE) {
         otherSlot.connection.onChatMessage(otherEid, eid, msg);
         this.emitEvent(otherEid, this.makeEvent('player_say', {
-          senderEntityId: eid, senderName: 'Player', message: msg,
+          senderEntityId: eid, senderName, message: msg,
         }));
       }
+    }
+  }
+
+  private handleServerCommand(eid: number, slot: PlayerSlot, action: DecodedAction): void {
+    const a = action as DecodedActionServerCommand;
+    const result = dispatchServerCommand(this, eid, slot, a.command, a.parameter);
+    if (!result.ok) {
+      slot.connection.onChatMessage(eid, 0, `[system] ${result.error}`);
     }
   }
 

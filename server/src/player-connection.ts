@@ -1,5 +1,6 @@
 import type { WorldMap } from '@shared/world/world-map.js';
 import type { DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
+import type { MetaKey } from '@shared/entity-meta.js';
 import type { EntityManager } from './ecs/entity-manager.js';
 import type { InventoryManager } from './inventory-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
@@ -19,6 +20,7 @@ export interface GameWorldView {
   readonly inventoryMgr: InventoryManager;
   readonly occupancy: OccupancyGrid;
   readonly seed: number;
+  readonly entityMeta: ReadonlyMap<number, ReadonlyMap<MetaKey, string>>;
 }
 
 export interface PlayerConnection {
@@ -30,4 +32,5 @@ export interface PlayerConnection {
   onDialogueOpen(entityId: number, npcEntityId: number, dialogue: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] }): void;
   onChatMessage(entityId: number, senderEntityId: number, message: string): void;
   onGameEvent(entityId: number, event: GameEvent): void;
+  onEntityMeta(entityId: number, targetEntityId: number, key: MetaKey, value: string): void;
 }

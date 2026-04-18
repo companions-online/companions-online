@@ -15,6 +15,8 @@ import type {
   DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
   SyncedInventoryItem,
 } from '@shared/protocol/codec.js';
+import type { MetaKey } from '@shared/entity-meta.js';
+import type { TextSurface } from './effects/text-surface.js';
 import { Camera } from './platform/camera.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
@@ -106,6 +108,12 @@ export interface Scene {
   dialogue: unknown;
   /** Rolling chat log, capped at CHAT_LOG_MAX (oldest dropped first). */
   chatLog: ChatLogEntry[];
+  /** Entity meta dict per entity (name, title, etc.). Sparse — only entities
+   *  with meta appear; only set keys appear. Populated via onEntityMeta. */
+  entityMeta: Map<number, Map<MetaKey, string>>;
+  /** TextSurface cache keyed by display name. Avoids per-frame raster+upload
+   *  for nameplates; entries outlive any specific entity. */
+  nameplateCache: Map<string, TextSurface>;
 
   // --- Network mutators ---
   onWelcome(entityId: number, seed: number): void;
@@ -118,6 +126,7 @@ export interface Scene {
   onContainerOpen(containerEntityId: number, items: SyncedInventoryItem[]): void;
   onDialogueOpen(npcEntityId: number, dialogue: unknown): void;
   onChatMessage(senderEntityId: number, message: string): void;
+  onEntityMeta(entityId: number, key: MetaKey, value: string): void;
 
   /** Process dirty chunks: rebuild elevation/instances/walls, reconcile
    *  eviction based on player chunk position, upload to GPU. Called once
@@ -318,6 +327,8 @@ export async function createScene(
     dialogueNpcId: null,
     dialogue: null,
     chatLog: [],
+    entityMeta: new Map(),
+    nameplateCache: new Map(),
 
     onWelcome(entityId, seed) {
       this.myEntityId = entityId;
@@ -418,6 +429,20 @@ export async function createScene(
 
     onEntityRemoval(entityId) {
       entities.delete(entityId);
+      this.entityMeta.delete(entityId);
+    },
+
+    onEntityMeta(entityId, key, value) {
+      const bucket = this.entityMeta.get(entityId);
+      if (value === '') {
+        if (!bucket) return;
+        bucket.delete(key);
+        if (bucket.size === 0) this.entityMeta.delete(entityId);
+      } else if (bucket) {
+        bucket.set(key, value);
+      } else {
+        this.entityMeta.set(entityId, new Map([[key, value]]));
+      }
     },
 
     onTileUpdate(tu) {

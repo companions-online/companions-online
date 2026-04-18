@@ -20,6 +20,7 @@ export function wireSceneToConnection(scene: Scene, conn: Connection): void {
       case 'containerOpen': scene.onContainerOpen(msg.containerEntityId, msg.items); break;
       case 'dialogueOpen':  scene.onDialogueOpen(msg.npcEntityId, msg.dialogue); break;
       case 'chatMessage':   scene.onChatMessage(msg.senderEntityId, msg.message); break;
+      case 'entityMeta':    scene.onEntityMeta(msg.entityId, msg.key, msg.value); break;
     }
   });
 }

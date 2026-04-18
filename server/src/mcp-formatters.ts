@@ -5,6 +5,7 @@ import { terrainChar, buildingChar, blueprintChar } from '@shared/ascii.js';
 import { StatusEffect } from '@shared/status-effects.js';
 import { getWeight, getEquipped, canCraft } from '@shared/inventory.js';
 import { getAllRecipes } from '@shared/recipes.js';
+import { MetaKey, metaKeyLabel } from '@shared/entity-meta.js';
 import type { McpConnection } from './connections/mcp-connection.js';
 import type { GameEvent } from './events.js';
 
@@ -58,6 +59,8 @@ export function formatSelf(conn: McpConnection): string {
   const action = w.entities.currentAction.get(eid);
   const inv = w.inventoryMgr.get(eid);
 
+  const name = w.entityMeta.get(eid)?.get(MetaKey.Name);
+  const nameStr = name ? `name:"${name}" ` : '';
   const posStr = pos ? `pos:(${pos.tileX},${pos.tileY})` : 'pos:?';
   const hpStr = hp ? `hp:${hp.currentHp}/${hp.maxHp}` : 'hp:?';
   const actionStr = action ? (ACTION_NAMES[action.actionType] ?? 'unknown') : 'idle';
@@ -73,7 +76,7 @@ export function formatSelf(conn: McpConnection): string {
   const maxWeight = inv?.maxWeight ?? 0;
   const wtStr = `wt:${weight}/${maxWeight}`;
 
-  return `<self>\n${posStr} ${hpStr} ${handStr} ${bodyStr} ${headStr} ${wtStr} ${actionStr}\n</self>`;
+  return `<self>\n${nameStr}${posStr} ${hpStr} ${handStr} ${bodyStr} ${headStr} ${wtStr} ${actionStr}\n</self>`;
 }
 
 // --- formatMap ---
@@ -412,6 +415,15 @@ function formatEventText(event: GameEvent, currentTick: number): string {
       return `${prefix}  ${d.creatureName}#${d.creatureEntityId} is fleeing`;
     case 'creature_died':
       return `${prefix}  ${d.entityName}#${d.entityId} killed by ${d.killerName}#${d.killerEntityId} at (${d.tileX},${d.tileY})`;
+    case 'entity_meta_changed': {
+      const label = metaKeyLabel(d.key as MetaKey);
+      if (d.key === MetaKey.Name) {
+        const who = d.oldValue ? d.oldValue : `player#${d.entityId}`;
+        return `${prefix}  ${who} changed name to ${d.newValue || '(cleared)'}`;
+      }
+      const newStr = d.newValue === '' ? '(cleared)' : d.newValue;
+      return `${prefix}  entity#${d.entityId} ${label} → ${newStr}`;
+    }
     default:
       return `${prefix}  (unknown event)`;
   }

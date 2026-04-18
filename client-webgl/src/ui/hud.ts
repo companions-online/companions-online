@@ -4,6 +4,7 @@
 // text rendering + SpriteRenderer for blitting.
 
 import { getBlueprint } from '@shared/blueprints.js';
+import { MetaKey } from '@shared/entity-meta.js';
 import { CANVAS_W, CANVAS_H, HUD_BOTTOM_H } from '../platform/config.js';
 import type { TextSurface, TextSurfaceFactory } from '../effects/text-surface.js';
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
@@ -42,10 +43,17 @@ function getOrCreate(
 }
 
 function senderName(scene: Scene, entityId: number): string {
+  const meta = scene.entityMeta.get(entityId)?.get(MetaKey.Name);
+  if (meta) return meta;
   const entity = scene.entities.get(entityId);
   if (!entity?.blueprint) return '???';
   const bp = getBlueprint(entity.blueprint.blueprintId);
   return bp?.name ?? '???';
+}
+
+function formatChatLine(scene: Scene, senderEntityId: number, message: string): string {
+  if (senderEntityId === 0) return message;
+  return `${senderName(scene, senderEntityId)}: ${message}`;
 }
 
 export function drawHud(
@@ -72,16 +80,15 @@ export function drawHud(
   const newCachedLines: { key: string; surface: TextSurface }[] = [];
   for (let i = 0; i < visibleLog.length; i++) {
     const entry = visibleLog[i];
-    const name = senderName(scene, entry.senderEntityId);
-    const lineKey = `${entry.receivedAt}|${name}: ${entry.message}`;
-    // Try to reuse from existing cache.
+    const text = formatChatLine(scene, entry.senderEntityId, entry.message);
+    const lineKey = `${entry.receivedAt}|${text}`;
     const existing = cachedChatLines.find(c => c.key === lineKey);
     if (existing) {
       newCachedLines.push(existing);
     } else {
       const surface = factory.create({
-        text: `${name}: ${entry.message}`,
-        fillColor: '#fff',
+        text,
+        fillColor: entry.senderEntityId === 0 ? '#fa0' : '#fff',
         outlineColor: '#000',
         fontPx: CHAT_FONT_PX,
       });

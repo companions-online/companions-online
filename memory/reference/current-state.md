@@ -39,7 +39,20 @@
 - **MCP CLI test tool** (`scripts/mcp.ts`, session file persistence, tool enumeration + execution)
 - **Server migration** from raw ws to Hono (MCP + WS + static on one port)
 
-**All 17 game actions + 19 MCP tools implemented.**
+**All 17 game actions + 20 MCP tools implemented.** (Action count
+unchanged since server commands are modeled as `ClientAction.ServerCommand`
+dispatched via a registry — one action opcode, N handlers.)
+
+## Server commands + entity meta
+
+Generic observer-visible string-metadata layer (`shared/src/entity-meta.ts::MetaKey`)
+with its own server-to-client message (`ServerOpcode.EntityMeta = 0x36`).
+`ClientAction.ServerCommand = 0x11` carries `/name value`; a registry in
+`server/src/server-commands.ts` dispatches to handlers. First built-in: `/nick` /
+`/name` (1–16 chars, `[A-Za-z0-9_-]`, aliased). Every player spawns with
+`MetaKey.Name = 'Player'`. MCP exposes a `server_command` tool. Errors return as
+system chat (sender id 0). WebGL client renders nameplates above other players
+(own suppressed). Full orientation: `memory/reference/server-commands.md`.
 
 ## WebGL client — fully network-driven
 

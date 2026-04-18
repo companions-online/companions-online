@@ -1,11 +1,18 @@
 import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z, GAME_ZOOM } from './platform/config.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { resolveAction, describeAction } from '@shared/action-resolver.js';
+import { MetaKey } from '@shared/entity-meta.js';
 import { buildCursorContext, buildContextFromEntity } from './controls/cursor-context.js';
 import { hitTestEntities } from './controls/mouse.js';
 import type { Scene } from './scene.js';
 import type { KeyboardState } from './controls/keyboard.js';
+import type { TextSurface } from './effects/text-surface.js';
 import { drawHud } from './ui/hud.js';
+
+const NAMEPLATE_FONT_PX = 11;
+/** Vertical offset above the entity tile's north vertex. Tuned to sit
+ *  clearly above the 92px player sprite (head ~66px above the foot). */
+const NAMEPLATE_OFFSET_Y = 60;
 
 /**
  * RAF loop: tick entities, drain dirty chunks, draw terrain + Y-sorted
@@ -104,6 +111,9 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       scene.spriteRenderer.end();
     }
 
+    // Nameplate pass — draw entity-meta `name` above each named entity.
+    drawNameplates(gl, scene, offsetX, offsetY, gameResolution);
+
     // Effects pass (chat bubbles, damage numbers, pickup text).
     scene.effects.tick(scene);
     scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, gameResolution);
@@ -150,4 +160,55 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       requestAnimationFrame(frame);
     },
   };
+}
+
+function drawNameplates(
+  gl: WebGL2RenderingContext,
+  scene: Scene,
+  offsetX: number,
+  offsetY: number,
+  resolution: readonly [number, number],
+): void {
+  if (scene.entityMeta.size === 0) return;
+
+  // Build draw list first so we can skip begin/end when no named entity is visible.
+  const items: { surface: TextSurface; dstX: number; dstY: number }[] = [];
+  for (const [eid, meta] of scene.entityMeta) {
+    if (eid === scene.myEntityId) continue;
+    const name = meta.get(MetaKey.Name);
+    if (!name) continue;
+    const entity = scene.entities.get(eid);
+    if (!entity) continue;
+
+    let cached = scene.nameplateCache.get(name);
+    if (!cached) {
+      cached = scene.textSurfaceFactory.create({
+        text: name,
+        fillColor: '#fff',
+        outlineColor: '#000',
+        fontPx: NAMEPLATE_FONT_PX,
+        bold: true,
+      });
+      scene.nameplateCache.set(name, cached);
+    }
+
+    const scr = tileToScreen(entity.visualX, entity.visualY, TILE_W, TILE_H);
+    const z = scene.getGroundZ(entity.visualX, entity.visualY);
+    const dstX = scr.screenX + offsetX + TILE_W / 2 - cached.width / 2;
+    const dstY = scr.screenY + offsetY - z * PX_PER_Z - NAMEPLATE_OFFSET_Y - cached.height;
+    items.push({ surface: cached, dstX, dstY });
+  }
+
+  if (items.length === 0) return;
+
+  scene.spriteRenderer.begin(resolution);
+  for (const item of items) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, item.surface.texture);
+    scene.spriteRenderer.drawSprite(
+      item.dstX, item.dstY, item.surface.width, item.surface.height,
+      0, 0, 1, 1,
+    );
+  }
+  scene.spriteRenderer.end();
 }

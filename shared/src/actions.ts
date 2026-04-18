@@ -31,4 +31,5 @@ export const enum ClientAction {
   Trade           = 0x0E,
   UseConsumable   = 0x0F,
   Say             = 0x10,
+  ServerCommand   = 0x11,
 }

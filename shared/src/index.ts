@@ -3,6 +3,7 @@ export { Direction, DX, DY, isDiagonal } from './direction.js';
 export { Terrain, Building, isWalkable } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
 export { StatusEffect } from './status-effects.js';
+export { MetaKey, metaKeyLabel } from './entity-meta.js';
 export { ComponentBit, WAYPOINT_NONE } from './components.js';
 export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintData, StatusEffectsData } from './components.js';
 export { BlueprintType, getBlueprint } from './blueprints.js';
@@ -16,7 +17,7 @@ export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
   encodeAction, encodePing, encodePong, encodeWelcome, encodeInventorySync,
-  encodeWorldDelta, encodeEntityFullState, encodeChunk,
+  encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEntityMeta,
   decodeServerMessage, decodeClientMessage,
 } from './protocol/codec.js';
 export type {
@@ -25,7 +26,7 @@ export type {
   DecodedEntityFullState, DecodedChunk, DecodedAction,
   SyncedInventoryItem,
   DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
-  DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack,
+  DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionServerCommand,
   DecodedServerMessage, DecodedClientMessage,
 } from './protocol/codec.js';
 export { tileToScreen, screenToTile } from './coordinates.js';
