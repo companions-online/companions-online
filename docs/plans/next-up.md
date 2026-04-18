@@ -1,9 +1,5 @@
 * quantize environment lighting -each hour? so it's visible
 
----
-
-
- in assets/import/campfire.png , we have a new campfire pic; if you look at it, this is a 9-frame      animation. we want to: 1, develop static entities to have animations (and appropiately slice it up,    and play back); and 2, develop both static, and animated creature-entity's scaling -ie being able    to scale eg fox to be smaller. Enter planning mode.
 
 ----
 
@@ -62,3 +58,10 @@ Done:
 ** sprites cast various amount of lighting (eg fireplace / etc)
 ** environmental lightning: depending on time of day, it cycles around
 * time passing / overall world time
+
+---
+
+
+ in assets/import/campfire.png , we have a new campfire pic; if you look at it, this is a 9-frame animation. we want to: 1, develop static entities to have animations (and appropiately slice it up, and play back); and 2, develop both static, and animated creature-entity's scaling -ie being able to scale eg fox to be smaller.
+ One note: currently, there is a scaling-ish already implemented -if you look at sprite registry/manifest -> frameW / frameH projects wood/rock/etc into smaller -not sure where else this is hooked up; basically, we want to have scaling instead/additionally.
+ Do discovery before planning mode.

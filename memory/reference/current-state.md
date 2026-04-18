@@ -37,6 +37,8 @@
 - **MCP tools** (15 action tools + 4 query tools, blocking execution model)
 - **MCP session management** (create/destroy, session persistence)
 - **MCP CLI test tool** (`scripts/mcp.ts`, session file persistence, tool enumeration + execution)
+- **MCP response-shape system** — single `formatEnvelope(shape)` with 8 shapes (`full`, `full_inv`, `self_inv`, `transfer`, `dialogue`, `container`, `social`, `meta`); each action tool picks the shape matching what it actually changed. Harvest/pickup branch on pre/post position; interact branches on side effects.
+- **Server-side harvest cap** (`MAX_HARVEST_YIELDS`=5, `shared/constants.ts`) applied to all players via `runHarvest`
 - **Server migration** from raw ws to Hono (MCP + WS + static on one port)
 - **Lighting + day/night** (shared keyframes, ambient tint, tickOffset on meta, twilight default, hourly env sync cadence)
 - **Point lights** (per-blueprint lightRadius/Color, per-target raycast with wall occlusion, 80×80 RGB8 lightmap window)

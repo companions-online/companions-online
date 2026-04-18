@@ -8,7 +8,7 @@ import { Direction } from '@shared/direction.js';
 import { ActionType } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
-import { MAP_SIZE } from '@shared/constants.js';
+import { MAP_SIZE, MAX_HARVEST_YIELDS } from '@shared/constants.js';
 import { startHarvest, runHarvest, cancelHarvest, isHarvesting } from '../server/src/systems/harvest.js';
 import { initTreeResource, runRespawns } from '../server/src/systems/resources.js';
 import { runMovement } from '../server/src/systems/movement.js';
@@ -135,6 +135,26 @@ describe('Harvest system', () => {
 
     const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock).toBeDefined();
+  });
+
+  it('stops at MAX_HARVEST_YIELDS on a non-depleting target (rock)', () => {
+    const player = createPlayer(w, 10, 10);
+    w.map.setTerrain(11, 10, Terrain.Rock);
+    w.inventoryMgr.addItem(player, BlueprintType.Pickaxe, 1);
+    const pick = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Pickaxe)!;
+    w.inventoryMgr.equip(player, pick.itemId);
+    w.entities.clearDirty();
+
+    startHarvest(player, 11, 10, w);
+    // Pickaxe tick cost is 4; MAX_HARVEST_YIELDS=5 → ~20 ticks needed. Give plenty of slack.
+    for (let i = 0; i < 60; i++) runHarvest(w);
+
+    const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
+    expect(rock?.quantity).toBe(MAX_HARVEST_YIELDS);
+    expect(isHarvesting(player, w)).toBe(false);
+    expect(w.entities.currentAction.get(player)?.actionType).toBe(ActionType.Idle);
+    // Rock tile still there — cap is not the same as depletion.
+    expect(w.map.getTerrain(11, 10)).toBe(Terrain.Rock);
   });
 
   it('pathfinds to tree if not adjacent', () => {

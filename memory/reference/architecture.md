@@ -90,11 +90,11 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 **McpConnection** — thin PlayerConnection impl. Holds live `GameWorldView` reference for on-demand reads (no delta accumulation). EventBuffer for game events. Action blocking: `awaitAction()` returns Promise, resolved by `onTick` when player's currentAction returns to Idle/Dead or 30s timeout.
 
-**mcp-tools.ts** — 19 tools (15 action + 4 query) registered on per-session McpServer. Action tools call `world.setAction()` + `await conn.awaitAction()`. Query tools return immediately.
+**mcp-tools.ts** — 20 tools (16 action + 4 query) registered on per-session McpServer. Action tools call `world.setAction()` + `await conn.awaitAction()`, then format the response using the shape matching what actually changed (see below). Query tools return immediately.
 
 **mcp-session.ts** — session lifecycle. One McpServer + transport + McpConnection per session. Sessions persist until explicit DELETE.
 
-**mcp-formatters.ts** — pure functions producing XML-tagged text sections: `<self>`, `<map>`, `<entities>`, `<terrain>`, `<events>`, `<inventory>`, `<recipes>`, `<container>`, plus envelope composers.
+**mcp-formatters.ts** — pure section functions (`formatSelf`, `formatMap`, `formatEntities`, `formatTerrain`, `formatEvents`, `formatInventory`, `formatRecipes`, `formatContainer`, `formatDialogue`) composed by a single `formatEnvelope(conn, actionText, shape)` function. `ResponseShape` is an 8-variant union (`full`, `full_inv`, `self_inv`, `transfer`, `dialogue`, `container`, `social`, `meta`) — each action tool picks the shape that reflects what its action actually changed. Pathfound actions (`harvest`, `pickup`) pick between compact (`self_inv`) and full (`full_inv`) by comparing player position pre/post. `interact` branches on side effects (dialogue/container/world). Cuts token usage on instant inventory-only actions and surfaces container/dialogue state directly in action responses.
 
 ## SystemState Interface
 
@@ -127,6 +127,8 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 - **NPC**: DialogueSelect, Trade
 
 Say is instant and does NOT cancel other actions (can chat while harvesting).
+
+Harvest has a server-side yield cap (`MAX_HARVEST_YIELDS` in `shared/constants.ts`, currently 5) — applies to all connection types. Prevents unbounded action duration on non-depleting targets (rock/water) and gives LLMs predictable pacing. For trees, natural depletion (5 wood) still wins on the same tick; for rocks/fish the cap terminates the channel.
 
 ## ECS
 

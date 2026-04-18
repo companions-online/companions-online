@@ -2,6 +2,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { Terrain } from '@shared/terrain.js';
+import { MAX_HARVEST_YIELDS } from '@shared/constants.js';
 import type { SystemState, HarvestContext } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 import { depleteTree } from './resources.js';
@@ -68,6 +69,7 @@ export function startHarvest(eid: number, tileX: number, tileY: number, world: S
     context: result.context,
     pathfinding: !adjacent,
     rng: (eid * 2654435761 + tileX * 7 + tileY) >>> 0,
+    yieldsSoFar: 0,
   });
 
   if (!adjacent) {
@@ -181,6 +183,12 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
     });
 
     if (depleted) {
+      cancelHarvest(eid, world);
+      continue;
+    }
+
+    state.yieldsSoFar++;
+    if (state.yieldsSoFar >= MAX_HARVEST_YIELDS) {
       cancelHarvest(eid, world);
       continue;
     }

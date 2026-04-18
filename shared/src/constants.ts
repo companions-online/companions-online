@@ -12,6 +12,11 @@ export const SPAWN_Y = Math.floor(MAP_SIZE / 2);
 
 export const AUTOSAVE_WORLD_TICKS = 6000; // 5 minutes at 20Hz
 
+/** Max yields per single harvest invocation (server rule; applies to all
+ *  clients). Matches the tree resource pool so one invocation still fully
+ *  depletes a tree while rocks/fishing cap at this many. */
+export const MAX_HARVEST_YIELDS = 5;
+
 /** Time scale: 6 real seconds = 10 in-game minutes = 100× speedup. At 20 Hz that's
  *  12 ticks per in-game minute, 720 ticks per in-game hour, 17280 per day (14.4 min real). */
 export const TICKS_PER_GAME_MINUTE = 12;

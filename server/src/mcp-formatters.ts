@@ -512,26 +512,85 @@ export function formatContainer(conn: McpConnection): string {
   return `<container entity="${name}#${containerEid}">\n${lines.join('\n')}\n</container>`;
 }
 
-// --- Envelope composers ---
+// --- formatDialogue ---
 
-export function formatActionResponse(conn: McpConnection, actionText: string): string {
-  const tick = conn.world ? (conn.world as any).currentTick ?? 0 : 0;
-  return [
-    `<action tick="${tick}">\n${actionText}\n</action>`,
-    formatSelf(conn),
-    formatMap(conn),
-    formatEntities(conn),
-    formatTerrain(conn),
-    formatEvents(conn),
-  ].join('\n\n');
+export function formatDialogue(conn: McpConnection): string {
+  if (!conn.dialogueState) return '<dialogue>\nnone open\n</dialogue>';
+  const { npcEntityId, dialogue } = conn.dialogueState;
+  const npcBp = conn.world?.entities.blueprint.get(npcEntityId);
+  const npcName = npcBp ? bpName(npcBp.blueprintId).toLowerCase() : 'npc';
+
+  const lines: string[] = [`"${dialogue.greeting}"`];
+  for (const opt of dialogue.options) {
+    lines.push(`  (${opt.optionId}) ${opt.type} — ${opt.label}`);
+    if (opt.trades) {
+      for (const t of opt.trades) {
+        const gives = `${t.givesQty} ${bpName(t.givesBlueprint)}`;
+        const wants = t.wantsQty > 0 ? `${t.wantsQty} ${bpName(t.wantsBlueprint)}` : '(free)';
+        lines.push(`    trade #${t.tradeId}: ${wants} → ${gives}`);
+      }
+    }
+  }
+  return `<dialogue npc="${npcName}#${npcEntityId}">\n${lines.join('\n')}\n</dialogue>`;
 }
 
-export function formatSurroundings(conn: McpConnection): string {
-  return [
-    formatSelf(conn),
-    formatMap(conn),
-    formatEntities(conn),
-    formatTerrain(conn),
-    formatEvents(conn),
-  ].join('\n\n');
+// --- Envelope composer ---
+
+export enum ResponseShape {
+  /** self + map + entities + terrain + events */
+  Full = 'full',
+  /** full + inventory (long action that also touched inventory, e.g. harvest while walking) */
+  FullInv = 'full_inv',
+  /** self + inventory + events (instant inventory change) */
+  SelfInv = 'self_inv',
+  /** self + inventory + container + events */
+  Transfer = 'transfer',
+  /** self + dialogue + events */
+  Dialogue = 'dialogue',
+  /** self + container + events */
+  Container = 'container',
+  /** events only */
+  Social = 'social',
+  /** self + events */
+  Meta = 'meta',
 }
+
+export function formatEnvelope(
+  conn: McpConnection,
+  actionText: string | null,
+  shape: ResponseShape,
+): string {
+  const parts: string[] = [];
+  if (actionText !== null) {
+    const tick = conn.world ? (conn.world as any).currentTick ?? 0 : 0;
+    parts.push(`<action tick="${tick}">\n${actionText}\n</action>`);
+  }
+  switch (shape) {
+    case ResponseShape.Full:
+      parts.push(formatSelf(conn), formatMap(conn), formatEntities(conn), formatTerrain(conn), formatEvents(conn));
+      break;
+    case ResponseShape.FullInv:
+      parts.push(formatSelf(conn), formatMap(conn), formatEntities(conn), formatTerrain(conn), formatInventory(conn), formatEvents(conn));
+      break;
+    case ResponseShape.SelfInv:
+      parts.push(formatSelf(conn), formatInventory(conn), formatEvents(conn));
+      break;
+    case ResponseShape.Transfer:
+      parts.push(formatSelf(conn), formatInventory(conn), formatContainer(conn), formatEvents(conn));
+      break;
+    case ResponseShape.Dialogue:
+      parts.push(formatSelf(conn), formatDialogue(conn), formatEvents(conn));
+      break;
+    case ResponseShape.Container:
+      parts.push(formatSelf(conn), formatContainer(conn), formatEvents(conn));
+      break;
+    case ResponseShape.Social:
+      parts.push(formatEvents(conn));
+      break;
+    case ResponseShape.Meta:
+      parts.push(formatSelf(conn), formatEvents(conn));
+      break;
+  }
+  return parts.join('\n\n');
+}
+

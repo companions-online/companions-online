@@ -9,6 +9,7 @@ import { Telemetry } from '../../server/src/telemetry.js';
 import { createApp } from '../../server/src/app.js';
 import { TICK_RATE } from '../../shared/src/constants.js';
 import { destroySession } from '../../server/src/mcp-session.js';
+import { BlueprintType } from '../../shared/src/blueprints.js';
 
 let world: GameWorld;
 let server: Server;
@@ -172,6 +173,87 @@ describe('MCP E2E', () => {
     });
     const text = (result.content as any[])[0].text as string;
     expect(text).toContain('[error]');
+
+    await client.close();
+  });
+
+  it('say returns social shape: events only, no <map> or <entities>', async () => {
+    const client = await createMcpClient();
+
+    const result = await client.callTool({ name: 'say', arguments: { message: 'ping' } });
+    const text = (result.content as any[])[0].text as string;
+
+    expect(text).toContain('<action');
+    expect(text).toContain('<events>');
+    expect(text).not.toContain('<map>');
+    expect(text).not.toContain('<entities>');
+    expect(text).not.toContain('<terrain>');
+    expect(text).not.toContain('<self>');
+
+    await client.close();
+  });
+
+  it('interact on adjacent chest returns container shape, not map', async () => {
+    const client = await createMcpClient();
+
+    // Find this client's player (most-recently-added — only one active session at a time here).
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+    const pos = world.entities.position.get(playerId)!;
+
+    // Place a StorageChest on the tile east of the player.
+    const chestX = pos.tileX + 1;
+    const chestY = pos.tileY;
+    // If something's there, clear it so the chest has a clean tile.
+    const existing = world.occupancy.get(chestX, chestY);
+    if (existing) {
+      world.occupancy.clear(chestX, chestY);
+      world.entities.destroy(existing);
+    }
+    const chestEid = world.entities.create();
+    world.entities.position.set(chestEid, { tileX: chestX, tileY: chestY });
+    world.entities.blueprint.set(chestEid, { blueprintId: BlueprintType.StorageChest, variant: 0 });
+    world.entities.statusEffects.set(chestEid, { effects: 0 });
+    world.entities.health.set(chestEid, { currentHp: 50, maxHp: 50 });
+    world.occupancy.set(chestX, chestY, chestEid);
+    world.inventoryMgr.create(chestEid, 100);
+
+    const result = await client.callTool({ name: 'interact', arguments: { entity_id: chestEid } });
+    const text = (result.content as any[])[0].text as string;
+
+    expect(text).toContain('<action');
+    expect(text).toContain('<self>');
+    expect(text).toContain('<container');
+    expect(text).toContain(`#${chestEid}`);
+    expect(text).toContain('<events>');
+    expect(text).not.toContain('<map>');
+    expect(text).not.toContain('<entities>');
+
+    await client.close();
+  });
+
+  it('equip returns self_inv shape: self + inventory + events, no map', async () => {
+    const client = await createMcpClient();
+
+    // Player starts with 2 Wood + 1 Rock + an Axe recipe could craft, but default
+    // inventory has no equippable tool. Simplest path: inject an Axe via world state.
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+    const res = world.inventoryMgr.addItem(playerId, BlueprintType.Axe, 1);
+    expect(res.success).toBe(true);
+    const inv = world.inventoryMgr.get(playerId)!;
+    const axe = inv.items.find(i => i.blueprintId === BlueprintType.Axe)!;
+
+    const result = await client.callTool({ name: 'equip', arguments: { item_id: axe.itemId } });
+    const text = (result.content as any[])[0].text as string;
+
+    expect(text).toContain('<action');
+    expect(text).toContain('<self>');
+    expect(text).toContain('<inventory>');
+    expect(text).toContain('<events>');
+    expect(text).not.toContain('<map>');
+    expect(text).not.toContain('<entities>');
+    expect(text).toContain('hand:Axe');
 
     await client.close();
   });

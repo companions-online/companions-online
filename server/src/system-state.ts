@@ -23,6 +23,7 @@ export interface HarvestState {
   context: HarvestContext;
   pathfinding: boolean;
   rng: number;
+  yieldsSoFar: number;
 }
 
 export interface HarvestContext {
