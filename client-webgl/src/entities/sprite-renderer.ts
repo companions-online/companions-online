@@ -20,6 +20,11 @@ interface SpriteUniforms {
   srcRect: WebGLUniformLocation;
   texture: WebGLUniformLocation;
   alpha: WebGLUniformLocation;
+  lightmap: WebGLUniformLocation;
+  lightmapOrigin: WebGLUniformLocation;
+  lightmapSize: WebGLUniformLocation;
+  spriteTileXY: WebGLUniformLocation;
+  lit: WebGLUniformLocation;
 }
 
 function getUniformOrThrow(
@@ -69,11 +74,27 @@ export class SpriteRenderer {
       srcRect: getUniformOrThrow(gl, this.program, 'u_srcRect'),
       texture: getUniformOrThrow(gl, this.program, 'u_texture'),
       alpha: getUniformOrThrow(gl, this.program, 'u_alpha'),
+      lightmap: getUniformOrThrow(gl, this.program, 'u_lightmap'),
+      lightmapOrigin: getUniformOrThrow(gl, this.program, 'u_lightmapOrigin'),
+      lightmapSize: getUniformOrThrow(gl, this.program, 'u_lightmapSize'),
+      spriteTileXY: getUniformOrThrow(gl, this.program, 'u_spriteTileXY'),
+      lit: getUniformOrThrow(gl, this.program, 'u_lit'),
     };
   }
 
-  /** Bind program, VAO, blending state, and resolution uniform for a frame. */
-  begin(resolution: readonly [number, number]): void {
+  /** Bind program, VAO, blending state, and resolution uniform for a frame.
+   *  `lightmap` (if provided) is bound to TEXTURE2 and the associated uniforms
+   *  are set. When omitted, the sprite shader stays pass-through (u_lit = 0).
+   */
+  begin(
+    resolution: readonly [number, number],
+    lightmap?: {
+      texture: WebGLTexture;
+      originX: number;
+      originY: number;
+      size: number;
+    },
+  ): void {
     const gl = this.gl;
     this.resolution = resolution;
     gl.useProgram(this.program);
@@ -83,11 +104,33 @@ export class SpriteRenderer {
     gl.uniform2f(this.uniforms.resolution, resolution[0], resolution[1]);
     gl.uniform1i(this.uniforms.texture, 0);
     gl.uniform1f(this.uniforms.alpha, 1.0);
+    gl.uniform2f(this.uniforms.spriteTileXY, 0, 0);
+    if (lightmap) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, lightmap.texture);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1i(this.uniforms.lightmap, 2);
+      gl.uniform2f(this.uniforms.lightmapOrigin, lightmap.originX, lightmap.originY);
+      gl.uniform2f(this.uniforms.lightmapSize, lightmap.size, lightmap.size);
+      gl.uniform1i(this.uniforms.lit, 1);
+    } else {
+      gl.uniform1i(this.uniforms.lit, 0);
+    }
   }
 
   /** Set per-sprite alpha multiplier (0..1). Resets to 1.0 on begin(). */
   setAlpha(a: number): void {
     this.gl.uniform1f(this.uniforms.alpha, a);
+  }
+
+  /** Set the tile coordinates of the sprite's foot (for lightmap sampling). */
+  setSpriteTile(tileX: number, tileY: number): void {
+    this.gl.uniform2f(this.uniforms.spriteTileXY, tileX, tileY);
+  }
+
+  /** Toggle lightmap sampling for subsequent draws (1 = lit, 0 = pass-through). */
+  setLit(lit: boolean): void {
+    this.gl.uniform1i(this.uniforms.lit, lit ? 1 : 0);
   }
 
   /**

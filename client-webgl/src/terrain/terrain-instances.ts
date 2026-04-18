@@ -15,12 +15,13 @@ import {
 import { maskLayerIndex, type TerrainLayerIndex } from './texture-arrays.js';
 
 /**
- * Bytes per base instance: 8 corner floats + srcLayer + animStride = 10 × 4.
+ * Bytes per base instance: 8 corner floats + srcLayer + animStride
+ * + tileX + tileY = 12 × 4.
  */
-export const BASE_INSTANCE_STRIDE = 40;
+export const BASE_INSTANCE_STRIDE = 48;
 /** Bytes per overlay instance: 8 corner floats + srcLayer + maskLayer +
- *  animStride = 11 × 4. */
-export const OVERLAY_INSTANCE_STRIDE = 44;
+ *  animStride + tileX + tileY = 13 × 4. */
+export const OVERLAY_INSTANCE_STRIDE = 52;
 
 const TILES_PER_CHUNK = CHUNK_SIZE * CHUNK_SIZE;
 // Upper bound: adjacent (max 4) + diagonal (max 4) overlays per tile.
@@ -95,7 +96,7 @@ export function buildChunkTerrainData(
       const variant = tileVariant(tx, ty, variantCount);
       const baseLayer = terrainLayerIndex[terrain][0][variant];
 
-      const baseF = (ly * CHUNK_SIZE + lx) * 10;
+      const baseF = (ly * CHUNK_SIZE + lx) * 12;
       baseF32[baseF + 0] = corners.nx;
       baseF32[baseF + 1] = corners.ex;
       baseF32[baseF + 2] = corners.sx;
@@ -106,6 +107,8 @@ export function buildChunkTerrainData(
       baseF32[baseF + 7] = corners.wy;
       baseI32[baseF + 8] = baseLayer;
       baseI32[baseF + 9] = animStrideFor(terrain);
+      baseF32[baseF + 10] = tx;
+      baseF32[baseF + 11] = ty;
 
       const influences = gatherInfluences(tx, ty, effGrid);
       if (influences.length === 0) continue;
@@ -121,7 +124,7 @@ export function buildChunkTerrainData(
         const nAnimStride = animStrideFor(nTerrain);
 
         const writeOverlay = (maskId: number) => {
-          const off = overlayCount * 11;
+          const off = overlayCount * 13;
           overlayF32[off + 0]  = corners.nx;
           overlayF32[off + 1]  = corners.ex;
           overlayF32[off + 2]  = corners.sx;
@@ -133,6 +136,8 @@ export function buildChunkTerrainData(
           overlayI32[off + 8]  = nSrcLayer;
           overlayI32[off + 9]  = maskLayerIndex(blendMode, maskId);
           overlayI32[off + 10] = nAnimStride;
+          overlayF32[off + 11] = tx;
+          overlayF32[off + 12] = ty;
           overlayCount++;
         };
 

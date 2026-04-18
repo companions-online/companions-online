@@ -3,7 +3,9 @@ import { INTEREST_RANGE } from '@shared/constants.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
   encodeWorldDelta, encodeInventorySync, encodeContainerOpen, encodeDialogueOpen, encodeChatMessage,
+  encodeEnvironmentSync,
 } from '@shared/protocol/codec.js';
+import { gameMinuteFromTick } from '@shared/lighting.js';
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { Telemetry } from '../telemetry.js';
 import type { GameEvent } from '../events.js';
@@ -30,6 +32,11 @@ export class WebSocketConnection implements PlayerConnection {
     if (!playerPos) return;
 
     this.send(encodeWelcome(entityId, world.seed));
+    this.send(encodeEnvironmentSync(
+      gameMinuteFromTick(world.effectiveTick),
+      world.weather,
+      world.currentTick,
+    ));
 
     // Chunks are sent by GameWorld via onChunkNeeded before this call
 
@@ -60,9 +67,13 @@ export class WebSocketConnection implements PlayerConnection {
       this.send(encodeEntityFullState(eid, components, speed));
     }
 
-    // Send WorldDelta with updates, removals, and tile changes
-    if (delta.updated.length > 0 || delta.left.length > 0 || delta.tileUpdates.length > 0) {
-      this.send(encodeWorldDelta(delta.tick, delta.updated, delta.left, delta.tileUpdates));
+    // Send WorldDelta with updates, removals, tile changes, and/or env.
+    const hasContent = delta.updated.length > 0 || delta.left.length > 0
+      || delta.tileUpdates.length > 0 || delta.environment !== undefined;
+    if (hasContent) {
+      this.send(encodeWorldDelta(
+        delta.tick, delta.updated, delta.left, delta.tileUpdates, delta.environment,
+      ));
     }
   }
 

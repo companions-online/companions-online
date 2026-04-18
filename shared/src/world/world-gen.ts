@@ -245,5 +245,9 @@ export function generateWorld(seed: number): WorldGenResult {
   spawns.push({ x: bx + 2, y: by + 3, blueprint: BlueprintType.RawMeat, variant: 0 });
   spawns.push({ x: bx + 3, y: by + 3, blueprint: BlueprintType.RawFish, variant: 0 });
 
+
+  spawns.push({ x: bx + 2, y: by + 2, blueprint: BlueprintType.Campfire,    variant: 0 });
+  spawns.push({ x: bx + 10, y: by + 2, blueprint: BlueprintType.Campfire,    variant: 0 });
+
   return { map, entitySpawns: spawns };
 }

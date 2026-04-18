@@ -19,6 +19,7 @@ import { Camera } from './platform/camera.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
 import { EffectManager } from './effects/effect.js';
+import { LightingManager } from './lighting/lighting.js';
 import { createTextSurfaceFactory, type TextSurfaceFactory } from './effects/text-surface.js';
 import { createDamageNumber } from './effects/damage-number.js';
 import { createPickupText } from './effects/pickup-text.js';
@@ -92,6 +93,7 @@ export interface Scene {
   time: number;
   effects: EffectManager;
   textSurfaceFactory: TextSurfaceFactory;
+  lighting: LightingManager;
 
   // --- Replicated sync state (Phase 9) ---
   /** The player's inventory. Empty until the server's first InventorySync. */
@@ -118,6 +120,7 @@ export interface Scene {
   onContainerOpen(containerEntityId: number, items: SyncedInventoryItem[]): void;
   onDialogueOpen(npcEntityId: number, dialogue: unknown): void;
   onChatMessage(senderEntityId: number, message: string): void;
+  onEnvironmentSync(gameMinute: number, weather: number, serverTick: number): void;
 
   /** Process dirty chunks: rebuild elevation/instances/walls, reconcile
    *  eviction based on player chunk position, upload to GPU. Called once
@@ -179,6 +182,7 @@ export async function createScene(
 
   const effects = new EffectManager();
   const textSurfaceFactory = opts.textSurfaceFactory ?? createTextSurfaceFactory(gl);
+  const lighting = new LightingManager(gl);
 
   const entities = new Map<number, ClientEntity>();
   const wallDrawablesByChunk = new Map<number, WallDrawable[]>();
@@ -311,6 +315,7 @@ export async function createScene(
     time: 0,
     effects,
     textSurfaceFactory,
+    lighting,
 
     inventory: [],
     containerEntityId: null,
@@ -361,6 +366,10 @@ export async function createScene(
     onDialogueOpen(npcEntityId, dialogue) {
       this.dialogueNpcId = npcEntityId;
       this.dialogue = dialogue;
+    },
+
+    onEnvironmentSync(gameMinute, weather, serverTick) {
+      lighting.onEnvironmentSync(gameMinute, weather, serverTick, performance.now());
     },
 
     onChatMessage(senderEntityId, message) {

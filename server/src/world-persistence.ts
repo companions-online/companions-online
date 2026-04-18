@@ -7,6 +7,7 @@ import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import { WorldMap } from '@shared/world/world-map.js';
+import { TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
 import { GameWorld } from './game-world.js';
 import { initTreeResource } from './systems/resources.js';
 import { initCritterAI } from './systems/critter-ai.js';
@@ -22,6 +23,9 @@ interface WorldMeta {
   createdAt: string;
   savedAt: string;
   tick: number;
+  /** Offset added to `tick` before feeding the day/night schedule. Optional
+   *  for backward compat with saves written before lighting landed. */
+  tickOffset?: number;
   mapWidth: number;
   mapHeight: number;
 }
@@ -66,6 +70,7 @@ export async function saveWorld(
   // Update save timestamp
   meta.savedAt = new Date().toISOString();
   meta.tick = world.currentTick;
+  meta.tickOffset = world.tickOffset;
 
   // meta.json
   await writeFile(join(worldDir, 'meta.json'), JSON.stringify(meta, null, 2));
@@ -155,6 +160,7 @@ export async function loadWorld(worldDir: string): Promise<{ world: GameWorld; m
 
   // Reconstruct GameWorld
   const world = new GameWorld(map, meta.seed);
+  world.tickOffset = meta.tickOffset ?? 0;
 
   const entRaw = await readFile(join(worldDir, 'entities.json'), 'utf-8');
   const data: SavedEntities = JSON.parse(entRaw);
@@ -164,11 +170,14 @@ export async function loadWorld(worldDir: string): Promise<{ world: GameWorld; m
   world.inventoryMgr.setNextItemId(data.nextItemId);
   world.respawnRng = data.respawnRng;
 
-  // Restore respawn queue (adjust ticks relative to tick 0 on load)
-  const tickOffset = meta.tick;
+  // Restore respawn queue (adjust ticks relative to tick 0 on load —
+  // `respawnTickOffset` here is unrelated to world.tickOffset; it's the
+  // amount we subtract from saved respawn ticks because the loaded world
+  // resets _tick to 0).
+  const respawnTickOffset = meta.tick;
   for (const entry of data.respawnQueue) {
     world.respawnQueue.push({
-      tick: entry.tick - tickOffset,
+      tick: entry.tick - respawnTickOffset,
       blueprintType: entry.blueprintType,
     });
   }
@@ -222,6 +231,7 @@ export async function createNewWorld(
   // Generate world (same logic as createDefaultWorld)
   const { map, entitySpawns } = generateWorld(seed);
   const world = new GameWorld(map, seed);
+  world.tickOffset = TWILIGHT_TICK_OFFSET;
 
   for (const spawn of entitySpawns) {
     const bp = getBlueprint(spawn.blueprint);
@@ -247,6 +257,7 @@ export async function createNewWorld(
     createdAt: new Date().toISOString(),
     savedAt: new Date().toISOString(),
     tick: 0,
+    tickOffset: TWILIGHT_TICK_OFFSET,
     mapWidth: map.width,
     mapHeight: map.height,
   };

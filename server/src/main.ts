@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 import { TICK_RATE, AUTOSAVE_WORLD_TICKS } from '@shared/constants.js';
+import { gameMinuteFromTick } from '@shared/lighting.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { renderDashboard, type DashboardState } from './dashboard.js';
 import { createApp } from './app.js';
@@ -55,7 +56,19 @@ async function main() {
   const { app, wsUpgrade, getWsConnectionCount } = createApp(world, telemetry);
 
   // --- Dashboard state ---
-  const dashState: DashboardState = { worldId, paused: false, saveStatus: '' };
+  const dashState: DashboardState = {
+    worldId,
+    paused: false,
+    saveStatus: '',
+    currentTimeOfDay: '--:--',
+  };
+
+  function formatTimeOfDay(w: GameWorld): string {
+    const m = gameMinuteFromTick(w.effectiveTick);
+    const h = Math.floor(m / 60);
+    const mm = Math.floor(m % 60);
+    return `${h.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`;
+  }
   let saveFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- Save helper ---
@@ -83,6 +96,7 @@ async function main() {
     if (dashState.paused) {
       // Still render dashboard while paused, but don't tick the world
       if (tick % TICK_RATE === 0) {
+        dashState.currentTimeOfDay = formatTimeOfDay(world);
         renderDashboard(telemetry.snapshot(), dashState);
         telemetry.resetNetworkCounters();
       }
@@ -99,6 +113,7 @@ async function main() {
     }
 
     if (tick % TICK_RATE === 0) {
+      dashState.currentTimeOfDay = formatTimeOfDay(world);
       renderDashboard(telemetry.snapshot(), dashState);
       telemetry.resetNetworkCounters();
     }

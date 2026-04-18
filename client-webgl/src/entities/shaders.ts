@@ -4,6 +4,10 @@
 // Conventions:
 //   - u_resolution: viewport size in CSS pixels (vec2)
 //   - Origin for all screen-space math is top-left, y-down.
+//   - Lightmap sampling: the FS reads `u_lightmap` at the sprite's tile
+//     position (passed per-draw as `u_spriteTileXY`) and multiplies the
+//     sampled RGB. Effects (damage numbers, chat bubbles) flip `u_lit = 0`
+//     to skip the multiply so they stay full-brightness.
 
 /**
  * Sprite vertex shader — draws one textured quad in screen space. Per-draw
@@ -32,18 +36,29 @@ void main() {
 }
 `;
 
-/** Sprite fragment shader — straight textured sample with alpha cutoff. */
+/** Sprite fragment shader — textured sample, alpha cutoff, lightmap multiply. */
 export const SPRITE_FS = /* glsl */ `#version 300 es
 precision highp float;
 
 in vec2 v_uv;
 uniform sampler2D u_texture;
 uniform float u_alpha;
+uniform sampler2D u_lightmap;
+uniform vec2 u_lightmapOrigin;  // world-tile coords of lightmap texel (0,0)
+uniform vec2 u_lightmapSize;    // lightmap dimensions in tiles
+uniform vec2 u_spriteTileXY;    // world-tile position of this sprite's foot
+uniform int  u_lit;             // 1 = apply lightmap, 0 = pass-through (UI/effects)
 out vec4 outColor;
 
 void main() {
   vec4 c = texture(u_texture, v_uv);
   if (c.a < 0.01) discard;
-  outColor = vec4(c.rgb, c.a * u_alpha);
+  vec3 rgb = c.rgb;
+  if (u_lit == 1) {
+    vec2 luv = (u_spriteTileXY - u_lightmapOrigin + 0.5) / u_lightmapSize;
+    vec3 light = texture(u_lightmap, luv).rgb;
+    rgb *= light;
+  }
+  outColor = vec4(rgb, c.a * u_alpha);
 }
 `;

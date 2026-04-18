@@ -54,10 +54,33 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     // Camera follows the player entity once it arrives from the server;
     // otherwise stays at its initial SPAWN position. Pass ground z so the
     // viewport translates up/down with the player's hill height.
+    let playerTileX: number | undefined;
+    let playerTileY: number | undefined;
     if (scene.myEntityId !== null) {
       const me = scene.entities.get(scene.myEntityId);
-      if (me) scene.camera.follow(me.visualX, me.visualY, scene.getGroundZ(me.visualX, me.visualY));
+      if (me) {
+        scene.camera.follow(me.visualX, me.visualY, scene.getGroundZ(me.visualX, me.visualY));
+        playerTileX = me.visualX;
+        playerTileY = me.visualY;
+      }
     }
+
+    // Rebuild the lightmap before any draw that samples it. Uses the
+    // player's current tile as the window center; falls back to spawn when
+    // the player entity hasn't arrived yet.
+    scene.lighting.update(
+      playerTileX ?? 0,
+      playerTileY ?? 0,
+      scene.entities.values(),
+      scene.worldMap,
+      now,
+    );
+    const lightmapBinding = {
+      texture: scene.lighting.texture,
+      originX: scene.lighting.originX,
+      originY: scene.lighting.originY,
+      size: scene.lighting.size,
+    };
 
     const [offsetX, offsetY] = scene.camera.getOffset();
 
@@ -72,6 +95,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       scene.terrainTexture.texture,
       scene.maskTexture.texture,
       scene.time,
+      lightmapBinding,
     );
 
     // Sprite pass — Y-sorted. Entities + walls from every live chunk.
@@ -98,7 +122,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     }
 
     if (drawList.length > 0) {
-      scene.spriteRenderer.begin(gameResolution);
+      scene.spriteRenderer.begin(gameResolution, lightmapBinding);
       drawList.sort((a, b) => a.screenY - b.screenY);
       for (const d of drawList) d.draw();
       scene.spriteRenderer.end();

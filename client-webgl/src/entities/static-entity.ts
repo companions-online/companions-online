@@ -75,6 +75,7 @@ function drawSingleFrame(
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
+  sprites.setSpriteTile(e.visualX, e.visualY);
   sprites.drawSprite(dstX, dstY, s.frameW, s.frameH, 0, 0, 1, 1);
 }
 
@@ -122,5 +123,6 @@ function drawDoor(
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
+  sprites.setSpriteTile(tx, ty);
   sprites.drawSprite(dstX, dstY, s.frameW, s.frameH, uvX, uvY, uvW, uvH);
 }

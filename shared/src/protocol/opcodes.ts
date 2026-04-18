@@ -15,6 +15,7 @@ export const enum ServerOpcode {
   ContainerOpen   = 0x32,
   DialogueOpen    = 0x33,
   ChatMessage     = 0x34,
+  EnvironmentSync = 0x35,
 }
 
 /** Section tags within a WorldDelta message */
@@ -23,6 +24,7 @@ export const enum DeltaSectionTag {
   EntityUpdates  = 0x01,
   EntityRemovals = 0x02,
   TileUpdates    = 0x03,
+  Environment    = 0x04,
 }
 
 /** Bit indices for tile fields in tile delta bitmask */

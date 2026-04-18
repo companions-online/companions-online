@@ -54,6 +54,10 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true, layout: 'static' },
   // Door — has its own drawDoor path (anchors at south vertex internally).
   { blueprintId: BlueprintType.WoodenDoor, name: 'door',   frameW: 64, frameH: 64,  footX: 32, footY: 64 },
+  // Campfire: sprite asset not yet produced — falls back to unknown-entity
+  // at runtime. Light emission is driven by blueprint.lightRadius regardless
+  // of sprite, so placing a campfire still casts light. Add the manifest entry
+  // once a `fire-*.png` asset exists.
   // Ground items — half-size render (64px PNGs → 32px display), south-vertex anchor.
   { blueprintId: BlueprintType.Wood,       name: 'wood',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.Rock,       name: 'rock',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },

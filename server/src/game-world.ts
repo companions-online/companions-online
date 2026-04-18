@@ -1,4 +1,5 @@
 import { SPAWN_X, SPAWN_Y, MAP_SIZE, CHUNK_SIZE, INTEREST_RANGE } from '@shared/constants.js';
+import { gameMinuteFromTick, gameHourFromTick, KEYFRAME_HOURS } from '@shared/lighting.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
 import { BlueprintType, getBlueprint, blueprintToBuilding } from '@shared/blueprints.js';
@@ -78,6 +79,20 @@ export class GameWorld implements SystemState {
   private spawnRng: number;
   respawnRng: number;
 
+  /** Current weather byte (0 = clear). Persists across saves once save
+   *  format supports it; currently ephemeral. */
+  weather = 0;
+  /** Time-of-day offset added to `_tick` before feeding the day/night
+   *  schedule. Persisted on meta so restarts resume the same time. Shift
+   *  at runtime via `setTickOffset` — forces the next broadcast to emit a
+   *  fresh Environment section so clients snap. */
+  tickOffset = 0;
+  /** Last in-game hour we broadcast an Environment section for, used to
+   *  emit exactly once per keyframe crossing. */
+  private _lastEnvEmitHour = -1;
+  /** Last weather value we broadcast an Environment section for. */
+  private _lastEnvEmitWeather = 0;
+
   constructor(readonly map: WorldMap, readonly seed = 0) {
     this.occupancy = new OccupancyGrid(map.width, map.height);
     this.spawnRng = seed;
@@ -85,6 +100,18 @@ export class GameWorld implements SystemState {
   }
 
   get currentTick(): number { return this._tick; }
+
+  /** Tick value fed into the day/night schedule (currentTick + tickOffset).
+   *  Kept distinct from `currentTick` so respawn timers, event ages, and
+   *  save metadata continue to use the raw tick counter. */
+  get effectiveTick(): number { return this._tick + this.tickOffset; }
+
+  /** Update the day/night offset and force the next broadcast to emit a
+   *  fresh Environment section so clients re-sync immediately. */
+  setTickOffset(n: number): void {
+    this.tickOffset = n;
+    this._lastEnvEmitHour = -1;
+  }
 
   private emitEvent(entityId: number, event: GameEvent): void {
     const slot = this.players.get(entityId);
@@ -977,6 +1004,26 @@ export class GameWorld implements SystemState {
       mapDirtyTiles.push({ tileX, tileY, building: this.map.buildings[idx] });
     }
 
+    // Emit an Environment section on keyframe crossings (where the schedule
+    // slope changes) or on weather changes. Day/night spans are flat so no
+    // mid-span broadcast is needed; client extrapolates the minute locally.
+    // Reads effectiveTick so the tickOffset feeds the time-of-day path.
+    const eff = this.effectiveTick;
+    const currentHour = Math.floor(gameHourFromTick(eff));
+    const crossedKeyframe = currentHour !== this._lastEnvEmitHour
+      && KEYFRAME_HOURS.includes(currentHour as number);
+    const weatherChanged = this.weather !== this._lastEnvEmitWeather;
+    // A setTickOffset call resets _lastEnvEmitHour to -1, so post-shift the
+    // next broadcast emits even if the new hour is not a keyframe.
+    const forcedResync = this._lastEnvEmitHour === -1;
+    const envPayload = (crossedKeyframe || weatherChanged || forcedResync)
+      ? { gameMinute: gameMinuteFromTick(eff), weather: this.weather }
+      : undefined;
+    if (envPayload) {
+      this._lastEnvEmitHour = currentHour;
+      this._lastEnvEmitWeather = this.weather;
+    }
+
     for (const [eid, slot] of this.players) {
       const playerPos = this.entities.position.get(eid);
       if (!playerPos) continue;
@@ -1030,7 +1077,10 @@ export class GameWorld implements SystemState {
         return slot.sentChunks.has(chunkKey(cx, cy));
       });
 
-      const delta: TickDelta = { tick: this._tick, entered, left, updated: updates, tileUpdates };
+      const delta: TickDelta = {
+        tick: this._tick, entered, left, updated: updates, tileUpdates,
+        environment: envPayload,
+      };
       slot.connection.onTick(eid, this, delta);
     }
   }

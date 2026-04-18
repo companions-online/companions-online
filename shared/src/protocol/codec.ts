@@ -106,11 +106,17 @@ export interface DecodedTileUpdate {
   buildingMeta?: number;
 }
 
+export interface DecodedEnvironment {
+  gameMinute: number;
+  weather: number;
+}
+
 export interface DecodedWorldDelta {
   tick: number;
   entityUpdates: DecodedEntityUpdate[];
   entityRemovals: number[];
   tileUpdates: DecodedTileUpdate[];
+  environment?: DecodedEnvironment;
 }
 
 export interface DecodedEntityFullState {
@@ -427,6 +433,19 @@ export function encodeDialogueOpen(npcEntityId: number, dialogueJson: string): A
   return w.getBuffer();
 }
 
+export function encodeEnvironmentSync(
+  gameMinute: number,
+  weather: number,
+  serverTick: number,
+): ArrayBuffer {
+  const w = new BufferWriter(8);
+  w.writeU8(ServerOpcode.EnvironmentSync);
+  w.writeU16(gameMinute);
+  w.writeU8(weather);
+  w.writeU32(serverTick);
+  return w.getBuffer();
+}
+
 export function encodeChatMessage(senderEntityId: number, message: string): ArrayBuffer {
   const encoded = new TextEncoder().encode(message);
   const w = new BufferWriter(3 + 2 + encoded.byteLength);
@@ -442,10 +461,17 @@ export function encodeWorldDelta(
   entityUpdates: DecodedEntityUpdate[],
   entityRemovals: number[],
   tileUpdates: DecodedTileUpdate[],
+  environment?: DecodedEnvironment,
 ): ArrayBuffer {
   const w = new BufferWriter();
   w.writeU8(ServerOpcode.WorldDelta);
   w.writeU16(tick);
+
+  if (environment !== undefined) {
+    w.writeU8(DeltaSectionTag.Environment);
+    w.writeU16(environment.gameMinute);
+    w.writeU8(environment.weather);
+  }
 
   if (entityUpdates.length > 0) {
     w.writeU8(DeltaSectionTag.EntityUpdates);
@@ -534,7 +560,8 @@ export type DecodedServerMessage =
   | { type: 'inventorySync'; items: SyncedInventoryItem[] }
   | { type: 'containerOpen'; containerEntityId: number; items: SyncedInventoryItem[] }
   | { type: 'dialogueOpen'; npcEntityId: number; dialogue: unknown }
-  | { type: 'chatMessage'; senderEntityId: number; message: string };
+  | { type: 'chatMessage'; senderEntityId: number; message: string }
+  | { type: 'environmentSync'; gameMinute: number; weather: number; serverTick: number };
 
 export type DecodedClientMessage =
   | { type: 'action'; data: DecodedAction }
@@ -583,6 +610,13 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = r.readU8();
       return { type: 'chatMessage', senderEntityId, message: new TextDecoder().decode(bytes) };
+    }
+
+    case ServerOpcode.EnvironmentSync: {
+      const gameMinute = r.readU16();
+      const weather = r.readU8();
+      const serverTick = r.readU32();
+      return { type: 'environmentSync', gameMinute, weather, serverTick };
     }
 
     default:
@@ -657,6 +691,7 @@ function decodeWorldDelta(r: BufferReader): DecodedWorldDelta {
   const entityUpdates: DecodedEntityUpdate[] = [];
   const entityRemovals: number[] = [];
   const tileUpdates: DecodedTileUpdate[] = [];
+  let environment: DecodedEnvironment | undefined;
 
   while (r.remaining > 0) {
     const tag: DeltaSectionTag = r.readU8();
@@ -694,10 +729,14 @@ function decodeWorldDelta(r: BufferReader): DecodedWorldDelta {
         }
         break;
       }
+      case DeltaSectionTag.Environment: {
+        environment = { gameMinute: r.readU16(), weather: r.readU8() };
+        break;
+      }
     }
   }
 
-  return { tick, entityUpdates, entityRemovals, tileUpdates };
+  return { tick, entityUpdates, entityRemovals, tileUpdates, environment };
 }
 
 function decodeEntityFullState(r: BufferReader): DecodedEntityFullState {

@@ -9,6 +9,9 @@
 //   - u_frame is a FLOAT — the fractional part drives temporal blending
 //     between two adjacent animation-frame layers so 8 discrete baked frames
 //     read as continuous flow at the refresh rate.
+//   - Lighting: each instance carries its world-tile coords (a_tileXY). The FS
+//     samples `u_lightmap` at that tile (offset into the per-player window
+//     origin) and multiplies final RGB.
 
 import { WATER_ANIM_FRAMES } from '../platform/config.js';
 
@@ -27,6 +30,7 @@ layout(location = 1) in vec4 a_cornerX;     // per-instance
 layout(location = 2) in vec4 a_cornerY;     // per-instance
 layout(location = 3) in int  a_srcLayer;    // per-instance
 layout(location = 5) in int  a_animStride;  // per-instance; 0 = static, N = frame stride
+layout(location = 6) in vec2 a_tileXY;      // per-instance world-tile coords
 
 uniform vec2  u_resolution;
 uniform vec2  u_cameraPx;
@@ -36,6 +40,7 @@ out vec2 v_uv;
 flat out int v_srcLayerA;
 flat out int v_srcLayerB;
 flat out float v_frameBlend;
+out vec2 v_tileXY;
 
 const vec2 CORNER_UV[4] = vec2[4](
   vec2(0.5, 0.0),  // N  — top    of tile image
@@ -54,15 +59,12 @@ void main() {
   gl_Position = vec4(cx, cy, 0.0, 1.0);
 
   v_uv = CORNER_UV[a_cornerId];
-  // Frame advance: animated tiles have stride>0 (the variant count of their
-  // terrain), static tiles have stride=0 so fA==fB and the FS mix collapses
-  // to identity. We compute two adjacent layers and a blend factor; the FS
-  // mixes them to upgrade the discrete frame carousel into continuous flow.
   int fA = int(floor(u_frame));
   int fB = (fA + 1) % ${WATER_ANIM_FRAMES};
   v_srcLayerA = a_srcLayer + fA * a_animStride;
   v_srcLayerB = a_srcLayer + fB * a_animStride;
   v_frameBlend = fract(u_frame);
+  v_tileXY = a_tileXY;
 }
 `;
 
@@ -75,20 +77,23 @@ in vec2 v_uv;
 flat in int v_srcLayerA;
 flat in int v_srcLayerB;
 flat in float v_frameBlend;
+in vec2 v_tileXY;
 
 uniform sampler2DArray u_terrain;
+uniform sampler2D u_lightmap;
+uniform vec2 u_lightmapOrigin;
+uniform vec2 u_lightmapSize;
 
 out vec4 outColor;
 
 void main() {
-  // Sample both adjacent frame layers and blend. For static tiles
-  // (animStride=0) layerA == layerB so the mix is identity and the only cost
-  // is one redundant texture fetch — accepted cost for terrain fillrate.
   vec4 a = texture(u_terrain, vec3(v_uv, float(v_srcLayerA)));
   vec4 b = texture(u_terrain, vec3(v_uv, float(v_srcLayerB)));
   vec4 c = mix(a, b, v_frameBlend);
   if (c.a < 0.5) discard;
-  outColor = c;
+  vec2 luv = (v_tileXY - u_lightmapOrigin + 0.5) / u_lightmapSize;
+  vec3 light = texture(u_lightmap, luv).rgb;
+  outColor = vec4(c.rgb * light, c.a);
 }
 `;
 
@@ -102,6 +107,7 @@ layout(location = 2) in vec4 a_cornerY;
 layout(location = 3) in int  a_srcLayer;
 layout(location = 4) in int  a_maskLayer;
 layout(location = 5) in int  a_animStride;
+layout(location = 6) in vec2 a_tileXY;
 
 uniform vec2  u_resolution;
 uniform vec2  u_cameraPx;
@@ -112,6 +118,7 @@ flat out int v_srcLayerA;
 flat out int v_srcLayerB;
 flat out float v_frameBlend;
 flat out int v_maskLayer;
+out vec2 v_tileXY;
 
 const vec2 CORNER_UV[4] = vec2[4](
   vec2(0.5, 0.0),
@@ -128,16 +135,13 @@ void main() {
   gl_Position = vec4(cx, cy, 0.0, 1.0);
 
   v_uv = CORNER_UV[a_cornerId];
-  // See TILE_BASE_VS for the frame-blend pattern. Overlays that reference a
-  // water/river neighbour pick the same pair of frame layers so shore tiles
-  // flow in lockstep with the open-water interior. The mask layer is not
-  // animated — only the terrain source sample blends.
   int fA = int(floor(u_frame));
   int fB = (fA + 1) % ${WATER_ANIM_FRAMES};
   v_srcLayerA = a_srcLayer + fA * a_animStride;
   v_srcLayerB = a_srcLayer + fB * a_animStride;
   v_frameBlend = fract(u_frame);
   v_maskLayer = a_maskLayer;
+  v_tileXY = a_tileXY;
 }
 `;
 
@@ -160,9 +164,13 @@ flat in int v_srcLayerA;
 flat in int v_srcLayerB;
 flat in float v_frameBlend;
 flat in int v_maskLayer;
+in vec2 v_tileXY;
 
 uniform sampler2DArray u_terrain;
 uniform sampler2DArray u_masks;
+uniform sampler2D u_lightmap;
+uniform vec2 u_lightmapOrigin;
+uniform vec2 u_lightmapSize;
 
 out vec4 outColor;
 
@@ -172,10 +180,11 @@ void main() {
   vec4 src = mix(a, b, v_frameBlend);
   float maskA = texture(u_masks, vec3(v_uv, float(v_maskLayer))).a;
 
-  // Combine source tile alpha (diamond clip) with mask strength.
   float alpha = src.a * maskA;
   if (alpha <= 0.0) discard;
 
-  outColor = vec4(src.rgb, alpha);
+  vec2 luv = (v_tileXY - u_lightmapOrigin + 0.5) / u_lightmapSize;
+  vec3 light = texture(u_lightmap, luv).rgb;
+  outColor = vec4(src.rgb * light, alpha);
 }
 `;

@@ -60,11 +60,14 @@ export function buildWallDrawablesForChunk(
       const dstX = corners.wx;
       const dstY = corners.ny - WALL_HEIGHT;
 
+      const tileX = tx;
+      const tileY = ty;
       drawables.push({
         screenY: corners.ny,
         draw(sprites, gl, offsetX, offsetY) {
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture);
+          sprites.setSpriteTile(tileX, tileY);
           sprites.drawSprite(
             dstX + offsetX, dstY + offsetY,
             WALL_SPRITE_W, WALL_SPRITE_H,

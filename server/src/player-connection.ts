@@ -1,5 +1,5 @@
 import type { WorldMap } from '@shared/world/world-map.js';
-import type { DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
+import type { DecodedEntityUpdate, DecodedTileUpdate, DecodedEnvironment } from '@shared/protocol/codec.js';
 import type { EntityManager } from './ecs/entity-manager.js';
 import type { InventoryManager } from './inventory-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
@@ -11,6 +11,7 @@ export interface TickDelta {
   left: number[];
   updated: DecodedEntityUpdate[];
   tileUpdates: DecodedTileUpdate[];
+  environment?: DecodedEnvironment;
 }
 
 export interface GameWorldView {
@@ -19,6 +20,9 @@ export interface GameWorldView {
   readonly inventoryMgr: InventoryManager;
   readonly occupancy: OccupancyGrid;
   readonly seed: number;
+  readonly currentTick: number;
+  readonly effectiveTick: number;
+  readonly weather: number;
 }
 
 export interface PlayerConnection {

@@ -1,4 +1,6 @@
-export { TICK_RATE, TICK_MS, MAP_SIZE, CHUNK_SIZE, VIEW_RANGE, INTEREST_RANGE, SPAWN_X, SPAWN_Y } from './constants.js';
+export { TICK_RATE, TICK_MS, MAP_SIZE, CHUNK_SIZE, VIEW_RANGE, INTEREST_RANGE, SPAWN_X, SPAWN_Y, TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_HOUR, GAME_MINUTES_PER_DAY, TICKS_PER_GAME_DAY } from './constants.js';
+export { gameMinuteFromTick, gameHourFromTick, ambientTint, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET } from './lighting.js';
+export type { RGB } from './lighting.js';
 export { Direction, DX, DY, isDiagonal } from './direction.js';
 export { Terrain, Building, isWalkable } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
@@ -16,12 +18,12 @@ export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
   encodeAction, encodePing, encodePong, encodeWelcome, encodeInventorySync,
-  encodeWorldDelta, encodeEntityFullState, encodeChunk,
+  encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync,
   decodeServerMessage, decodeClientMessage,
 } from './protocol/codec.js';
 export type {
   EntityComponents,
-  DecodedEntityUpdate, DecodedTileUpdate, DecodedWorldDelta,
+  DecodedEntityUpdate, DecodedTileUpdate, DecodedWorldDelta, DecodedEnvironment,
   DecodedEntityFullState, DecodedChunk, DecodedAction,
   SyncedInventoryItem,
   DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,

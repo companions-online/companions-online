@@ -25,7 +25,7 @@ export class HeadlessConnection implements PlayerConnection {
   }
 
   onTick(entityId: number, _world: GameWorldView, delta: TickDelta): void {
-    if (delta.entered.length || delta.left.length || delta.updated.length) {
+    if (delta.entered.length || delta.left.length || delta.updated.length || delta.environment) {
       this.events.push({ type: 'tick', entityId, data: delta });
     }
   }

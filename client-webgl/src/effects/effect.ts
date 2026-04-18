@@ -57,6 +57,8 @@ export class EffectManager {
     resolution: readonly [number, number],
   ): void {
     if (this.active.length === 0) return;
+    // Effects begin() without a lightmap — u_lit stays 0, so bubbles + damage
+    // numbers + pickup text remain bright regardless of ambient tint.
     sprites.begin(resolution);
     for (const e of this.active) {
       e.draw(sprites, gl, offsetX, offsetY, scene);

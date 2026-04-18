@@ -11,6 +11,9 @@ export interface DashboardState {
   worldId: string;
   paused: boolean;
   saveStatus: '' | 'saving' | 'saved';
+  /** Pre-formatted in-game time of day (HH:MM) — main.ts refreshes this
+   *  each render from gameMinuteFromTick(world.effectiveTick). */
+  currentTimeOfDay: string;
 }
 
 function formatUptime(ms: number): string {
@@ -39,7 +42,7 @@ export function renderDashboard(snap: TelemetrySnapshot, state: DashboardState):
   const pauseTag = state.paused ? '  \x1b[33m[PAUSED]\x1b[0m' : '';
   const lines: string[] = [];
   lines.push('');
-  lines.push(` Companions Online \u2014 tick ${snap.tick} (${TICK_RATE}Hz)       uptime ${formatUptime(snap.uptimeMs)}${pauseTag}`);
+  lines.push(` Companions Online \u2014 tick ${snap.tick} (${TICK_RATE}Hz)   time ${state.currentTimeOfDay}   uptime ${formatUptime(snap.uptimeMs)}${pauseTag}`);
   lines.push(LINE);
   lines.push(` TICK BUDGET   ${tickMs.toFixed(1)}ms / ${TICK_BUDGET_MS}ms  (${budgetPct.toFixed(0)}%)`);
   lines.push(LINE);

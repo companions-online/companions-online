@@ -53,7 +53,7 @@ function isInsideDiamond(px: number, py: number): boolean {
  */
 function inLeftFace(px: number, py: number): boolean {
   if (px < 0 || px >= HALF_W) return false;
-  const topY = HALF_H + px * 0.5;
+  const topY = Math.floor(HALF_H + px * 0.5);
   const botY = topY + WALL_HEIGHT;
   return py >= topY && py < botY;
 }
@@ -66,7 +66,7 @@ function inLeftFace(px: number, py: number): boolean {
  */
 function inRightFace(px: number, py: number): boolean {
   if (px < HALF_W || px >= TILE_W) return false;
-  const topY = TILE_H - (px - HALF_W) * 0.5;
+  const topY = Math.floor(TILE_H - (px - HALF_W) * 0.5);
   const botY = topY + WALL_HEIGHT;
   return py >= topY && py < botY;
 }

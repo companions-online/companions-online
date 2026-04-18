@@ -140,6 +140,7 @@ function drawCreatureSprite(
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, sheet.texture);
+  sprites.setSpriteTile(e.visualX, e.visualY);
 
   if (sheet.isFallback) {
     sprites.drawSprite(dstX, dstY, sheet.frameW, sheet.frameH, 0, 0, 1, 1);

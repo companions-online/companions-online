@@ -26,6 +26,12 @@ export interface Blueprint {
   weaponSpeed?: number;
   consumeHeal?: number;
   consumeTicks?: number;
+  // Lighting
+  /** Radius in tiles that this blueprint emits light. Omit for non-emitters. */
+  lightRadius?: number;
+  /** RGB color of emitted light (each channel 0..1). Defaults to warm if
+   *  `lightRadius` is set without an explicit color. */
+  lightColor?: readonly [number, number, number];
 }
 
 export const enum BlueprintType {
@@ -129,7 +135,7 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.Bandage,    name: 'Bandage',     category: 'item', sprite: 'band',  stackable: true, maxStack: 10, weight: 1, consumeHeal: 30, consumeTicks: 10 },
 
   // --- Placeables ---
-  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true },
+  { id: BlueprintType.Campfire,     name: 'Campfire',      category: 'placeable', sprite: 'fire',  stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true, lightRadius: 6, lightColor: [1.0, 0.65, 0.3] },
   { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', stackable: true, maxStack: 10, weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },

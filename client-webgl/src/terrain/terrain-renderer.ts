@@ -18,16 +18,27 @@ const LOC_CORNER_Y     = 2;
 const LOC_SRC_LAYER    = 3;
 const LOC_MASK_LAYER   = 4;
 const LOC_ANIM_STRIDE  = 5;
+const LOC_TILE_XY      = 6;
 
 interface BaseUniforms {
   resolution: WebGLUniformLocation;
   cameraPx: WebGLUniformLocation;
   terrain: WebGLUniformLocation;
   frame: WebGLUniformLocation;
+  lightmap: WebGLUniformLocation;
+  lightmapOrigin: WebGLUniformLocation;
+  lightmapSize: WebGLUniformLocation;
 }
 
 interface OverlayUniforms extends BaseUniforms {
   masks: WebGLUniformLocation;
+}
+
+export interface LightmapBinding {
+  texture: WebGLTexture;
+  originX: number;
+  originY: number;
+  size: number;
 }
 
 function getUniformOrThrow(
@@ -117,6 +128,9 @@ export class TerrainRenderer {
     gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
     gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, BASE_INSTANCE_STRIDE, 36);
     gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
+    gl.enableVertexAttribArray(LOC_TILE_XY);
+    gl.vertexAttribPointer(LOC_TILE_XY, 2, gl.FLOAT, false, BASE_INSTANCE_STRIDE, 40);
+    gl.vertexAttribDivisor(LOC_TILE_XY, 1);
 
     // --- Overlay VAO ------------------------------------------------------
     const overlayVao = gl.createVertexArray();
@@ -135,6 +149,9 @@ export class TerrainRenderer {
     gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
     gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, OVERLAY_INSTANCE_STRIDE, 40);
     gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
+    gl.enableVertexAttribArray(LOC_TILE_XY);
+    gl.vertexAttribPointer(LOC_TILE_XY, 2, gl.FLOAT, false, OVERLAY_INSTANCE_STRIDE, 44);
+    gl.vertexAttribDivisor(LOC_TILE_XY, 1);
 
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -144,6 +161,9 @@ export class TerrainRenderer {
       cameraPx: getUniformOrThrow(gl, this.baseProgram, 'u_cameraPx'),
       terrain: getUniformOrThrow(gl, this.baseProgram, 'u_terrain'),
       frame: getUniformOrThrow(gl, this.baseProgram, 'u_frame'),
+      lightmap: getUniformOrThrow(gl, this.baseProgram, 'u_lightmap'),
+      lightmapOrigin: getUniformOrThrow(gl, this.baseProgram, 'u_lightmapOrigin'),
+      lightmapSize: getUniformOrThrow(gl, this.baseProgram, 'u_lightmapSize'),
     };
     this.overlayUniforms = {
       resolution: getUniformOrThrow(gl, this.overlayProgram, 'u_resolution'),
@@ -151,6 +171,9 @@ export class TerrainRenderer {
       terrain: getUniformOrThrow(gl, this.overlayProgram, 'u_terrain'),
       masks: getUniformOrThrow(gl, this.overlayProgram, 'u_masks'),
       frame: getUniformOrThrow(gl, this.overlayProgram, 'u_frame'),
+      lightmap: getUniformOrThrow(gl, this.overlayProgram, 'u_lightmap'),
+      lightmapOrigin: getUniformOrThrow(gl, this.overlayProgram, 'u_lightmapOrigin'),
+      lightmapSize: getUniformOrThrow(gl, this.overlayProgram, 'u_lightmapSize'),
     };
   }
 
@@ -184,6 +207,7 @@ export class TerrainRenderer {
     terrainTexture: WebGLTexture,
     maskTexture: WebGLTexture,
     time: number,
+    lightmap: LightmapBinding,
   ): void {
     if (this.baseCount === 0) return;
 
@@ -194,6 +218,9 @@ export class TerrainRenderer {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, terrainTexture);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, maskTexture);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, lightmap.texture);
+    gl.activeTexture(gl.TEXTURE0);
 
     // --- Base pass --------------------------------------------------------
     gl.useProgram(this.baseProgram);
@@ -201,6 +228,9 @@ export class TerrainRenderer {
     gl.uniform2f(this.baseUniforms.cameraPx, cameraPx[0], cameraPx[1]);
     gl.uniform1i(this.baseUniforms.terrain, 0);
     gl.uniform1f(this.baseUniforms.frame, frame);
+    gl.uniform1i(this.baseUniforms.lightmap, 2);
+    gl.uniform2f(this.baseUniforms.lightmapOrigin, lightmap.originX, lightmap.originY);
+    gl.uniform2f(this.baseUniforms.lightmapSize, lightmap.size, lightmap.size);
 
     gl.disable(gl.BLEND);
     gl.bindVertexArray(this.baseVao);
@@ -214,6 +244,9 @@ export class TerrainRenderer {
       gl.uniform1i(this.overlayUniforms.terrain, 0);
       gl.uniform1i(this.overlayUniforms.masks, 1);
       gl.uniform1f(this.overlayUniforms.frame, frame);
+      gl.uniform1i(this.overlayUniforms.lightmap, 2);
+      gl.uniform2f(this.overlayUniforms.lightmapOrigin, lightmap.originX, lightmap.originY);
+      gl.uniform2f(this.overlayUniforms.lightmapSize, lightmap.size, lightmap.size);
 
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

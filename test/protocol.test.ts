@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ClientAction, ActionType, Direction,
   encodeAction, encodePing, encodePong, encodeWelcome,
-  encodeWorldDelta, encodeEntityFullState, encodeChunk,
+  encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync,
   decodeClientMessage, decodeServerMessage,
   rleEncode, rleDecode,
   BufferReader,
@@ -160,6 +160,56 @@ describe('WorldDelta', () => {
       expect(msg.data.entityUpdates).toHaveLength(1);
       expect(msg.data.entityRemovals).toEqual([99]);
       expect(msg.data.tileUpdates).toHaveLength(1);
+    }
+  });
+
+  it('round-trips Environment section', () => {
+    const buf = encodeWorldDelta(
+      7, [], [], [],
+      { gameMinute: 1130, weather: 2 },
+    );
+    const msg = decodeServerMessage(buf);
+    expect(msg.type).toBe('worldDelta');
+    if (msg.type === 'worldDelta') {
+      expect(msg.data.tick).toBe(7);
+      expect(msg.data.environment).toEqual({ gameMinute: 1130, weather: 2 });
+    }
+  });
+
+  it('round-trips Environment alongside other sections', () => {
+    const buf = encodeWorldDelta(
+      8,
+      [{ entityId: 5, components: { health: { currentHp: 10, maxHp: 20 } } }],
+      [],
+      [{ tileX: 1, tileY: 2, terrain: 3 }],
+      { gameMinute: 300, weather: 0 },
+    );
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'worldDelta') {
+      expect(msg.data.entityUpdates).toHaveLength(1);
+      expect(msg.data.tileUpdates).toHaveLength(1);
+      expect(msg.data.environment).toEqual({ gameMinute: 300, weather: 0 });
+    }
+  });
+
+  it('omits Environment when absent', () => {
+    const buf = encodeWorldDelta(9, [], [], []);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'worldDelta') {
+      expect(msg.data.environment).toBeUndefined();
+    }
+  });
+});
+
+describe('EnvironmentSync message', () => {
+  it('round-trips', () => {
+    const buf = encodeEnvironmentSync(720, 3, 123456);
+    const msg = decodeServerMessage(buf);
+    expect(msg.type).toBe('environmentSync');
+    if (msg.type === 'environmentSync') {
+      expect(msg.gameMinute).toBe(720);
+      expect(msg.weather).toBe(3);
+      expect(msg.serverTick).toBe(123456);
     }
   });
 });
