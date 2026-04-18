@@ -57,7 +57,8 @@ describe('MCP E2E', () => {
     expect(toolNames).toContain('get_surroundings');
     expect(toolNames).toContain('get_inventory');
     expect(toolNames).toContain('craft');
-    expect(tools.tools.length).toBe(19);
+    expect(toolNames).toContain('server_command');
+    expect(tools.tools.length).toBe(20);
 
     await client.close();
   });
@@ -141,6 +142,36 @@ describe('MCP E2E', () => {
     const text = (result.content as any[])[0].text as string;
     expect(text).toContain('<action');
     expect(text).toContain('hello world');
+
+    await client.close();
+  });
+
+  it('server_command sets player name and surfaces it in <self>', async () => {
+    const client = await createMcpClient();
+
+    const setResult = await client.callTool({
+      name: 'server_command',
+      arguments: { command: 'nick', parameter: 'mcpbot' },
+    });
+    const setText = (setResult.content as any[])[0].text as string;
+    expect(setText).toContain('/nick mcpbot');
+
+    const surroundings = await client.callTool({ name: 'get_surroundings', arguments: {} });
+    const selfText = (surroundings.content as any[])[0].text as string;
+    expect(selfText).toMatch(/name:"mcpbot"/);
+
+    await client.close();
+  });
+
+  it('server_command rejects invalid nicks with an error prefix', async () => {
+    const client = await createMcpClient();
+
+    const result = await client.callTool({
+      name: 'server_command',
+      arguments: { command: 'nick', parameter: 'has space' },
+    });
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[error]');
 
     await client.close();
   });

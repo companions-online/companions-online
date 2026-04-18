@@ -16,6 +16,7 @@ export const enum ServerOpcode {
   DialogueOpen    = 0x33,
   ChatMessage     = 0x34,
   EnvironmentSync = 0x35,
+  EntityMeta      = 0x36,
 }
 
 /** Section tags within a WorldDelta message */

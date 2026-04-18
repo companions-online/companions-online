@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   ClientAction, ActionType, Direction,
   encodeAction, encodePing, encodePong, encodeWelcome,
-  encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync,
+  encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync, encodeEntityMeta,
   decodeClientMessage, decodeServerMessage,
   rleEncode, rleDecode,
   BufferReader,
   WAYPOINT_NONE,
+  MetaKey,
 } from '@shared/index.js';
 
 // ---- Action messages ----
@@ -52,6 +53,58 @@ describe('ACTION messages', () => {
       expect((msg.data as any).buildingType).toBe(1);
       expect((msg.data as any).tileX).toBe(30);
       expect((msg.data as any).tileY).toBe(22);
+    }
+  });
+
+  it('round-trips ServerCommand', () => {
+    const buf = encodeAction({ action: ClientAction.ServerCommand, command: 'nick', parameter: 'elsyian' });
+    const msg = decodeClientMessage(buf);
+    expect(msg.type).toBe('action');
+    if (msg.type === 'action') {
+      expect(msg.data.action).toBe(ClientAction.ServerCommand);
+      expect((msg.data as any).command).toBe('nick');
+      expect((msg.data as any).parameter).toBe('elsyian');
+    }
+  });
+
+  it('round-trips ServerCommand with empty parameter', () => {
+    const buf = encodeAction({ action: ClientAction.ServerCommand, command: 'who', parameter: '' });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect((msg.data as any).command).toBe('who');
+      expect((msg.data as any).parameter).toBe('');
+    }
+  });
+
+  it('round-trips ServerCommand with whitespace-containing parameter', () => {
+    const buf = encodeAction({ action: ClientAction.ServerCommand, command: 'say', parameter: 'hello world how are you' });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect((msg.data as any).parameter).toBe('hello world how are you');
+    }
+  });
+});
+
+// ---- EntityMeta ----
+
+describe('EntityMeta', () => {
+  it('round-trips a name value', () => {
+    const buf = encodeEntityMeta(42, MetaKey.Name, 'elsyian');
+    const msg = decodeServerMessage(buf);
+    expect(msg).toEqual({ type: 'entityMeta', entityId: 42, key: MetaKey.Name, value: 'elsyian' });
+  });
+
+  it('round-trips an empty value (clear key)', () => {
+    const buf = encodeEntityMeta(42, MetaKey.Name, '');
+    const msg = decodeServerMessage(buf);
+    expect(msg).toEqual({ type: 'entityMeta', entityId: 42, key: MetaKey.Name, value: '' });
+  });
+
+  it('round-trips UTF-8 multi-byte characters', () => {
+    const buf = encodeEntityMeta(7, MetaKey.Name, 'héllo');
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'entityMeta') {
+      expect(msg.value).toBe('héllo');
     }
   });
 });

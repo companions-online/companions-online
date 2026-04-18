@@ -18,8 +18,10 @@ coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
 terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open)
-protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EnvironmentSync; DeltaSectionTag.Environment
-protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types, DecodedAction union
+protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, 
+protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action + EntityMeta msg, DecodedAction union
+entity-meta.ts           MetaKey enum (Name=0) + metaKeyLabel — observer-visible string metadata
+protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync; DeltaSectionTag.Environment
 protocol/index.ts        Barrel re-export
 world/noise.ts           Seeded 2D Perlin noise (PerlinNoise class)
 world/world-map.ts       WorldMap class (flat Uint8Array terrain/buildings, chunk extraction, dirty tracking)
@@ -41,7 +43,8 @@ telemetry.ts             Telemetry class (per-phase timing, network bytes, rolli
 dashboard.ts             ANSI telemetry dashboard rendering; shows in-game time HH:MM in header
 world-persistence.ts     saveWorld/loadWorld/createNewWorld; tickOffset on meta, createNewWorld seeds TWILIGHT_TICK_OFFSET
 npc-dialogues.ts         Static dialogue trees + trade offers for Hermit, Trader, Wanderer
-mcp-tools.ts             19 MCP tool registrations (15 action + 4 query)
+server-commands.ts       Slash-command registry + dispatcher; built-in /nick /name → handleNick
+mcp-tools.ts             20 MCP tool registrations (16 action + 4 query) — incl server_command
 mcp-session.ts           MCP session lifecycle (create/destroy/lookup, session Map)
 mcp-formatters.ts        Text formatters: self, map, entities, terrain, events, inventory, recipes, container, envelopes
 ecs/component-store.ts   ComponentStore<T> — generic Map with auto-dirty

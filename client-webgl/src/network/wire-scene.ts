@@ -28,6 +28,7 @@ export function wireSceneToConnection(scene: Scene, conn: Connection): void {
       case 'dialogueOpen':     scene.onDialogueOpen(msg.npcEntityId, msg.dialogue); break;
       case 'chatMessage':      scene.onChatMessage(msg.senderEntityId, msg.message); break;
       case 'environmentSync':  scene.onEnvironmentSync(msg.gameMinute, msg.weather, msg.serverTick); break;
+      case 'entityMeta':       scene.onEntityMeta(msg.entityId, msg.key, msg.value); break;
     }
   });
 }

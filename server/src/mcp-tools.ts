@@ -4,6 +4,7 @@ import { ClientAction } from '@shared/actions.js';
 import { EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from '@shared/inventory.js';
 import type { McpConnection } from './connections/mcp-connection.js';
 import type { GameWorld } from './game-world.js';
+import { dispatchServerCommand } from './server-commands.js';
 import {
   formatActionResponse, formatSurroundings,
   formatInventory, formatRecipes, formatContainer, formatEvents,
@@ -102,6 +103,20 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
   server.tool('say', 'Send a chat message to nearby players.',
     { message: z.string().max(200) },
     async ({ message }) => doAction({ action: ClientAction.Say, message }, `Say: "${message}"`),
+  );
+
+  server.tool('server_command',
+    'Run a server command. Available: nick/name <displayName>.',
+    { command: z.string(), parameter: z.string() },
+    async ({ command, parameter }) => {
+      const slot = world.players.get(conn.entityId);
+      if (!slot) return text('[error] no active player slot');
+      const result = dispatchServerCommand(world, conn.entityId, slot, command, parameter);
+      const summary = result.ok
+        ? `/${command} ${parameter}`
+        : `[error] ${result.error}`;
+      return text(formatActionResponse(conn, summary));
+    },
   );
 
   // --- Query tools ---

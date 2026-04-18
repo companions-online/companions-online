@@ -1,4 +1,5 @@
 import { ActionType } from '@shared/actions.js';
+import type { MetaKey } from '@shared/entity-meta.js';
 import type { PlayerConnection, GameWorldView } from '../player-connection.js';
 import type { GameEvent } from '../events.js';
 import { EventBuffer } from '../events.js';
@@ -96,5 +97,9 @@ export class McpConnection implements PlayerConnection {
 
   onGameEvent(_entityId: number, event: GameEvent): void {
     this.eventBuffer.push(event);
+  }
+
+  onEntityMeta(_entityId: number, _targetEntityId: number, _key: MetaKey, _value: string): void {
+    // MCP formatters read live from world.entityMeta; no buffering needed.
   }
 }

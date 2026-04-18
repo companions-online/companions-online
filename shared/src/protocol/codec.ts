@@ -1,6 +1,7 @@
 import { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './opcodes.js';
 import { ComponentBit } from '../components.js';
 import { ActionType, ClientAction } from '../actions.js';
+import type { MetaKey } from '../entity-meta.js';
 import type {
   PositionData, DirectionData, NextWaypointData,
   CurrentActionData, HealthData, BlueprintData, StatusEffectsData,
@@ -154,13 +155,14 @@ export interface DecodedActionDialogueSelect { action: number; npcEntityId: numb
 export interface DecodedActionTrade { action: number; npcEntityId: number; tradeId: number; }
 export interface DecodedActionUseConsumable { action: number; itemId: number; }
 export interface DecodedActionSay { action: number; message: string; }
+export interface DecodedActionServerCommand { action: number; command: string; parameter: string; }
 
 export type DecodedAction =
   | DecodedActionCancel | DecodedActionMoveTo | DecodedActionInteract | DecodedActionBuild
   | DecodedActionPickup | DecodedActionEquip | DecodedActionUnequip | DecodedActionDrop | DecodedActionCraft
   | DecodedActionHarvest | DecodedActionUseItemAt | DecodedActionAttack
   | DecodedActionTransfer | DecodedActionDialogueSelect | DecodedActionTrade
-  | DecodedActionUseConsumable | DecodedActionSay;
+  | DecodedActionUseConsumable | DecodedActionSay | DecodedActionServerCommand;
 
 export interface SyncedInventoryItem {
   itemId: number;
@@ -362,6 +364,14 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     const encoded = new TextEncoder().encode((action as DecodedActionSay).message);
     w.writeU16(encoded.byteLength);
     for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
+  } else if (action.action === ClientAction.ServerCommand) {
+    const a = action as DecodedActionServerCommand;
+    const cmd = new TextEncoder().encode(a.command);
+    w.writeU8(cmd.byteLength);
+    for (let i = 0; i < cmd.byteLength; i++) w.writeU8(cmd[i]);
+    const param = new TextEncoder().encode(a.parameter);
+    w.writeU16(param.byteLength);
+    for (let i = 0; i < param.byteLength; i++) w.writeU8(param[i]);
   }
   return w.getBuffer();
 }
@@ -451,6 +461,17 @@ export function encodeChatMessage(senderEntityId: number, message: string): Arra
   const w = new BufferWriter(3 + 2 + encoded.byteLength);
   w.writeU8(ServerOpcode.ChatMessage);
   w.writeU16(senderEntityId);
+  w.writeU16(encoded.byteLength);
+  for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
+  return w.getBuffer();
+}
+
+export function encodeEntityMeta(entityId: number, key: MetaKey, value: string): ArrayBuffer {
+  const encoded = new TextEncoder().encode(value);
+  const w = new BufferWriter(1 + 2 + 1 + 2 + encoded.byteLength);
+  w.writeU8(ServerOpcode.EntityMeta);
+  w.writeU16(entityId);
+  w.writeU8(key);
   w.writeU16(encoded.byteLength);
   for (let i = 0; i < encoded.byteLength; i++) w.writeU8(encoded[i]);
   return w.getBuffer();
@@ -561,7 +582,8 @@ export type DecodedServerMessage =
   | { type: 'containerOpen'; containerEntityId: number; items: SyncedInventoryItem[] }
   | { type: 'dialogueOpen'; npcEntityId: number; dialogue: unknown }
   | { type: 'chatMessage'; senderEntityId: number; message: string }
-  | { type: 'environmentSync'; gameMinute: number; weather: number; serverTick: number };
+  | { type: 'environmentSync'; gameMinute: number; weather: number; serverTick: number }
+  | { type: 'entityMeta'; entityId: number; key: MetaKey; value: string };
 
 export type DecodedClientMessage =
   | { type: 'action'; data: DecodedAction }
@@ -611,12 +633,19 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
       for (let i = 0; i < len; i++) bytes[i] = r.readU8();
       return { type: 'chatMessage', senderEntityId, message: new TextDecoder().decode(bytes) };
     }
-
     case ServerOpcode.EnvironmentSync: {
       const gameMinute = r.readU16();
       const weather = r.readU8();
       const serverTick = r.readU32();
       return { type: 'environmentSync', gameMinute, weather, serverTick };
+    }
+    case ServerOpcode.EntityMeta: {
+      const entityId = r.readU16();
+      const key = r.readU8() as MetaKey;
+      const len = r.readU16();
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = r.readU8();
+      return { type: 'entityMeta', entityId, key, value: new TextDecoder().decode(bytes) };
     }
 
     default:
@@ -680,6 +709,19 @@ function decodeAction(r: BufferReader): DecodedAction {
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = r.readU8();
       return { action, message: new TextDecoder().decode(bytes) };
+    }
+    case ClientAction.ServerCommand: {
+      const cmdLen = r.readU8();
+      const cmdBytes = new Uint8Array(cmdLen);
+      for (let i = 0; i < cmdLen; i++) cmdBytes[i] = r.readU8();
+      const paramLen = r.readU16();
+      const paramBytes = new Uint8Array(paramLen);
+      for (let i = 0; i < paramLen; i++) paramBytes[i] = r.readU8();
+      return {
+        action,
+        command: new TextDecoder().decode(cmdBytes),
+        parameter: new TextDecoder().decode(paramBytes),
+      };
     }
     default:
       throw new Error(`Unknown client action: 0x${(action as number).toString(16)}`);

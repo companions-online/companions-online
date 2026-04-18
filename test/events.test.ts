@@ -242,18 +242,18 @@ describe('EventBuffer', () => {
 // --- EVENT_PRIORITY map ---
 
 describe('EVENT_PRIORITY', () => {
-  it('maps all 18 event types', () => {
+  it('maps all 19 event types', () => {
     const types: GameEventType[] = [
       'combat_hit_received', 'entity_died', 'player_died', 'player_respawned',
       'player_say', 'action_interrupted', 'creature_aggro',
       'combat_hit_dealt', 'harvest_yield', 'resource_depleted', 'item_picked_up',
       'craft_complete', 'trade_complete', 'item_cooked', 'consume_complete', 'building_placed',
-      'creature_fleeing', 'creature_died',
+      'creature_fleeing', 'creature_died', 'entity_meta_changed',
     ];
     for (const t of types) {
       expect(EVENT_PRIORITY[t]).toBeDefined();
     }
-    expect(Object.keys(EVENT_PRIORITY)).toHaveLength(18);
+    expect(Object.keys(EVENT_PRIORITY)).toHaveLength(19);
   });
 
   it('critical types are priority 0', () => {

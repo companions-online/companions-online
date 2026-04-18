@@ -1,3 +1,5 @@
+import type { MetaKey } from '@shared/entity-meta.js';
+
 // --- Priority ---
 
 export const enum EventPriority {
@@ -29,7 +31,8 @@ export type GameEventType =
   | 'building_placed'
   // Medium
   | 'creature_fleeing'
-  | 'creature_died';
+  | 'creature_died'
+  | 'entity_meta_changed';
 
 // --- Detail interfaces ---
 
@@ -158,6 +161,13 @@ export interface CreatureDiedDetails {
   tileY: number;
 }
 
+export interface EntityMetaChangedDetails {
+  entityId: number;
+  key: MetaKey;
+  oldValue?: string;
+  newValue: string;
+}
+
 // --- Discriminated union ---
 
 export type GameEventDetails =
@@ -178,7 +188,8 @@ export type GameEventDetails =
   | { type: 'consume_complete';     details: ConsumeCompleteDetails }
   | { type: 'building_placed';      details: BuildingPlacedDetails }
   | { type: 'creature_fleeing';     details: CreatureFleeingDetails }
-  | { type: 'creature_died';        details: CreatureDiedDetails };
+  | { type: 'creature_died';        details: CreatureDiedDetails }
+  | { type: 'entity_meta_changed';  details: EntityMetaChangedDetails };
 
 export type GameEvent = GameEventDetails & {
   priority: EventPriority;
@@ -207,6 +218,7 @@ export const EVENT_PRIORITY: Record<GameEventType, EventPriority> = {
   building_placed:     EventPriority.High,
   creature_fleeing:    EventPriority.Medium,
   creature_died:       EventPriority.Medium,
+  entity_meta_changed: EventPriority.Medium,
 };
 
 // --- EventBuffer ---
