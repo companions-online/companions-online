@@ -26,9 +26,9 @@ controls/cursor-context.ts  Build shared ActionContext from scene state (worldMa
 entities/client-entity.ts    ClientEntity interface — extends EntityComponents + visual state (visualX/Y, lerpFromX/Y, checkpointMs, spriteSheet, walkFrame).
 entities/from-network.ts     createEntityFromNetwork (factory dispatch by blueprint category) + applyComponentsToEntity (delta merge + lerp checkpoint).
 entities/creature-entity.ts  Creature/NPC factory. Tick: lerp visualX/Y, advance walk frame. Draw: 8-dir walk-cycle sheet.
-entities/static-entity.ts    Placeable/item/resource factory. Door draws 2×2 sheet + reads worldMap for facing.
-entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef. Unknown-entity fallback.
-entities/sprite-manifest.ts  Per-blueprint sheet metadata (name, frameW/H, footX/Y). Keyed off shared BlueprintType.
+entities/static-entity.ts    Placeable/item/resource factory. Three draw paths: door (2×2 facing+open), animated (sheet.animation → ticked walkFrame, col/row UV slice), single-frame.
+entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block). Unknown-entity fallback.
+entities/sprite-manifest.ts  Per-blueprint sheet metadata (name, frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType.
 entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns). begin(res, lightmap?) / setSpriteTile / setLit for lighting integration.
 entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap via u_spriteTileXY when u_lit=1.
 ```
