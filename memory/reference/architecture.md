@@ -138,10 +138,11 @@ Say is instant and does NOT cancel other actions (can chat while harvesting).
 
 Custom compact binary over WebSocket. Opcodes:
 - Client→Server: Action (variable payload for 17 action types), Ping
-- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen, ChatMessage
+- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen, ChatMessage, EnvironmentSync
 - Component bitmask delta compression — only changed components sent
 - RLE chunk compression for terrain
 - Chunk streaming: only viewport chunks on connect, stream as player moves
+- Environment section inside WorldDelta (gameMinute u16, weather u8) — emitted on keyframe-hour crossings, weather change, or forced resync after `setTickOffset`
 
 ## World Generation
 

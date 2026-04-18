@@ -38,6 +38,10 @@
 - **MCP session management** (create/destroy, session persistence)
 - **MCP CLI test tool** (`scripts/mcp.ts`, session file persistence, tool enumeration + execution)
 - **Server migration** from raw ws to Hono (MCP + WS + static on one port)
+- **Lighting + day/night** (shared keyframes, ambient tint, tickOffset on meta, twilight default, hourly env sync cadence)
+- **Point lights** (per-blueprint lightRadius/Color, per-target raycast with wall occlusion, 80×80 RGB8 lightmap window)
+- **Weather byte reserved** (wire field + GameWorld.weather, no rendering yet)
+- **Dashboard time-of-day display** (HH:MM in header, updated per second)
 
 **All 17 game actions + 19 MCP tools implemented.**
 
@@ -60,12 +64,14 @@ Test harness at `test/client-gl/` — vitest with mock GL and fakes; no
 browser needed for most work. Puppeteer reserved for actual rendering
 regressions. See `memory/clientgl/` for full orientation.
 
-## 217 Tests across 20 files — all passing
+## 268 Tests across 25 files — all passing
 
 ## Known Issues
 - Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds. Fix: lower to ~0.50
 - Large maps (1024+) still crawl on broadcastTick — O(entities×clients) visibility diff
 - All critter AI runs globally even for critters far from all players
+- Light ignores directional facing — walls uniformly tinted, no SW-face-in-shadow differentiation
+- Entity lightmap sample uses `visualX/Y` (float); tile-center-only is fine today but mid-tile interpolation during movement samples neighbors via LINEAR filter
 
 ## Queued Work
 

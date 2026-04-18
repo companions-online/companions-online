@@ -5,8 +5,8 @@ Everything under `client-webgl/src/`. Ordered by role, not alphabetically.
 ## Bootstrap + loop
 ```
 main.ts                  Bootstrap: createScene → connect → wireSceneToConnection → attachMouseControls → renderer.start.
-scene.ts                 Scene interface + createScene + chunk rebuild/eviction + all on* mutators.
-renderer.ts              RAF loop: drain dirty chunks, tick entities, terrain + Y-sorted sprite passes, HUD.
+scene.ts                 Scene interface + createScene + chunk rebuild/eviction + lighting manager + onEnvironmentSync mutator + all on* mutators.
+renderer.ts              RAF loop: drain dirty chunks, tick entities, scene.lighting.update(), terrain + Y-sorted sprite passes (lit), effects pass (unlit), HUD.
 ```
 
 ## Network
@@ -29,20 +29,26 @@ entities/creature-entity.ts  Creature/NPC factory. Tick: lerp visualX/Y, advance
 entities/static-entity.ts    Placeable/item/resource factory. Door draws 2×2 sheet + reads worldMap for facing.
 entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef. Unknown-entity fallback.
 entities/sprite-manifest.ts  Per-blueprint sheet metadata (name, frameW/H, footX/Y). Keyed off shared BlueprintType.
-entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns).
-entities/shaders.ts          Sprite VS/FS source strings.
+entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns). begin(res, lightmap?) / setSpriteTile / setLit for lighting integration.
+entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap via u_spriteTileXY when u_lit=1.
 ```
 
 ## Terrain (chunk-sparse)
 ```
 terrain/elevation.ts         buildElevationGridChunk(seed, worldMap, cx, cy) + getTileCornersLocal. Regenerated per chunk rebuild, not persisted.
-terrain/terrain-instances.ts buildChunkTerrainData — base (256) + overlay instances for one chunk. Reads 1-tile border.
-terrain/terrain-renderer.ts  GL terrain renderer. uploadInstances() full-replaces both buffers on any chunk change.
+terrain/terrain-instances.ts buildChunkTerrainData — base (256) + overlay instances for one chunk. Reads 1-tile border. Stride 48 base / 52 overlay; writes per-instance a_tileXY.
+terrain/terrain-renderer.ts  GL terrain renderer. uploadInstances() full-replaces both buffers on any chunk change. Binds lightmap to TEXTURE2; passes lightmap uniforms to both passes.
 terrain/texture.ts           generateRawTerrainTiles — procedural tile textures (OffscreenCanvas).
 terrain/texture-arrays.ts    buildTerrainTextureArray / buildMaskTextureArray — upload to texture arrays.
 terrain/blend-masks.ts       generateBlendMasks — blendomatic masks (CPU-only, static).
 terrain/terrain-blend.ts     gatherInfluences + pickAdjacentMaskId + pickDiagonalMaskIds (blendomatic math).
-terrain/shaders.ts           Terrain base + overlay VS/FS source strings.
+terrain/shaders.ts           Terrain base + overlay VS/FS source strings. FS multiplies final RGB by u_lightmap sample at v_tileXY.
+```
+
+## Lighting
+```
+lighting/lighting.ts         LightingManager — per-frame RGB lightmap (ambient + shadowcast point lights), uploaded as GL texture. Advances gameMinute locally between server syncs.
+lighting/shadowcast.ts       Per-target Bresenham raycast with blocker predicate (worldMap.isWalkable + collides-entities). Strictly correct wall occlusion.
 ```
 
 ## Buildings
@@ -74,6 +80,10 @@ test/client-gl/scene.test.ts            Scene mutators, entity factory dispatch,
 test/client-gl/interpolation.test.ts    Lerp math + re-checkpointing + walk frame animation.
 test/client-gl/controls.test.ts         cursor-context + resolveAction integration + attachMouseControls end-to-end.
 test/client-gl/inventory.test.ts        inventorySync + fishing-rod-on-water + container/dialogue/chat.
+test/client-gl/shadowcast.test.ts       Per-target raycast + blocker behavior, wall occlusion, target-lit-when-blocker.
+test/lighting.test.ts                   ambientTint keyframes + gameMinuteFromTick arithmetic.
+test/e2e/environment.test.ts            Env section emission on keyframe crossings + tickOffset force-resync + effectiveTick math.
+test/persistence.test.ts                Save/load round-trips tickOffset + new-world seeds twilight + legacy-save compat.
 ```
 
 ## Assets + HTML

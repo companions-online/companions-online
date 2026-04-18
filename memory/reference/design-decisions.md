@@ -77,3 +77,23 @@
 **E2E tests use GameWorld directly** — `createTestWorld()` + `addTestPlayer()` + `world.setAction()` + `world.runTicks(n)`.
 
 **MCP E2E tests use real HTTP** — Hono server on random port, MCP SDK Client + StreamableHTTPClientTransport.
+
+## Lighting
+
+**Time-of-day derived, not stored.** `gameMinute = gameMinuteFromTick(currentTick + tickOffset)`. Shared-code derivation means client and server compute the same value from the same inputs. Only `tickOffset` (init + runtime shifts) is persisted — not `gameMinute`.
+
+**`effectiveTick` split from `currentTick`.** `currentTick` stays a monotonic "real ticks elapsed" counter — consumed by respawn timers, event ages, save `meta.tick`. `effectiveTick = currentTick + tickOffset` feeds ONLY the time-of-day formula.
+
+**Env delta cadence.** `broadcastTick` emits an Environment section only on keyframe-hour crossings (4/5/6/18/19/20) or on `weather` change — day/night flat spans stay silent. Client extrapolates `gameMinute` locally via wall-clock between syncs. `setTickOffset` resets `_lastEnvEmitHour = -1` to force an immediate resync.
+
+**New worlds start at twilight.** `createNewWorld` seeds `tickOffset = 19 * TICKS_PER_GAME_HOUR` (mid-sunset). Immediate visual interest; no 2-minute wait for the first keyframe.
+
+**Point-light emission on shared Blueprint.** `lightRadius` / `lightColor` live on `Blueprint` even though the server ignores them today — so future server-side AI (wolves fearing campfires) can read them without a schema migration.
+
+**Per-target raycast over recursive shadowcasting.** Simpler (~40 lines), strictly correct (no around-corner bleed), cheap at radius 6 (~O(r³) = ~1300 ops per light, negligible).
+
+**Lightmap window, not whole map.** `80×80` tile-resolution RGB8 texture around the player, re-origins on >8-tile drift. ~19 KB; full-replace per frame. `LINEAR` filter gives smooth gradients at tile edges without losing the tile-grid feel.
+
+**Walls + collides are lit but block.** The blocker predicate stops light from passing *through* them, but the endpoint tile is always visited — so a wall adjacent to a campfire glows. Required the wall-sprite face-top `Math.floor` fix to prevent 1-px seams leaking lit floor through rasterization holes.
+
+**Effects stay unlit.** Damage numbers, chat bubbles, pickup text use `spriteRenderer.begin(res)` without the lightmap arg → `u_lit = 0`, FS short-circuits the multiply. They're UI-ish and should read as foreground.

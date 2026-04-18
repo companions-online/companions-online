@@ -121,3 +121,56 @@ When in doubt about what a client should do with a server message,
 read `cli/`. It's feature-complete (it has the UI the webgl client
 lacks). Same decoded message types, same shared resolveAction, same
 inventory semantics.
+
+## Lighting: wall-sprite face predicate uses Math.floor
+
+`wall-texture.ts`'s `inLeftFace`/`inRightFace` use `Math.floor(topY)`.
+Without it, the diamond predicate (`|.|/W + |.|/H <= 1` with +0.5
+pixel-center offset) and the face predicate (raw float `topY`) disagree
+at row 31 cols 31/33 — 1-px transparent holes that revealed lit floor
+through the wall. Seams of warm light show up when a campfire is
+nearby. `Math.floor` starts the face one row earlier so the regions
+overlap.
+
+## Lighting: entity draw paths must `setSpriteTile` before drawing
+
+The sprite FS samples the lightmap at `u_spriteTileXY` — a per-draw
+uniform. Every draw path in `creature-entity.ts`, `static-entity.ts`,
+and `buildings/wall-sprites.ts` calls `sprites.setSpriteTile(tileX,
+tileY)` immediately before `drawSprite()`. Forgetting leaves the
+previous draw's tile coords in place.
+
+## Lighting: effects pass stays unlit via no-lightmap begin()
+
+`effects/effect.ts` calls `sprites.begin(resolution)` WITHOUT the
+optional lightmap arg. That drops `u_lit` to 0 and the FS skips the
+multiply. Damage numbers, chat bubbles, pickup text render at full
+brightness regardless of ambient tint. Don't "fix" by passing the
+lightmap — you'll dim the UI.
+
+## Lighting: walls + collides-entities block light but are themselves lit
+
+Blocker predicate: `!worldMap.isWalkable(x,y) || blockers.has(tile)`
+where blockers = entities with `blueprint.collides && !(statusEffects
+& Open)`. A wall adjacent to a campfire: the line from fire to wall
+has no intermediate tiles, so the wall IS visited and gets its full
+tint. Walls BEHIND that wall have the adjacent wall as a blocker and
+stay dark. Relies on the seam fix above to not leak light through
+sprite gaps.
+
+## Lighting: terrain per-instance tileXY, not VS-derived
+
+Instance stride grew: base 40→48, overlay 44→52. Per-instance
+`a_tileXY: vec2` feeds the FS via `v_tileXY`. Could not derive tile
+coords in the VS from corner positions because elevation is baked into
+`cornerY`; the inverse is ambiguous. Simpler to pass explicit tile
+coords.
+
+## Lighting: tickOffset vs currentTick
+
+`world.currentTick` is real ticks elapsed (for respawn timers, event
+ages, save `meta.tick`). `world.effectiveTick = currentTick +
+tickOffset` is what feeds the day/night formula. Only the time-of-day
+path should read `effectiveTick`. New worlds start at
+`TWILIGHT_TICK_OFFSET = 19 * TICKS_PER_GAME_HOUR` so the first scene
+isn't pitch-black.

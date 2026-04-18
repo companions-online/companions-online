@@ -3,9 +3,10 @@
 ## shared/src/
 ```
 index.ts                 Barrel re-export of everything
-constants.ts             TICK_RATE=20, MAP_SIZE=128, CHUNK_SIZE=16, VIEW/INTEREST_RANGE, SPAWN
+constants.ts             TICK_RATE=20, MAP_SIZE=128, CHUNK_SIZE=16, VIEW/INTEREST_RANGE, SPAWN, TICKS_PER_GAME_MINUTE/HOUR, GAME_MINUTES_PER_DAY, TICKS_PER_GAME_DAY
+lighting.ts              Day/night keyframes, ambientTint, gameMinuteFromTick/gameHourFromTick, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET
 actions.ts               ActionType enum (Idle..Consuming), ClientAction enum (Cancel..Say, 17 total)
-blueprints.ts            Blueprint interface + ~35 types, blueprintToBuilding() mapping
+blueprints.ts            Blueprint interface + ~35 types, blueprintToBuilding() mapping (+ optional lightRadius, lightColor on Blueprint; Campfire sets both)
 recipes.ts               17 crafting recipes (tools, weapons, armor, placeables, bandage)
 inventory.ts             InventoryItem/Inventory types, pure helpers (getWeight, canCraft, equipSlot conversions)
 loot-tables.ts           Drop tables per creature (deer→hide+meat, skeleton→iron+rock, etc.)
@@ -17,7 +18,7 @@ coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
 terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open)
-protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage
+protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EnvironmentSync; DeltaSectionTag.Environment
 protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types, DecodedAction union
 protocol/index.ts        Barrel re-export
 world/noise.ts           Seeded 2D Perlin noise (PerlinNoise class)
@@ -30,14 +31,15 @@ world/index.ts           Barrel re-export
 ```
 main.ts                  Entry: createDefaultWorld + Hono server + GameLoop (~40 lines)
 app.ts                   Hono app factory: MCP routes + WS upgrade + static serving
-game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission
+game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission; weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings
 system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
 player-connection.ts     PlayerConnection interface (8 methods incl onGameEvent) + TickDelta + GameWorldView
 events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out
 occupancy.ts             OccupancyGrid (Uint16Array tile→entityId)
 inventory-manager.ts     InventoryManager class (add/remove/equip/craft/drop/transfer)
 telemetry.ts             Telemetry class (per-phase timing, network bytes, rolling averages)
-dashboard.ts             ANSI telemetry dashboard rendering
+dashboard.ts             ANSI telemetry dashboard rendering; shows in-game time HH:MM in header
+world-persistence.ts     saveWorld/loadWorld/createNewWorld; tickOffset on meta, createNewWorld seeds TWILIGHT_TICK_OFFSET
 npc-dialogues.ts         Static dialogue trees + trade offers for Hermit, Trader, Wanderer
 mcp-tools.ts             19 MCP tool registrations (15 action + 4 query)
 mcp-session.ts           MCP session lifecycle (create/destroy/lookup, session Map)
@@ -51,7 +53,7 @@ systems/consumable.ts    Channeled healing, single-use, interruptible → return
 systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }
 systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]
 systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay)
-connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting)
+connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting); sends EnvironmentSync on welcome + environment delta section in onTick
 connections/headless-connection.ts HeadlessConnection (test spy, captures events + gameEvents)
 connections/mcp-connection.ts     MCP PlayerConnection (live world ref, EventBuffer, action blocking via awaitAction/onTick)
 ```
@@ -100,5 +102,9 @@ e2e/npc.test.ts          NPC dialogue, trade, Hermit first-time gift
 e2e/consumable.test.ts   Bandage/food healing, interruption, HP cap
 e2e/chat.test.ts         Say broadcast, range filtering, non-interruption
 e2e/events.test.ts       Event emission from all 18 event types through real game actions
+e2e/environment.test.ts  Env sync emission cadence + tickOffset behavior + effectiveTick math
 e2e/mcp-e2e.test.ts      Real server E2E: MCP client → HTTP → tools → game → response format
+lighting.test.ts         Keyframe interpolation + gameMinute math
+persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight seed
+client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
 ```

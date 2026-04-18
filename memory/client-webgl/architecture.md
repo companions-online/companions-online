@@ -174,6 +174,40 @@ injectable via `CreateSceneOptions.spriteRegistry`.
 Puppeteer probes + devtools console use these. Left in place during
 development.
 
+## Lighting
+
+Runs as a third concern alongside terrain and sprite rendering. Each
+frame the renderer:
+
+1. Calls `scene.lighting.update(playerTile, entities, worldMap, now)`
+   which rebuilds a `80×80` RGB8 lightmap texture on the CPU and
+   uploads it via `texSubImage2D`.
+2. Passes the lightmap texture + origin + size to
+   `terrainRenderer.render()` for the base + overlay passes.
+3. Passes the same binding to `spriteRenderer.begin()` for the
+   Y-sorted sprite pass (entities + walls). Each draw uses
+   `setSpriteTile(tileX, tileY)` so the FS samples the lightmap at the
+   sprite's foot.
+4. Calls `spriteRenderer.begin(resolution)` WITHOUT the lightmap for
+   the effects pass — `u_lit = 0`, UI stays bright.
+
+Lightmap composition (`LightingManager.update`):
+- Fill with ambient RGB from `ambientTint(gameMinute)` —
+  `shared/src/lighting.ts` keyframes (deep-night / mid-sunrise / day /
+  mid-sunset).
+- Build blocker set from non-walkable tiles + collides-entities
+  (closed doors exclude themselves via `StatusEffect.Open`).
+- For each entity with `blueprint.lightRadius > 0`: `shadowcast(...)`
+  adds `color * (1 - distSq/r²)` to visited tiles. `Uint8ClampedArray`
+  handles saturation.
+
+`gameMinute` advances locally between server syncs. On
+`EnvironmentSync` (welcome + forced resyncs + keyframe-hour crossings)
+the client stamps `baseGameMinute = received` at `performance.now()`
+and extrapolates with `elapsed / REAL_MS_PER_GAME_MINUTE`.
+
+See [lighting.md](lighting.md) for the full pipeline.
+
 ## What doesn't live here (yet)
 
 - **HUD / inventory UI / status bar / dialogue UI / cursor hover.**
