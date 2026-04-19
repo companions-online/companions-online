@@ -69,6 +69,7 @@ async function runCommand(client: Client, toolName: string | undefined, toolArgs
       console.log(`  ${tool.name.padEnd(20)} ${tool.description ?? ''}`);
       if (params) console.log(`  ${''.padEnd(20)}   ${params}`);
     }
+    console.log('\nNote: call `identify name=<displayName>` first in a new session.');
     return;
   }
   const result = await client.callTool({ name: toolName, arguments: toolArgs });

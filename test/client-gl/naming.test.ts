@@ -50,9 +50,9 @@ describe('keyboard /command parsing', () => {
   }
 
   it('plain message submits as Say', async () => {
-    const { conn } = await createTestScene();
+    const { scene, conn } = await createTestScene();
     const { canvas, fire } = makeFakeCanvas();
-    const state = attachKeyboardControls(canvas, conn);
+    const state = attachKeyboardControls(canvas, conn, scene);
 
     fire('Enter');
     expect(state.chatActive).toBe(true);
@@ -65,9 +65,9 @@ describe('keyboard /command parsing', () => {
   });
 
   it('/nick foo submits as ServerCommand', async () => {
-    const { conn } = await createTestScene();
+    const { scene, conn } = await createTestScene();
     const { canvas, fire } = makeFakeCanvas();
-    attachKeyboardControls(canvas, conn);
+    attachKeyboardControls(canvas, conn, scene);
 
     fire('Enter');
     typeSeq(fire, '/nick foo');
@@ -80,9 +80,9 @@ describe('keyboard /command parsing', () => {
   });
 
   it('/command with no parameter submits with empty parameter', async () => {
-    const { conn } = await createTestScene();
+    const { scene, conn } = await createTestScene();
     const { canvas, fire } = makeFakeCanvas();
-    attachKeyboardControls(canvas, conn);
+    attachKeyboardControls(canvas, conn, scene);
 
     fire('Enter');
     typeSeq(fire, '/who');
@@ -95,9 +95,9 @@ describe('keyboard /command parsing', () => {
   });
 
   it('/command with multi-word parameter preserves spaces', async () => {
-    const { conn } = await createTestScene();
+    const { scene, conn } = await createTestScene();
     const { canvas, fire } = makeFakeCanvas();
-    attachKeyboardControls(canvas, conn);
+    attachKeyboardControls(canvas, conn, scene);
 
     fire('Enter');
     typeSeq(fire, '/say hello world how are you');
@@ -105,5 +105,27 @@ describe('keyboard /command parsing', () => {
 
     expect(conn.sent).toHaveLength(1);
     expect((conn.sent[0] as any).parameter).toBe('hello world how are you');
+  });
+
+  it('I toggles scene.inventoryOpen; Esc closes; held stack drops on close', async () => {
+    const { scene, conn } = await createTestScene();
+    const { canvas, fire } = makeFakeCanvas();
+    attachKeyboardControls(canvas, conn, scene);
+
+    fire('i');
+    expect(scene.inventoryOpen).toBe(true);
+    fire('i');
+    expect(scene.inventoryOpen).toBe(false);
+
+    // Open, fake a held stack, close with Esc → expect a Drop with quantity.
+    fire('i');
+    scene.heldStack = { itemId: 42, blueprintId: 1, quantity: 3, source: 'inventory' };
+    fire('Escape');
+    expect(scene.inventoryOpen).toBe(false);
+    expect(scene.heldStack).toBeNull();
+    expect(conn.sent).toHaveLength(1);
+    expect(conn.sent[0].action).toBe(ClientAction.Drop);
+    expect((conn.sent[0] as any).itemId).toBe(42);
+    expect((conn.sent[0] as any).quantity).toBe(3);
   });
 });

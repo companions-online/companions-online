@@ -21,6 +21,8 @@ import type { Scene } from '../scene.js';
 import type { ClientEntity } from '../entities/client-entity.js';
 import type { Connection } from '../network/connection.js';
 import { buildCursorContext, buildContextFromEntity } from './cursor-context.js';
+import { hitTestInventoryPanel, handleInventoryPanelClick } from '../ui/inventory-panel.js';
+import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
 
 function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
   if (action.action !== ClientAction.MoveTo) return;
@@ -61,10 +63,39 @@ export function attachMouseControls(
   scene: Scene,
   connection: Connection,
 ): void {
+  // Suppress the native context menu so right-click on the canvas becomes
+  // our own input gesture (split-stack, drop-one, cancel placement).
+  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+  // Track cursor position in canvas pixels. Consumed by the ghost-sprite
+  // draw path (inventory held stack) and placement-mode preview.
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    const cy = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    scene.cursorScreenX = cx;
+    scene.cursorScreenY = cy;
+    updatePlacementHover(scene, cx, cy);
+  });
+
   canvas.addEventListener('mousedown', (ev) => {
     const rect = canvas.getBoundingClientRect();
     const cx = (ev.clientX - rect.left) * (canvas.width / rect.width);
     const cy = (ev.clientY - rect.top) * (canvas.height / rect.height);
+
+    const button = ev.button === 2 ? 'right' : 'left';
+
+    // Inventory panel swallows all world input while open.
+    if (scene.inventoryOpen) {
+      const hit = hitTestInventoryPanel(cx, cy, scene);
+      handleInventoryPanelClick(scene, connection, hit, { button, shift: ev.shiftKey });
+      return;
+    }
+
+    // Placement mode: equipped placeable → click-to-place, right-click to cancel.
+    if (isPlacementActive(scene)) {
+      if (handlePlacementClick(scene, connection, button)) return;
+    }
 
     if (scene.myEntityId === null) return;
 

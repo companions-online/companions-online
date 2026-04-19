@@ -10,6 +10,7 @@ import type { TextSurface, TextSurfaceFactory } from '../effects/text-surface.js
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
+import { drawInventoryPanel, drawHeldCursor } from './inventory-panel.js';
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
@@ -66,7 +67,7 @@ export function drawHud(
 ): void {
   const factory = scene.textSurfaceFactory;
   const needSprites =
-    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel);
+    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || scene.inventoryOpen;
 
   if (!needSprites) return;
 
@@ -137,6 +138,13 @@ export function drawHud(
       cachedDebug.surface.width, cachedDebug.surface.height,
       0, 0, 1, 1,
     );
+  }
+
+  // --- Inventory panel (overlays everything else when open) ---
+  if (scene.inventoryOpen) {
+    drawInventoryPanel(gl, scene, sprites, factory);
+    // Held-stack ghost follows the mouse on top of the panel.
+    drawHeldCursor(gl, scene, sprites, factory);
   }
 
   sprites.end();

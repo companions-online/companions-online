@@ -19,7 +19,7 @@ checkGLError(gl, 'after scene init');
 const conn = connect();
 wireSceneToConnection(scene, conn);
 attachMouseControls(canvas, scene, conn);
-const keyboard = attachKeyboardControls(canvas, conn);
+const keyboard = attachKeyboardControls(canvas, conn, scene);
 
 const renderer = createRenderer(canvas, scene, keyboard);
 renderer.start();

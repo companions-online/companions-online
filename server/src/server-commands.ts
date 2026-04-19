@@ -30,21 +30,31 @@ export function dispatchServerCommand(
   return handler(world, eid, slot, parameter);
 }
 
-// --- Built-in commands ---
+// --- Name validation (shared with MCP identify tool) ---
 
-const NICK_PATTERN = /^[A-Za-z0-9_\-]+$/;
-const NICK_MIN = 1;
-const NICK_MAX = 16;
+export const NICK_PATTERN = /^[A-Za-z0-9_\-]+$/;
+export const NICK_MIN = 1;
+export const NICK_MAX = 16;
 
-const handleNick: ServerCommandHandler = (world, eid, _slot, parameter) => {
-  const nick = parameter.trim();
-  if (nick.length < NICK_MIN || nick.length > NICK_MAX) {
+export type NameValidation = { ok: true; name: string } | { ok: false; error: string };
+
+export function validateName(raw: string): NameValidation {
+  const name = raw.trim();
+  if (name.length < NICK_MIN || name.length > NICK_MAX) {
     return { ok: false, error: `name must be ${NICK_MIN}-${NICK_MAX} characters` };
   }
-  if (!NICK_PATTERN.test(nick)) {
+  if (!NICK_PATTERN.test(name)) {
     return { ok: false, error: 'name must be letters, digits, underscore, or hyphen' };
   }
-  world.setEntityMeta(eid, MetaKey.Name, nick);
+  return { ok: true, name };
+}
+
+// --- Built-in commands ---
+
+const handleNick: ServerCommandHandler = (world, eid, _slot, parameter) => {
+  const check = validateName(parameter);
+  if (!check.ok) return { ok: false, error: check.error };
+  world.setEntityMeta(eid, MetaKey.Name, check.name);
   return { ok: true };
 };
 

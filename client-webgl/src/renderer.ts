@@ -10,6 +10,7 @@ import type { Scene } from './scene.js';
 import type { KeyboardState } from './controls/keyboard.js';
 import type { TextSurface } from './effects/text-surface.js';
 import { drawHud } from './ui/hud.js';
+import { drawPlacementGhost } from './ui/placement.js';
 
 const NAMEPLATE_FONT_PX = 11;
 const HP_BAR_W = 24;
@@ -40,7 +41,9 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
   const gameResolution: [number, number] = [CANVAS_W / GAME_ZOOM, CANVAS_H / GAME_ZOOM];
   const hudResolution: [number, number] = [CANVAS_W, CANVAS_H];
 
-  // Mouse position tracking for debug overlay.
+  // Mouse position tracking for debug overlay. `scene.cursorScreenX/Y`
+  // is also kept in sync by attachMouseControls — these locals are only
+  // for the debug hit-test path below.
   let mouseCanvasX = 0;
   let mouseCanvasY = 0;
   canvas.addEventListener('mousemove', (ev) => {
@@ -48,6 +51,15 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     mouseCanvasX = (ev.clientX - rect.left) * (canvas.width / rect.width);
     mouseCanvasY = (ev.clientY - rect.top) * (canvas.height / rect.height);
   });
+
+  let lastCursorStyle: string | null = null;
+  function syncCursorStyle() {
+    const want = scene.heldStack ? 'none' : '';
+    if (want !== lastCursorStyle) {
+      canvas.style.cursor = want;
+      lastCursorStyle = want;
+    }
+  }
 
   function frame(now: number) {
     const dt = lastTime === 0 ? 0 : (now - lastTime) / 1000;
@@ -147,6 +159,14 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     scene.effects.tick(scene);
     scene.effects.draw(scene.spriteRenderer, gl, offsetX, offsetY, scene, gameResolution);
 
+    // Placement ghost — drawn unlit in game space, after effects, so the
+    // preview always sits on top of terrain / entities / walls.
+    if (scene.placementHoverTile) {
+      scene.spriteRenderer.begin(gameResolution);
+      drawPlacementGhost(gl, scene, scene.spriteRenderer, offsetX, offsetY);
+      scene.spriteRenderer.end();
+    }
+
     gl.disable(gl.SCISSOR_TEST);
 
     // Debug overlay: resolve action under mouse cursor.
@@ -180,6 +200,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     }
 
     drawHud(gl, scene, scene.spriteRenderer, keyboard, hudResolution, debugLabel);
+    syncCursorStyle();
 
     requestAnimationFrame(frame);
   }

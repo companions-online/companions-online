@@ -132,3 +132,54 @@ describe('containerOpen / dialogueOpen / chatMessage', () => {
     expect(scene.chatLog[scene.chatLog.length - 1].message).toBe('m59');
   });
 });
+
+describe('inventory UI state', () => {
+  it('gridOrder assigns slot indices on first sync', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [
+        { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 5, equippedSlot: 0 },
+        { itemId: 2, blueprintId: BlueprintType.Rock, quantity: 3, equippedSlot: 0 },
+      ],
+    });
+    expect(scene.gridOrder.get(1)).toBe(0);
+    expect(scene.gridOrder.get(2)).toBe(1);
+  });
+
+  it('gridOrder preserves positions across syncs', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [
+        { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 5, equippedSlot: 0 },
+        { itemId: 2, blueprintId: BlueprintType.Rock, quantity: 3, equippedSlot: 0 },
+        { itemId: 3, blueprintId: BlueprintType.Hide, quantity: 2, equippedSlot: 0 },
+      ],
+    });
+    // Item 2 removed; item 3 still present; new item 4 should take slot 1 (freed).
+    conn.deliver({
+      type: 'inventorySync',
+      items: [
+        { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 5, equippedSlot: 0 },
+        { itemId: 3, blueprintId: BlueprintType.Hide, quantity: 2, equippedSlot: 0 },
+        { itemId: 4, blueprintId: BlueprintType.RawMeat, quantity: 1, equippedSlot: 0 },
+      ],
+    });
+    expect(scene.gridOrder.has(2)).toBe(false);
+    expect(scene.gridOrder.get(1)).toBe(0);
+    expect(scene.gridOrder.get(3)).toBe(2);
+    expect(scene.gridOrder.get(4)).toBe(1);
+  });
+
+  it('heldStack cleared when its source itemId disappears', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 1, blueprintId: BlueprintType.Wood, quantity: 5, equippedSlot: 0 }],
+    });
+    scene.heldStack = { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 2, source: 'inventory' };
+    conn.deliver({ type: 'inventorySync', items: [] });
+    expect(scene.heldStack).toBeNull();
+  });
+});

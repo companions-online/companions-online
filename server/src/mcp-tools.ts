@@ -3,21 +3,46 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ClientAction } from '@shared/actions.js';
 import { EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from '@shared/inventory.js';
 import { getBlueprint } from '@shared/blueprints.js';
+import { MetaKey } from '@shared/entity-meta.js';
 import type { McpConnection } from './connections/mcp-connection.js';
 import type { GameWorld } from './game-world.js';
-import { dispatchServerCommand } from './server-commands.js';
+import { dispatchServerCommand, validateName } from './server-commands.js';
+import { setSessionEntity } from './mcp-session.js';
 import {
   formatEnvelope, ResponseShape,
   formatInventory, formatRecipes, formatContainer, formatEvents,
 } from './mcp-formatters.js';
 
-function text(t: string) {
-  return { content: [{ type: 'text' as const, text: t }] };
+function text(t: string, opts?: { isError?: boolean }) {
+  const result: { content: { type: 'text'; text: string }[]; isError?: boolean } = {
+    content: [{ type: 'text' as const, text: t }],
+  };
+  if (opts?.isError) result.isError = true;
+  return result;
 }
+
+const NOT_IDENTIFIED = text(
+  '[error] not identified — call identify(name) first',
+  { isError: true },
+);
 
 const SLOT_MAP: Record<string, number> = { hand: EQUIP_SLOT_HAND, body: EQUIP_SLOT_BODY, head: EQUIP_SLOT_HEAD };
 
 export function registerTools(server: McpServer, conn: McpConnection, world: GameWorld): void {
+
+  // Wraps a tool handler with the identify guard. Anything registered via this
+  // helper returns NOT_IDENTIFIED when conn.entityId === 0.
+  function guarded<A extends Record<string, any>>(
+    name: string,
+    description: string,
+    schema: any,
+    handler: (args: A) => Promise<ReturnType<typeof text>> | ReturnType<typeof text>,
+  ) {
+    server.tool(name, description, schema, async (args: A) => {
+      if (conn.entityId === 0) return NOT_IDENTIFIED;
+      return handler(args);
+    });
+  }
 
   async function doAction(action: Record<string, unknown>, summary: string, shape: ResponseShape) {
     world.setAction(conn.entityId, action as any);
@@ -26,19 +51,44 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     return text(formatEnvelope(conn, `${statusPrefix}${summary}`, shape));
   }
 
+  // --- Identify (only tool that skips the guard) ---
+
+  server.tool('identify',
+    'Register your player. Must be called before any other tool. Takes a display name (1-16 chars; letters, digits, underscore, or hyphen).',
+    { name: z.string() },
+    async ({ name }) => {
+      if (conn.entityId !== 0) {
+        const existing = world.getEntityMeta(conn.entityId, MetaKey.Name) ?? 'unknown';
+        return text(
+          `[error] already identified as "${existing}"; use server_command(nick, <newName>) to rename`,
+          { isError: true },
+        );
+      }
+      const check = validateName(name);
+      if (!check.ok) return text(`[error] ${check.error}`, { isError: true });
+
+      const entityId = world.addPlayer(conn);
+      world.setEntityMeta(entityId, MetaKey.Name, check.name);
+      if (conn.sessionId) setSessionEntity(conn.sessionId, entityId);
+      conn.entityId = entityId;
+
+      return text(formatEnvelope(conn, `Identified as ${check.name}`, ResponseShape.Full));
+    },
+  );
+
   // --- Action tools ---
 
-  server.tool('move_to', 'Move to a tile. Blocks until arrival.',
+  guarded('move_to', 'Move to a tile. Blocks until arrival.',
     { x: z.number().int(), y: z.number().int() },
     async ({ x, y }) => doAction({ action: ClientAction.MoveTo, tileX: x, tileY: y }, `Move to (${x},${y})`, ResponseShape.Full),
   );
 
-  server.tool('attack', 'Attack an entity. Blocks until target or player dies.',
+  guarded('attack', 'Attack an entity. Blocks until target or player dies.',
     { entity_id: z.number().int() },
     async ({ entity_id }) => doAction({ action: ClientAction.Attack, entityId: entity_id }, `Attack #${entity_id}`, ResponseShape.Full),
   );
 
-  server.tool('harvest',
+  guarded('harvest',
     'Harvest a resource tile (tree/rock/water). Harvests up to the server cap or until the target is depleted / inventory full.',
     { x: z.number().int(), y: z.number().int() },
     async ({ x, y }) => {
@@ -52,7 +102,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     },
   );
 
-  server.tool('pickup', 'Pick up a ground item. Auto-pathfinds if not adjacent.',
+  guarded('pickup', 'Pick up a ground item. Auto-pathfinds if not adjacent.',
     { entity_id: z.number().int() },
     async ({ entity_id }) => {
       const pre = world.entities.position.get(conn.entityId);
@@ -65,7 +115,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     },
   );
 
-  server.tool('interact', 'Interact with an entity (door, chest, NPC). Auto-pathfinds if not adjacent.',
+  guarded('interact', 'Interact with an entity (door, chest, NPC). Auto-pathfinds if not adjacent.',
     { entity_id: z.number().int() },
     async ({ entity_id }) => {
       const preDialogue = conn.dialogueState;
@@ -81,32 +131,32 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     },
   );
 
-  server.tool('use_consumable', 'Use a consumable item (bandage, food). Blocks until healing finishes.',
+  guarded('use_consumable', 'Use a consumable item (bandage, food). Blocks until healing finishes.',
     { item_id: z.number().int() },
     async ({ item_id }) => doAction({ action: ClientAction.UseConsumable, itemId: item_id }, `Use consumable #${item_id}`, ResponseShape.SelfInv),
   );
 
-  server.tool('equip', 'Equip an inventory item.',
+  guarded('equip', 'Equip an inventory item.',
     { item_id: z.number().int() },
     async ({ item_id }) => doAction({ action: ClientAction.Equip, itemId: item_id }, `Equip #${item_id}`, ResponseShape.SelfInv),
   );
 
-  server.tool('unequip', 'Unequip an item from a slot.',
+  guarded('unequip', 'Unequip an item from a slot.',
     { slot: z.enum(['hand', 'body', 'head']) },
     async ({ slot }) => doAction({ action: ClientAction.Unequip, slot: SLOT_MAP[slot] }, `Unequip ${slot}`, ResponseShape.SelfInv),
   );
 
-  server.tool('drop', 'Drop an inventory item on the ground.',
+  guarded('drop', 'Drop an inventory item on the ground.',
     { item_id: z.number().int() },
     async ({ item_id }) => doAction({ action: ClientAction.Drop, itemId: item_id }, `Drop #${item_id}`, ResponseShape.SelfInv),
   );
 
-  server.tool('craft', 'Craft a recipe by ID. Use get_recipes to see available recipes.',
+  guarded('craft', 'Craft a recipe by ID. Use get_recipes to see available recipes.',
     { recipe_id: z.number().int() },
     async ({ recipe_id }) => doAction({ action: ClientAction.Craft, recipeId: recipe_id }, `Craft recipe ${recipe_id}`, ResponseShape.SelfInv),
   );
 
-  server.tool('use_item_at', 'Use equipped item at a tile (cook at campfire, place building).',
+  guarded('use_item_at', 'Use equipped item at a tile (cook at campfire, place building).',
     { item_id: z.number().int(), x: z.number().int(), y: z.number().int() },
     async ({ item_id, x, y }) => {
       const inv = world.inventoryMgr.get(conn.entityId);
@@ -120,7 +170,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     },
   );
 
-  server.tool('transfer', 'Transfer item to/from a container. Must interact with container first.',
+  guarded('transfer', 'Transfer item to/from a container. Must interact with container first.',
     { item_id: z.number().int(), container_id: z.number().int(), direction: z.enum(['to', 'from']) },
     async ({ item_id, container_id, direction }) => doAction(
       { action: ClientAction.Transfer, itemId: item_id, containerId: container_id, direction: direction === 'to' ? 0 : 1 },
@@ -129,7 +179,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     ),
   );
 
-  server.tool('dialogue_select', 'Select a dialogue option when talking to an NPC.',
+  guarded('dialogue_select', 'Select a dialogue option when talking to an NPC.',
     { npc_entity_id: z.number().int(), option_id: z.number().int() },
     async ({ npc_entity_id, option_id }) => doAction(
       { action: ClientAction.DialogueSelect, npcEntityId: npc_entity_id, optionId: option_id },
@@ -137,7 +187,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     ),
   );
 
-  server.tool('trade', 'Execute a trade with an NPC by trade ID.',
+  guarded('trade', 'Execute a trade with an NPC by trade ID.',
     { npc_entity_id: z.number().int(), trade_id: z.number().int() },
     async ({ npc_entity_id, trade_id }) => doAction(
       { action: ClientAction.Trade, npcEntityId: npc_entity_id, tradeId: trade_id },
@@ -145,40 +195,43 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     ),
   );
 
-  server.tool('say', 'Send a chat message to nearby players.',
+  guarded('say', 'Send a chat message to nearby players.',
     { message: z.string().max(200) },
     async ({ message }) => doAction({ action: ClientAction.Say, message }, `Say: "${message}"`, ResponseShape.Social),
   );
 
-  server.tool('server_command',
+  guarded('server_command',
     'Run a server command. Available: nick/name <displayName>.',
     { command: z.string(), parameter: z.string() },
     async ({ command, parameter }) => {
-      const slot = world.players.get(conn.entityId);
-      if (!slot) return text('[error] no active player slot');
+      const slot = world.players.get(conn.entityId)!;
       const result = dispatchServerCommand(world, conn.entityId, slot, command, parameter);
-      const summary = result.ok
-        ? `/${command} ${parameter}`
-        : `[error] ${result.error}`;
-      return text(formatEnvelope(conn, summary, ResponseShape.Meta));
+      if (!result.ok) {
+        return text(`[error] ${result.error}`, { isError: true });
+      }
+      return text(formatEnvelope(conn, `/${command} ${parameter}`, ResponseShape.Meta));
     },
   );
 
   // --- Query tools ---
 
-  server.tool('get_surroundings', 'Look around. Returns status, ASCII map, nearby entities, terrain, and events.',
+  guarded('get_surroundings', 'Look around. Returns status, ASCII map, nearby entities, terrain, and events.',
+    {},
     async () => text(formatEnvelope(conn, null, ResponseShape.Full)),
   );
 
-  server.tool('get_inventory', 'View inventory with item IDs, equipment slots, and weight.',
+  guarded('get_inventory', 'View inventory with item IDs, equipment slots, and weight.',
+    {},
     async () => text(formatInventory(conn) + '\n\n' + formatEvents(conn)),
   );
 
-  server.tool('get_recipes', 'List craftable recipes (only those you have materials for).',
+  guarded('get_recipes', 'List craftable recipes (only those you have materials for).',
+    {},
     async () => text(formatRecipes(conn) + '\n\n' + formatEvents(conn)),
   );
 
-  server.tool('get_container', 'View contents of the last opened container.',
+  guarded('get_container', 'View contents of the last opened container.',
+    {},
     async () => text(formatContainer(conn) + '\n\n' + formatEvents(conn)),
   );
 }

@@ -218,9 +218,8 @@ export class GameWorld implements SystemState {
     this.inventoryMgr.addItem(eid, BlueprintType.Wood, 2);
     this.inventoryMgr.addItem(eid, BlueprintType.Rock, 1);
 
-    // Default display name. Direct mutation — no broadcast, no event; the
-    // name will ride along with the first EntityFullState via sendMetaFor.
-    this.entityMeta.set(eid, new Map([[MetaKey.Name, 'Player']]));
+    // No default name — each caller decides via setEntityMeta so the change
+    // broadcasts to nearby players and emits entity_meta_changed.
 
     const slot: PlayerSlot = {
       entityId: eid,
@@ -240,17 +239,9 @@ export class GameWorld implements SystemState {
     }
     connection.onInitialState(eid, this);
 
-    // Notify other players about this new entity
-    for (const [otherEid, otherSlot] of this.players) {
-      if (otherEid === eid) continue;
-      const otherPos = this.entities.position.get(otherEid);
-      if (!otherPos) continue;
-      if (Math.abs(sx - otherPos.tileX) <= INTEREST_RANGE &&
-          Math.abs(sy - otherPos.tileY) <= INTEREST_RANGE) {
-        otherSlot.knownEntities.add(eid);
-        // The next tick's onTick will handle sending the full state via 'entered'
-      }
-    }
+    // Other nearby players learn about this entity via broadcastTick's
+    // "entered" detection on the next tick — that path triggers the full-state
+    // + sendMetaFor emission. No pre-seeding of knownEntities.
 
     return eid;
   }
@@ -316,7 +307,70 @@ export class GameWorld implements SystemState {
     }
     t.endPhase('critterAI');
 
-    // 3. Harvest
+    // 3. Tree respawns
+    t.beginPhase('respawns');
+    runRespawns(this);
+    t.endPhase('respawns');
+
+    // 4. Movement
+    t.beginPhase('movement');
+    runMovement(this);
+    t.endPhase('movement');
+
+    // 5. Resolve arrival-triggered actions: pickups + pending interacts.
+    //    Must run after movement so hasMoveTarget reflects post-movement state.
+    //    Sits before harvest so its pathfinding→channel transition in the
+    //    same phase group runs with the same post-movement view.
+    t.beginPhase('pickups');
+    for (const [eid, pending] of this.pendingPickups) {
+      if (hasMoveTarget(eid, this)) continue;
+      const playerPos = this.entities.position.get(eid);
+      const targetPos = this.entities.position.get(pending.targetEntityId);
+      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
+        this.pendingPickups.delete(eid);
+        continue;
+      }
+      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+      if (dist <= 1) {
+        const bp = this.entities.blueprint.get(pending.targetEntityId);
+        if (bp) {
+          const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
+          if (result.success) {
+            this.occupancy.clear(targetPos.tileX, targetPos.tileY);
+            this.entities.destroy(pending.targetEntityId);
+            const slot = this.players.get(eid);
+            if (slot) {
+              slot.connection.onInventoryChanged(eid, this);
+              this.emitEvent(eid, this.makeEvent('item_picked_up', {
+                blueprintId: bp.blueprintId, itemName: this.bpName(bp.blueprintId), quantity: 1,
+              }));
+            }
+          }
+        }
+      }
+      this.pendingPickups.delete(eid);
+    }
+
+    // 5b. Resolve pending interacts (walk-to then interact)
+    for (const [eid, pending] of this.pendingInteracts) {
+      if (hasMoveTarget(eid, this)) continue;
+      const playerPos = this.entities.position.get(eid);
+      const targetPos = this.entities.position.get(pending.targetEntityId);
+      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
+        this.pendingInteracts.delete(eid);
+        continue;
+      }
+      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
+      if (dist <= 1) {
+        const slot = this.players.get(eid);
+        if (slot) this.executeInteract(eid, slot, pending.targetEntityId);
+      }
+      this.pendingInteracts.delete(eid);
+    }
+    t.endPhase('pickups');
+
+    // 6. Harvest (after movement so pathfinding→channel transition happens
+    //    on arrival tick, not the tick after)
     t.beginPhase('harvest');
     const harvestEvents = runHarvest(this);
     for (const he of harvestEvents) {
@@ -348,7 +402,7 @@ export class GameWorld implements SystemState {
     }
     t.endPhase('harvest');
 
-    // 3.5 Run consumable channels
+    // 7. Consumable channels
     const consumeEvents = runConsume(this);
     for (const ce of consumeEvents) {
       const slot = this.players.get(ce.entityId);
@@ -364,17 +418,7 @@ export class GameWorld implements SystemState {
       }
     }
 
-    // 4. Respawns
-    t.beginPhase('respawns');
-    runRespawns(this);
-    t.endPhase('respawns');
-
-    // 5. Movement
-    t.beginPhase('movement');
-    runMovement(this);
-    t.endPhase('movement');
-
-    // 6. Combat
+    // 8. Combat
     t.beginPhase('combat');
     const combatResult = runCombat(this);
     // Emit combat hit events
@@ -436,56 +480,7 @@ export class GameWorld implements SystemState {
     }
     t.endPhase('combat');
 
-    // 7. Pickups
-    t.beginPhase('pickups');
-    for (const [eid, pending] of this.pendingPickups) {
-      if (hasMoveTarget(eid, this)) continue;
-      const playerPos = this.entities.position.get(eid);
-      const targetPos = this.entities.position.get(pending.targetEntityId);
-      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
-        this.pendingPickups.delete(eid);
-        continue;
-      }
-      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-      if (dist <= 1) {
-        const bp = this.entities.blueprint.get(pending.targetEntityId);
-        if (bp) {
-          const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
-          if (result.success) {
-            this.occupancy.clear(targetPos.tileX, targetPos.tileY);
-            this.entities.destroy(pending.targetEntityId);
-            const slot = this.players.get(eid);
-            if (slot) {
-              slot.connection.onInventoryChanged(eid, this);
-              this.emitEvent(eid, this.makeEvent('item_picked_up', {
-                blueprintId: bp.blueprintId, itemName: this.bpName(bp.blueprintId), quantity: 1,
-              }));
-            }
-          }
-        }
-      }
-      this.pendingPickups.delete(eid);
-    }
-
-    // 7b. Resolve pending interacts (walk-to then interact)
-    for (const [eid, pending] of this.pendingInteracts) {
-      if (hasMoveTarget(eid, this)) continue;
-      const playerPos = this.entities.position.get(eid);
-      const targetPos = this.entities.position.get(pending.targetEntityId);
-      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
-        this.pendingInteracts.delete(eid);
-        continue;
-      }
-      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-      if (dist <= 1) {
-        const slot = this.players.get(eid);
-        if (slot) this.executeInteract(eid, slot, pending.targetEntityId);
-      }
-      this.pendingInteracts.delete(eid);
-    }
-    t.endPhase('pickups');
-
-    // 8. Broadcast
+    // 9. Broadcast
     t.beginPhase('broadcast');
     this.broadcastTick();
     t.endPhase('broadcast');
@@ -618,7 +613,7 @@ export class GameWorld implements SystemState {
 
   private handleEquip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
     const a = action as DecodedActionEquip;
-    if (this.inventoryMgr.equip(eid, a.itemId)) {
+    if (this.inventoryMgr.equip(eid, a.itemId, a.quantity)) {
       slot.connection.onInventoryChanged(eid, this);
     }
   }
@@ -633,7 +628,7 @@ export class GameWorld implements SystemState {
 
   private handleDrop(eid: number, slot: PlayerSlot, action: DecodedAction): void {
     const a = action as DecodedActionDrop;
-    const dropped = this.inventoryMgr.drop(eid, a.itemId);
+    const dropped = this.inventoryMgr.drop(eid, a.itemId, a.quantity);
     if (dropped) {
       const playerPos = this.entities.position.get(eid);
       if (playerPos) {
@@ -739,8 +734,8 @@ export class GameWorld implements SystemState {
     if (!bp || bp.blueprintId !== BlueprintType.StorageChest) return;
 
     const ok = a.direction === 0
-      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId)
-      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId);
+      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId, a.quantity)
+      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId, a.quantity);
     if (ok) {
       slot.connection.onInventoryChanged(eid, this);
       slot.connection.onContainerOpen(eid, a.containerId, this);

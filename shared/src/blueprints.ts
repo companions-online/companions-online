@@ -141,7 +141,7 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },
 
   // --- World objects ---
-  { id: BlueprintType.Tree,     name: 'Tree',      category: 'resource', sprite: 'tree', variantCount: 3, maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
+  { id: BlueprintType.Tree,     name: 'Tree',      category: 'resource', sprite: 'tree', variantCount: 4, maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
   // --- NPCs ---
   { id: BlueprintType.Hermit,   name: 'The Hermit',   category: 'npc', sprite: 'hermit',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
   { id: BlueprintType.Trader,   name: 'The Trader',   category: 'npc', sprite: 'trader',   maxHp: 999, speed: 0, damage: 0, attackSpeed: 0, collides: true },
