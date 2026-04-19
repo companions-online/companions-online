@@ -69,20 +69,29 @@ interface PlayerConnection {
   onContainerOpen(entityId, containerEntityId, world)
   onDialogueOpen(entityId, npcEntityId, dialogue)
   onChatMessage(entityId, senderEntityId, message)
-  onGameEvent(entityId, event: GameEvent)
+  onGameEvent(entityId, event: GameEvent)         // point-to-point (MCP first-person)
+  onBroadcastEvent(entityId, event: GameEvent)    // spectator-range (WS visuals)
+  onEntityMeta(entityId, targetEntityId, key, value)
 }
 ```
 
-Four implementations:
-- **WebSocketConnection** (`connections/ws-connection.ts`) — binary protocol encoding
-- **HeadlessConnection** (`connections/headless-connection.ts`) — test spy, captures events
-- **McpConnection** (`connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick
+Three implementations:
+- **WebSocketConnection** (`connections/ws-connection.ts`) — binary protocol encoding. `onGameEvent` is a no-op (point-to-point events are MCP-only); `onBroadcastEvent` translates to `WireEvent` via `WIRE_EVENT_MAP`, queues in `pendingEvents`, flushes one `ServerOpcode.GameEvents` batch per tick after `WorldDelta`.
+- **HeadlessConnection** (`connections/headless-connection.ts`) — test spy. Captures point-to-point events into `gameEvents[]` and broadcasts into `broadcastEvents[]` separately.
+- **McpConnection** (`connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick. `onBroadcastEvent` is a no-op — MCP narration stays first-person.
 
 ## Event System
 
 `server/src/events.ts` — 18 event types across 3 priority tiers (Critical/High/Medium). EventBuffer with priority-based decay and age-out.
 
-Events emitted at authoritative sources: GameWorld handlers emit directly via `slot.connection.onGameEvent()`. System functions (combat, harvest, consumable, critter-ai) return enriched data, GameWorld translates to events.
+Events emitted at authoritative sources: GameWorld handlers emit via **two channels**:
+
+- `emitEvent(entityId, event)` — point-to-point to the subject. MCP consumes these for first-person narration (`"You hit X for 5 dmg"`). WS ignores (no-op today).
+- `broadcastEvent(tileX, tileY, event)` — delivers to every player within `INTEREST_RANGE` of the event tile. Used for visual-impact events (hit landed, yield popped, entity died) so spectators' clients can render animations. MCP ignores broadcasts to avoid double-emission in its narration buffer.
+
+The two channels are separate `PlayerConnection` methods (`onGameEvent` / `onBroadcastEvent`) so the MCP/WS consumer asymmetry is explicit per connection type. Migrating an emit site to broadcast is **additive** — keep the existing `emitEvent` call for MCP narration and add a `broadcastEvent` call for spectator visuals.
+
+Wire format: `ServerOpcode.GameEvents = 0x37` carries a batched `WireEvent[]`. `WireEventType` is a numeric subset of `GameEventType` — only visual events cross the wire (combat hit dealt, harvest yield, craft complete, entity died). MCP-only events (`action_interrupted`, `creature_aggro`, `trade_complete`) stay off the wire. Mapping in `server/src/connections/ws-connection.ts::WIRE_EVENT_MAP`.
 
 Design principle: only emit events NOT inferrable from state snapshots (damage causality, ephemeral chat, action interruption reasons). LLM experience is "constant teleportation" — full snapshot per response.
 
@@ -153,11 +162,12 @@ Harvest has a server-side yield cap (`MAX_HARVEST_YIELDS` in `shared/constants.t
 
 Custom compact binary over WebSocket. Opcodes:
 - Client→Server: Action (variable payload for 17 action types), Ping
-- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen, ChatMessage, EnvironmentSync
+- Server→Client: Welcome, Pong, WorldDelta, EntityFullState, Chunk, InventorySync, ContainerOpen, DialogueOpen, ChatMessage, EnvironmentSync, EntityMeta, GameEvents
 - Component bitmask delta compression — only changed components sent
 - RLE chunk compression for terrain
 - Chunk streaming: only viewport chunks on connect, stream as player moves
 - Environment section inside WorldDelta (gameMinute u16, weather u8) — emitted on keyframe-hour crossings, weather change, or forced resync after `setTickOffset`
+- `GameEvents` batches discrete notifications (`WireEventType` — CombatHitDealt / HarvestYield / CraftComplete / EntityDied today). Flushed per-tick after WorldDelta so referenced entity ids are in-scope client-side. Separate channel from state replication — see Event System above.
 
 ## World Generation
 
@@ -173,6 +183,10 @@ Interactive placeables (Door, Campfire, StorageChest) → entities with componen
 ## Player Death + Respawn
 
 Players don't get destroyed on death. Instead: `ActionType.Dead` set, equipped items dropped as ground entities, occupancy cleared, 100-tick respawn timer. On respawn: teleport to spawn, HP restored, action set to Idle.
+
+Server-side AI cleanup on death: `clearAiTargetsOn(deadEntityId)` iterates `critterStates` + `combatStates` and clears targets pointing at the dead entity. Called from both `handlePlayerDeath` (player entity persists, so critter-ai's `entities.exists()` check wouldn't catch it) and `processEntityDeath` (upfront cleanup is immediate rather than waiting for next-tick scan). `critter-ai.ts` also skips Dead players when scanning for nearest aggro target, so a revived player won't be re-aggroed.
+
+Client-side death visuals: see `memory/client-webgl/architecture.md::Death visuals` — smoke puff spawned on both `EntityDied` wire event (creatures) and `currentAction → Dead` transition (player entity persists). Respawn position deltas snap instead of lerping.
 
 ## Telemetry
 

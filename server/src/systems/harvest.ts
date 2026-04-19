@@ -3,9 +3,17 @@ import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { Terrain } from '@shared/terrain.js';
 import { MAX_HARVEST_YIELDS } from '@shared/constants.js';
+import { dirFromTo } from '@shared/direction.js';
 import type { SystemState, HarvestContext } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 import { depleteTree } from './resources.js';
+
+function faceHarvestTarget(eid: number, state: { targetX: number; targetY: number }, world: SystemState): void {
+  const pos = world.entities.position.get(eid);
+  if (!pos) return;
+  const dir = dirFromTo(pos.tileX, pos.tileY, state.targetX, state.targetY);
+  if (dir !== undefined) world.entities.direction.set(eid, { dir });
+}
 
 function resolveHarvestContext(
   targetX: number, targetY: number, world: SystemState,
@@ -95,6 +103,7 @@ export function startHarvest(eid: number, tileX: number, tileY: number, world: S
   }
 
   world.entities.currentAction.set(eid, { actionType: ActionType.Harvesting });
+  faceHarvestTarget(eid, { targetX: tileX, targetY: tileY }, world);
   return true;
 }
 
@@ -136,6 +145,7 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
         state.pathfinding = false;
         state.ticksRemaining = state.context.tickCost;
         world.entities.currentAction.set(eid, { actionType: ActionType.Harvesting });
+        faceHarvestTarget(eid, state, world);
       } else {
         world.harvestStates.delete(eid);
         world.entities.currentAction.set(eid, { actionType: ActionType.Idle });

@@ -35,6 +35,13 @@ export interface PlayerConnection {
   onContainerOpen(entityId: number, containerEntityId: number, world: GameWorldView): void;
   onDialogueOpen(entityId: number, npcEntityId: number, dialogue: { greeting: string; options: { optionId: number; label: string; type: string; response?: string; trades?: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number }[] }[] }): void;
   onChatMessage(entityId: number, senderEntityId: number, message: string): void;
+  /** Point-to-point event (e.g. "you hit X" first-person). Delivered to the
+   *  event's subject. MCP consumes these for narration. */
   onGameEvent(entityId: number, event: GameEvent): void;
+  /** Spectator-range event (e.g. "someone nearby landed a hit"). Delivered to
+   *  every player within INTEREST_RANGE of the event position. WS encodes as
+   *  a wire GameEvent for client-side visual effects; MCP ignores (MCP
+   *  narration uses point-to-point events only). */
+  onBroadcastEvent(entityId: number, event: GameEvent): void;
   onEntityMeta(entityId: number, targetEntityId: number, key: MetaKey, value: string): void;
 }

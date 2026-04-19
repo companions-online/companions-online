@@ -1,4 +1,4 @@
-import { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './opcodes.js';
+import { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit, WireEventType } from './opcodes.js';
 import { ComponentBit } from '../components.js';
 import { ActionType, ClientAction } from '../actions.js';
 import type { MetaKey } from '../entity-meta.js';
@@ -575,6 +575,91 @@ export function encodeChunk(
   return w.getBuffer();
 }
 
+export function encodeGameEvents(tick: number, events: WireEvent[]): ArrayBuffer {
+  const w = new BufferWriter();
+  w.writeU8(ServerOpcode.GameEvents);
+  w.writeU32(tick);
+  w.writeU8(events.length);
+  for (const ev of events) {
+    w.writeU8(ev.type);
+    switch (ev.type) {
+      case WireEventType.CombatHitDealt:
+        w.writeU16(ev.attackerId);
+        w.writeU16(ev.targetId);
+        w.writeU16(ev.damage);
+        w.writeU16(ev.targetHp);
+        w.writeU16(ev.targetMaxHp);
+        break;
+      case WireEventType.HarvestYield:
+        w.writeU16(ev.harvesterId);
+        w.writeU16(ev.targetId);
+        w.writeU16(ev.yieldBlueprintId);
+        break;
+      case WireEventType.CraftComplete:
+        w.writeU16(ev.crafterId);
+        w.writeU16(ev.blueprintId);
+        w.writeU16(ev.quantity);
+        break;
+      case WireEventType.EntityDied:
+        w.writeU16(ev.entityId);
+        w.writeU16(ev.killerId);
+        w.writeU16(ev.tileX);
+        w.writeU16(ev.tileY);
+        break;
+    }
+  }
+  return w.getBuffer();
+}
+
+function decodeGameEvents(r: BufferReader): { tick: number; events: WireEvent[] } {
+  const tick = r.readU32();
+  const count = r.readU8();
+  const events: WireEvent[] = [];
+  for (let i = 0; i < count; i++) {
+    const type: WireEventType = r.readU8();
+    switch (type) {
+      case WireEventType.CombatHitDealt:
+        events.push({
+          type,
+          attackerId: r.readU16(),
+          targetId: r.readU16(),
+          damage: r.readU16(),
+          targetHp: r.readU16(),
+          targetMaxHp: r.readU16(),
+        });
+        break;
+      case WireEventType.HarvestYield:
+        events.push({
+          type,
+          harvesterId: r.readU16(),
+          targetId: r.readU16(),
+          yieldBlueprintId: r.readU16(),
+        });
+        break;
+      case WireEventType.CraftComplete:
+        events.push({
+          type,
+          crafterId: r.readU16(),
+          blueprintId: r.readU16(),
+          quantity: r.readU16(),
+        });
+        break;
+      case WireEventType.EntityDied:
+        events.push({
+          type,
+          entityId: r.readU16(),
+          killerId: r.readU16(),
+          tileX: r.readU16(),
+          tileY: r.readU16(),
+        });
+        break;
+      default:
+        throw new Error(`Unknown wire event type: 0x${(type as number).toString(16)}`);
+    }
+  }
+  return { tick, events };
+}
+
 // --- Decoders ---
 
 export type DecodedServerMessage =
@@ -588,7 +673,44 @@ export type DecodedServerMessage =
   | { type: 'dialogueOpen'; npcEntityId: number; dialogue: unknown }
   | { type: 'chatMessage'; senderEntityId: number; message: string }
   | { type: 'environmentSync'; gameMinute: number; weather: number; serverTick: number }
-  | { type: 'entityMeta'; entityId: number; key: MetaKey; value: string };
+  | { type: 'entityMeta'; entityId: number; key: MetaKey; value: string }
+  | { type: 'gameEvents'; tick: number; events: WireEvent[] };
+
+// --- Game events (notification channel) ---
+//
+// Discriminated union of per-type payloads. Numeric type tag matches
+// WireEventType; encoded inside a GameEvents batch. Payloads carry entity
+// ids only (no strings) — the client already has entity context.
+
+export type WireEvent =
+  | {
+      type: WireEventType.CombatHitDealt;
+      attackerId: number;
+      targetId: number;
+      damage: number;
+      targetHp: number;
+      targetMaxHp: number;
+    }
+  | {
+      type: WireEventType.HarvestYield;
+      harvesterId: number;
+      /** 0xFFFF when the yield had no specific target entity (e.g. tile-based harvest) */
+      targetId: number;
+      yieldBlueprintId: number;
+    }
+  | {
+      type: WireEventType.CraftComplete;
+      crafterId: number;
+      blueprintId: number;
+      quantity: number;
+    }
+  | {
+      type: WireEventType.EntityDied;
+      entityId: number;
+      killerId: number;
+      tileX: number;
+      tileY: number;
+    };
 
 export type DecodedClientMessage =
   | { type: 'action'; data: DecodedAction }
@@ -651,6 +773,11 @@ export function decodeServerMessage(buf: ArrayBuffer): DecodedServerMessage {
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = r.readU8();
       return { type: 'entityMeta', entityId, key, value: new TextDecoder().decode(bytes) };
+    }
+
+    case ServerOpcode.GameEvents: {
+      const { tick, events } = decodeGameEvents(r);
+      return { type: 'gameEvents', tick, events };
     }
 
     default:

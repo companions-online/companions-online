@@ -18,10 +18,9 @@ coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
 terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open)
-protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, 
-protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action + EntityMeta msg, DecodedAction union
+protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync, GameEvents=0x37; DeltaSectionTag.Environment; WireEventType enum (numeric subset of GameEventType for the wire)
+protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action, EntityMeta msg, GameEvents batch (encodeGameEvents/decodeGameEvents + WireEvent discriminated union), DecodedAction union
 entity-meta.ts           MetaKey enum (Name=0) + metaKeyLabel — observer-visible string metadata
-protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync; DeltaSectionTag.Environment
 protocol/index.ts        Barrel re-export
 world/noise.ts           Seeded 2D Perlin noise (PerlinNoise class)
 world/world-map.ts       WorldMap class (flat Uint8Array terrain/buildings, chunk extraction, dirty tracking)
@@ -33,10 +32,10 @@ world/index.ts           Barrel re-export
 ```
 main.ts                  Entry: createDefaultWorld + Hono server + GameLoop (~40 lines)
 app.ts                   Hono app factory: MCP routes + WS upgrade + static serving
-game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission; weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings
+game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission (emitEvent point-to-point + broadcastEvent to nearby for visuals), clearAiTargetsOn(deadEntityId) for player/creature death AI cleanup; weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings
 system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
-player-connection.ts     PlayerConnection interface (8 methods incl onGameEvent) + TickDelta + GameWorldView
-events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out
+player-connection.ts     PlayerConnection interface (10 methods incl onGameEvent point-to-point + onBroadcastEvent spectator-range) + TickDelta + GameWorldView
+events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out. Details for combat_hit_dealt / harvest_yield / craft_complete carry actor id (attackerEntityId / harvesterEntityId / crafterEntityId) so broadcast wire events can identify the actor.
 occupancy.ts             OccupancyGrid (Uint16Array tile→entityId)
 inventory-manager.ts     InventoryManager class (add/remove/equip/craft/drop/transfer)
 telemetry.ts             Telemetry class (per-phase timing, network bytes, rolling averages)
@@ -53,11 +52,12 @@ ecs/game-loop.ts         GameLoop — setTimeout with drift compensation
 systems/movement.ts      A* path-following, occupancy collision, wait-and-repath
 systems/harvest.ts       Channeled gathering, auto-pathfind to adjacent, tree depletion → returns HarvestEvent[]
 systems/consumable.ts    Channeled healing, single-use, interruptible → returns ConsumeEvent[]
-systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }
-systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]
+systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }. startAttack + per-swing sets attacker direction via dirFromTo so swing animation faces target.
+systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]. Skips Dead players when scanning for nearest aggro target.
+systems/harvest.ts       (see above) — faceHarvestTarget helper sets harvester direction when entering Harvesting state so harvest-craft anim plays toward the target.
 systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay)
-connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting); sends EnvironmentSync on welcome + environment delta section in onTick
-connections/headless-connection.ts HeadlessConnection (test spy, captures events + gameEvents)
+connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting); sends EnvironmentSync on welcome + environment delta section in onTick. onGameEvent no-op (point-to-point is MCP-only); onBroadcastEvent translates via WIRE_EVENT_MAP and flushes a GameEvents batch per tick after WorldDelta.
+connections/headless-connection.ts HeadlessConnection (test spy, captures events + gameEvents[] for point-to-point + broadcastEvents[] for broadcasts)
 connections/mcp-connection.ts     MCP PlayerConnection (live world ref, EventBuffer, action blocking via awaitAction/onTick)
 ```
 
@@ -105,10 +105,14 @@ e2e/npc.test.ts          NPC dialogue, trade, Hermit first-time gift
 e2e/consumable.test.ts   Bandage/food healing, interruption, HP cap
 e2e/chat.test.ts         Say broadcast, range filtering, non-interruption
 e2e/events.test.ts       Event emission from all 18 event types through real game actions
+e2e/broadcast-events.test.ts Spectator-range broadcastEvent scope — attacker + near spectator see CombatHitDealt / EntityDied; far-away player doesn't; point-to-point events don't leak onto broadcast channel.
+e2e/death-target-clearing.test.ts Wolf drops target when the player it's attacking dies (behavior → wander, combat state cleared).
 e2e/environment.test.ts  Env sync emission cadence + tickOffset behavior + effectiveTick math
 e2e/mcp-e2e.test.ts      Real server E2E: MCP client → HTTP → tools → game → response format; identify lifecycle; nametag broadcast
 mcp-keepalive.test.ts    Per-session ping cadence, cleanup on destroy, rejection swallow (unit-level)
 lighting.test.ts         Keyframe interpolation + gameMinute math
 persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight seed
 client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
+client-gl/scene.test.ts       Scene mutators + factory dispatch + capacity + onGameEvent dispatch + smoke-puff spawn (via EntityDied + Dead-transition paths) + Dead→Idle snap
+client-gl/effects.test.ts     Damage number + pickup text + chat bubble lifecycle
 ```

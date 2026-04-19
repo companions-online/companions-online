@@ -7,6 +7,7 @@
 import { createScene, type Scene } from '@client-webgl/scene.js';
 import { wireSceneToConnection } from '@client-webgl/network/wire-scene.js';
 import type { TextSurfaceFactory } from '@client-webgl/effects/text-surface.js';
+import type { EffectSprites, EffectSheet } from '@client-webgl/effects/effect-sprites.js';
 import { createMockGL } from './mock-gl.js';
 import { createFakeSpriteRegistry, type FakeRegistryOptions } from './fake-sprite-registry.js';
 import { createFakeStaticAssets } from './fake-static-assets.js';
@@ -22,6 +23,31 @@ export function createFakeTextSurfaceFactory(): TextSurfaceFactory {
       };
     },
     release() {},
+  };
+}
+
+function fakeSheet(cols: number, rows: number, frameCount: number): EffectSheet {
+  const frameW = 32;
+  const frameH = 32;
+  return {
+    texture: 0 as unknown as WebGLTexture,
+    sheetW: frameW * cols,
+    sheetH: frameH * rows,
+    frameW,
+    frameH,
+    cols,
+    rows,
+    frameCount,
+  };
+}
+
+export function createFakeEffectSprites(): EffectSprites {
+  return {
+    smoke:        fakeSheet(3, 3, 9),
+    attack:       fakeSheet(3, 3, 6),
+    harvestCraft: fakeSheet(3, 3, 7),
+    hpBarFg: 0 as unknown as WebGLTexture,
+    hpBarBg: 0 as unknown as WebGLTexture,
   };
 }
 
@@ -44,7 +70,8 @@ export async function createTestScene(opts: TestSceneOptions = {}): Promise<Test
   const spriteRegistry = createFakeSpriteRegistry(opts.spriteRegistry);
   const staticAssets = createFakeStaticAssets();
   const textSurfaceFactory = createFakeTextSurfaceFactory();
-  const scene = await createScene(gl, { spriteRegistry, staticAssets, textSurfaceFactory });
+  const effectSprites = createFakeEffectSprites();
+  const scene = await createScene(gl, { spriteRegistry, staticAssets, textSurfaceFactory, effectSprites });
   const conn = createFakeConnection();
   wireSceneToConnection(scene, conn);
   return { scene, conn };

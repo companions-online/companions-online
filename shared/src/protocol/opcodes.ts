@@ -17,6 +17,17 @@ export const enum ServerOpcode {
   ChatMessage     = 0x34,
   EnvironmentSync = 0x35,
   EntityMeta      = 0x36,
+  GameEvents      = 0x37,
+}
+
+/** Discrete-happening notifications delivered in a GameEvents batch. Numeric
+ *  subset of the server-side GameEventType string union; MCP-only events
+ *  (trades, consume, action_interrupted, etc.) do not appear on the wire. */
+export const enum WireEventType {
+  CombatHitDealt = 0x01,
+  HarvestYield   = 0x02,
+  CraftComplete  = 0x03,
+  EntityDied     = 0x04,
 }
 
 /** Section tags within a WorldDelta message */

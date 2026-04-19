@@ -121,6 +121,24 @@ export class GameWorld implements SystemState {
     if (slot) slot.connection.onGameEvent(entityId, event);
   }
 
+  /** Deliver a spectator-visible notification to every player within
+   *  INTEREST_RANGE of the given tile. Routes via `onBroadcastEvent` — a
+   *  channel separate from point-to-point `onGameEvent` — so MCP narration
+   *  stays first-person while WS clients receive visual events for anyone
+   *  nearby (including the actor themselves). Use for hit-landed,
+   *  yield-popped, entity-died. Keep hit_received / item_picked_up / trades
+   *  on `emitEvent`. */
+  private broadcastEvent(tileX: number, tileY: number, event: GameEvent): void {
+    for (const [eid, slot] of this.players) {
+      const p = this.entities.position.get(eid);
+      if (!p) continue;
+      if (Math.abs(tileX - p.tileX) <= INTEREST_RANGE &&
+          Math.abs(tileY - p.tileY) <= INTEREST_RANGE) {
+        slot.connection.onBroadcastEvent(eid, event);
+      }
+    }
+  }
+
   private makeEvent<T extends GameEvent['type']>(
     type: T,
     details: Extract<GameEvent, { type: T }>['details'],
@@ -357,15 +375,17 @@ export class GameWorld implements SystemState {
     const harvestEvents = runHarvest(this);
     for (const he of harvestEvents) {
       const slot = this.players.get(he.entityId);
+      const yieldEvent = this.makeEvent('harvest_yield', {
+        harvesterEntityId: he.entityId,
+        blueprintId: he.yieldBlueprintId,
+        resourceName: this.bpName(he.yieldBlueprintId),
+        targetEntityId: he.targetEntityId,
+        targetName: he.targetEntityId !== undefined ? this.bpName(BlueprintType.Tree) : undefined,
+        remaining: he.remaining,
+      });
       if (slot) {
         slot.connection.onInventoryChanged(he.entityId, this);
-        this.emitEvent(he.entityId, this.makeEvent('harvest_yield', {
-          blueprintId: he.yieldBlueprintId,
-          resourceName: this.bpName(he.yieldBlueprintId),
-          targetEntityId: he.targetEntityId,
-          targetName: he.targetEntityId !== undefined ? this.bpName(BlueprintType.Tree) : undefined,
-          remaining: he.remaining,
-        }));
+        this.emitEvent(he.entityId, yieldEvent);
         if (he.depleted && he.targetEntityId !== undefined) {
           this.emitEvent(he.entityId, this.makeEvent('resource_depleted', {
             entityId: he.targetEntityId,
@@ -373,6 +393,11 @@ export class GameWorld implements SystemState {
             tileX: 0, tileY: 0, // position already cleared by system
           }));
         }
+      }
+      // Visual broadcast to nearby WS clients (MCP already got the first-person event above).
+      const harvesterPos = this.entities.position.get(he.entityId);
+      if (harvesterPos) {
+        this.broadcastEvent(harvesterPos.tileX, harvesterPos.tileY, yieldEvent);
       }
     }
     t.endPhase('harvest');
@@ -400,14 +425,21 @@ export class GameWorld implements SystemState {
     for (const hit of combatResult.hits) {
       const targetBp = this.entities.blueprint.get(hit.targetEntityId);
       const attackerBp = this.entities.blueprint.get(hit.attackerEntityId);
+      const hitDealtEvent = this.makeEvent('combat_hit_dealt', {
+        attackerEntityId: hit.attackerEntityId,
+        targetEntityId: hit.targetEntityId,
+        targetName: targetBp ? this.bpName(targetBp.blueprintId) : 'Unknown',
+        damage: hit.damage,
+        targetCurrentHp: hit.targetCurrentHp,
+        targetMaxHp: hit.targetMaxHp,
+      });
       if (this.players.has(hit.attackerEntityId)) {
-        this.emitEvent(hit.attackerEntityId, this.makeEvent('combat_hit_dealt', {
-          targetEntityId: hit.targetEntityId,
-          targetName: targetBp ? this.bpName(targetBp.blueprintId) : 'Unknown',
-          damage: hit.damage,
-          targetCurrentHp: hit.targetCurrentHp,
-          targetMaxHp: hit.targetMaxHp,
-        }));
+        this.emitEvent(hit.attackerEntityId, hitDealtEvent);
+      }
+      // Visual broadcast to nearby WS clients (covers spectators + non-player attackers).
+      const attackerPos = this.entities.position.get(hit.attackerEntityId);
+      if (attackerPos) {
+        this.broadcastEvent(attackerPos.tileX, attackerPos.tileY, hitDealtEvent);
       }
       if (this.players.has(hit.targetEntityId)) {
         this.emitEvent(hit.targetEntityId, this.makeEvent('combat_hit_received', {
@@ -614,11 +646,15 @@ export class GameWorld implements SystemState {
       slot.connection.onInventoryChanged(eid, this);
       const recipe = getRecipe(a.recipeId);
       if (recipe) {
-        this.emitEvent(eid, this.makeEvent('craft_complete', {
+        const event = this.makeEvent('craft_complete', {
+          crafterEntityId: eid,
           blueprintId: recipe.output.blueprintId,
           itemName: this.bpName(recipe.output.blueprintId),
           quantity: recipe.output.quantity,
-        }));
+        });
+        this.emitEvent(eid, event);
+        const pos = this.entities.position.get(eid);
+        if (pos) this.broadcastEvent(pos.tileX, pos.tileY, event);
       }
     }
   }
@@ -829,13 +865,17 @@ export class GameWorld implements SystemState {
 
     const entityName = this.bpName(bp.blueprintId);
 
-    // Emit entity_died to killer (if player)
+    // Emit entity_died to killer (if player) for first-person MCP narration
+    const entityDiedEvent = this.makeEvent('entity_died', {
+      entityId, entityName, killerEntityId,
+      drops: actualDrops, tileX: pos.tileX, tileY: pos.tileY,
+    });
     if (this.players.has(killerEntityId)) {
-      this.emitEvent(killerEntityId, this.makeEvent('entity_died', {
-        entityId, entityName, killerEntityId,
-        drops: actualDrops, tileX: pos.tileX, tileY: pos.tileY,
-      }));
+      this.emitEvent(killerEntityId, entityDiedEvent);
     }
+    // Visual broadcast to nearby WS clients (including any player-killer —
+    // attacker is in range of their own kill position).
+    this.broadcastEvent(pos.tileX, pos.tileY, entityDiedEvent);
 
     // Emit creature_died to nearby players (excluding the killer)
     const killerBp = this.entities.blueprint.get(killerEntityId);
@@ -857,6 +897,7 @@ export class GameWorld implements SystemState {
     this.occupancy.clear(pos.tileX, pos.tileY);
     this.critterStates.delete(entityId);
     this.combatStates.delete(entityId);
+    this.clearAiTargetsOn(entityId);
     this.entities.destroy(entityId);
   }
 
@@ -1012,12 +1053,35 @@ export class GameWorld implements SystemState {
     this.entities.currentAction.set(entityId, { actionType: ActionType.Dead });
     this.entities.health.set(entityId, { currentHp: 0, maxHp: 100 });
 
+    // Drop AI targets pointing at this player — the entity persists with
+    // currentAction=Dead, so critter-ai's entities.exists() check wouldn't
+    // catch it. Without this, wolves keep swinging at a corpse.
+    this.clearAiTargetsOn(entityId);
+
     // Schedule respawn in 5 seconds (100 ticks at 20Hz)
     this.playerRespawnTimers.set(entityId, this._tick + 100);
 
     if (slot) {
       slot.connection.onInventoryChanged(entityId, this);
       this.emitEvent(entityId, this.makeEvent('player_died', {}));
+    }
+  }
+
+  /** Clear any critter AI and combat state that was targeting `deadEntityId`.
+   *  Called from the two death paths — players (handlePlayerDeath, persists)
+   *  and creatures (processEntityDeath, destroyed). For destroyed entities
+   *  this is redundant with critter-ai's entities.exists() check, but
+   *  clearing upfront stops aggression instantly rather than next tick. */
+  private clearAiTargetsOn(deadEntityId: number): void {
+    for (const [cid, state] of this.critterStates) {
+      if (state.targetEntityId === deadEntityId) {
+        state.behavior = 'wander';
+        state.targetEntityId = undefined;
+        cancelCombat(cid, this);
+      }
+    }
+    for (const [cid, state] of this.combatStates) {
+      if (state.targetEntityId === deadEntityId) cancelCombat(cid, this);
     }
   }
 

@@ -1,5 +1,6 @@
 import { BlueprintType } from '@shared/blueprints.js';
 import { MAP_SIZE } from '@shared/constants.js';
+import { ActionType } from '@shared/actions.js';
 import type { SystemState, CritterState } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 import { startAttack, isInCombat, cancelCombat } from './combat.js';
@@ -94,12 +95,14 @@ export function runCritterAI(world: SystemState): CritterBehaviorChange[] {
     const pos = world.entities.position.get(eid);
     if (!pos) continue;
 
-    // Find nearest player
+    // Find nearest living player (skip Dead — their entity persists but they
+    // aren't a valid aggression target).
     let nearestPlayerId: number | undefined;
     let nearestDist = Infinity;
     for (const [playerEid] of world.players) {
       const otherPos = world.entities.position.get(playerEid);
       if (!otherPos) continue;
+      if (world.entities.currentAction.get(playerEid)?.actionType === ActionType.Dead) continue;
       const dist = Math.max(Math.abs(pos.tileX - otherPos.tileX), Math.abs(pos.tileY - otherPos.tileY));
       if (dist < nearestDist) {
         nearestDist = dist;

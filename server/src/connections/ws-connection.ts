@@ -3,15 +3,71 @@ import { INTEREST_RANGE } from '@shared/constants.js';
 import {
   encodeWelcome, encodeChunk, encodeEntityFullState,
   encodeWorldDelta, encodeInventorySync, encodeContainerOpen, encodeDialogueOpen, encodeChatMessage,
-  encodeEnvironmentSync, encodeEntityMeta,
+  encodeEnvironmentSync, encodeEntityMeta, encodeGameEvents,
 } from '@shared/protocol/codec.js';
+import type { WireEvent } from '@shared/protocol/codec.js';
+import { WireEventType } from '@shared/protocol/opcodes.js';
 import { gameMinuteFromTick } from '@shared/lighting.js';
 import type { MetaKey } from '@shared/entity-meta.js';
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { Telemetry } from '../telemetry.js';
-import type { GameEvent } from '../events.js';
+import type { GameEvent, GameEventType } from '../events.js';
+
+/** Server-event → wire-event code mapping. Events absent from this map are
+ *  MCP-only (action_interrupted, creature_aggro, trades, consume, etc.) and
+ *  do not cross the wire. Add entries here to surface new visual events. */
+const WIRE_EVENT_MAP: Partial<Record<GameEventType, WireEventType>> = {
+  combat_hit_dealt: WireEventType.CombatHitDealt,
+  harvest_yield:    WireEventType.HarvestYield,
+  craft_complete:   WireEventType.CraftComplete,
+  entity_died:      WireEventType.EntityDied,
+};
+
+/** Translate a server-side GameEvent into a wire event, or `null` if the
+ *  event type isn't wired to the browser client. */
+function toWireEvent(event: GameEvent): WireEvent | null {
+  const wireType = WIRE_EVENT_MAP[event.type];
+  if (wireType === undefined) return null;
+  const d = event.details as any;
+  switch (wireType) {
+    case WireEventType.CombatHitDealt:
+      return {
+        type: WireEventType.CombatHitDealt,
+        attackerId: d.attackerEntityId,
+        targetId: d.targetEntityId,
+        damage: d.damage,
+        targetHp: d.targetCurrentHp,
+        targetMaxHp: d.targetMaxHp,
+      };
+    case WireEventType.HarvestYield:
+      return {
+        type: WireEventType.HarvestYield,
+        harvesterId: d.harvesterEntityId,
+        targetId: d.targetEntityId ?? 0xFFFF,
+        yieldBlueprintId: d.blueprintId,
+      };
+    case WireEventType.CraftComplete:
+      return {
+        type: WireEventType.CraftComplete,
+        crafterId: d.crafterEntityId,
+        blueprintId: d.blueprintId,
+        quantity: d.quantity,
+      };
+    case WireEventType.EntityDied:
+      return {
+        type: WireEventType.EntityDied,
+        entityId: d.entityId,
+        killerId: d.killerEntityId,
+        tileX: d.tileX,
+        tileY: d.tileY,
+      };
+  }
+  return null;
+}
 
 export class WebSocketConnection implements PlayerConnection {
+  private pendingEvents: WireEvent[] = [];
+
   constructor(private ws: WebSocket, private telemetry: Telemetry) {}
 
   private send(buf: ArrayBuffer): void {
@@ -86,6 +142,13 @@ export class WebSocketConnection implements PlayerConnection {
         delta.tick, delta.updated, delta.left, delta.tileUpdates, delta.environment,
       ));
     }
+
+    // Flush queued broadcast events. WorldDelta sent first so referenced
+    // entity ids exist client-side by the time events arrive.
+    if (this.pendingEvents.length > 0) {
+      this.send(encodeGameEvents(delta.tick, this.pendingEvents));
+      this.pendingEvents = [];
+    }
   }
 
   onContainerOpen(entityId: number, containerEntityId: number, world: GameWorldView): void {
@@ -100,7 +163,15 @@ export class WebSocketConnection implements PlayerConnection {
     this.send(encodeChatMessage(senderEntityId, message));
   }
 
-  onGameEvent(_entityId: number, _event: GameEvent): void {}
+  onGameEvent(_entityId: number, _event: GameEvent): void {
+    // Point-to-point events are MCP-only today (first-person narration to the
+    // subject). Visual events reach the wire via onBroadcastEvent.
+  }
+
+  onBroadcastEvent(_entityId: number, event: GameEvent): void {
+    const wire = toWireEvent(event);
+    if (wire) this.pendingEvents.push(wire);
+  }
 
   onEntityMeta(_entityId: number, targetEntityId: number, key: MetaKey, value: string): void {
     this.send(encodeEntityMeta(targetEntityId, key, value));

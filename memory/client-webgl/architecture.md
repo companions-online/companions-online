@@ -208,6 +208,73 @@ and extrapolates with `elapsed / REAL_MS_PER_GAME_MINUTE`.
 
 See [lighting.md](lighting.md) for the full pipeline.
 
+## Game events channel
+
+Runs parallel to `WorldDelta` — a separate `ServerOpcode.GameEvents`
+message carries discrete notifications (hit landed, yield popped, entity
+died, craft complete). State vs notification split: `WorldDelta` answers
+"what is true now" (replayable), `GameEvents` answers "what just
+happened" (ephemeral).
+
+`wire-scene.ts` routes each decoded event to `scene.onGameEvent(event,
+tick)`, which spawns short-lived `createSpriteAnim` effects:
+
+- `CombatHitDealt` → `attack-anim` at midpoint between attacker and
+  target (attacker-only on killing hits — target already removed by the
+  preceding WorldDelta). `scale: 0.5, alpha: 0.5`, 280ms.
+- `HarvestYield` → `harvest-craft-anim` at harvester↔target midpoint
+  (harvester-only when `targetId === 0xFFFF`). Same scale/alpha, 420ms.
+- `CraftComplete` → `harvest-craft-anim` at crafter's tile, 420ms.
+- `EntityDied` → smoke puff at `event.tileX, event.tileY`. Frame
+  sequence `[3,2,1,0,1,2,3,4,5,6,7,8]` (build from intensity 6 to peak
+  9 at sheet index 0, then fade to 1 at sheet index 8). 660ms.
+
+Events are a subset of the server's `GameEventType` union —
+MCP-only events (`trade_complete`, `action_interrupted`, etc.) do not
+cross the wire. The mapping lives in `server/src/connections/ws-connection.ts::WIRE_EVENT_MAP`.
+
+## Death visuals
+
+Two client-observable triggers — they cover both removal-based death
+(creatures/NPCs are destroyed and disappear from entity updates) and
+persistence-based death (player entities stay alive with
+`currentAction = Dead` while awaiting respawn).
+
+1. **`EntityDied` wire event** → smoke puff at the event's tile. The
+   server broadcasts this via `broadcastEvent` to all players within
+   `INTEREST_RANGE` of the death position, so spectators see the puff
+   for any creature kill.
+2. **`currentAction → Dead` transition** detected in `scene.onEntityUpdate`
+   by snapshotting `existing.currentAction?.actionType` before
+   `applyComponentsToEntity`. Spawns a smoke puff at the entity's
+   current `visualX/Y`. Covers player death.
+
+While `currentAction === Dead`, `creature-entity.draw` early-returns so
+the dead sprite stays hidden. Respawn is handled by the snap path in
+`applyComponentsToEntity`: when the previous `currentAction` was Dead
+and a new `position` arrives, `lerpFromX/Y` are set to the new tile
+(not the old visual position) so the next tick computes `t=1`
+immediately — player teleports to spawn instead of sliding across the
+map.
+
+## HP bar + nameplate overlays
+
+`renderer.ts::drawEntityOverlays` runs a single unlit sprite pass
+before the effects pass. Iterates `scene.entities`, draws:
+
+- **HP bar** for any `creature | npc` (including the local player) with
+  `currentHp < maxHp` and not Dead. Solid 1×1 background texture (dark
+  red) stretched to `24×3px`, foreground (bright red) at `24*ratio×3px`.
+- **Nameplate** for any named entity except the local player (from
+  `scene.entityMeta` via `MetaKey.Name`).
+
+Positioning derives from the entity's sprite sheet — `entitySpriteTopY`
+replicates `creature-entity.draw`'s foot math (`screenY +
+TILE_H/2 - sheet.footY - z*PX_PER_Z`). HP bar sits `OVERLAY_GAP=4px`
+above the sprite top; nameplate stacks another `HP_BAR_H + OVERLAY_GAP`
+above that. A 128px player and a 32px deer get consistent overhead
+overlays without a sprite-specific offset.
+
 ## What doesn't live here (yet)
 
 - **HUD / inventory UI / status bar / dialogue UI / cursor hover.**

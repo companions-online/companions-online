@@ -2,6 +2,8 @@ import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_
 import { tileToScreen } from '@shared/coordinates.js';
 import { resolveAction, describeAction } from '@shared/action-resolver.js';
 import { MetaKey } from '@shared/entity-meta.js';
+import { getBlueprint } from '@shared/blueprints.js';
+import { ActionType } from '@shared/actions.js';
 import { buildCursorContext, buildContextFromEntity } from './controls/cursor-context.js';
 import { hitTestEntities } from './controls/mouse.js';
 import type { Scene } from './scene.js';
@@ -11,9 +13,12 @@ import { drawHud } from './ui/hud.js';
 import { drawPlacementGhost } from './ui/placement.js';
 
 const NAMEPLATE_FONT_PX = 11;
-/** Vertical offset above the entity tile's north vertex. Tuned to sit
- *  clearly above the 92px player sprite (head ~66px above the foot). */
-const NAMEPLATE_OFFSET_Y = 60;
+const HP_BAR_W = 24;
+const HP_BAR_H = 3;
+/** Gap between sprite top and HP bar bottom (and between HP bar top and
+ *  nameplate bottom). Keeps stacked overlays from crowding the sprite
+ *  regardless of sprite height (player=128, deer=64, etc.). */
+const OVERLAY_GAP = 4;
 
 /**
  * RAF loop: tick entities, drain dirty chunks, draw terrain + Y-sorted
@@ -147,8 +152,8 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       scene.spriteRenderer.end();
     }
 
-    // Nameplate pass — draw entity-meta `name` above each named entity.
-    drawNameplates(gl, scene, offsetX, offsetY, gameResolution);
+    // Entity overlays: HP bars + nameplates in a single unlit pass.
+    drawEntityOverlays(gl, scene, offsetX, offsetY, gameResolution);
 
     // Effects pass (chat bubbles, damage numbers, pickup text).
     scene.effects.tick(scene);
@@ -207,17 +212,49 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
   };
 }
 
-function drawNameplates(
+interface NameplateItem { surface: TextSurface; dstX: number; dstY: number }
+interface HpBarItem { dstX: number; dstY: number; ratio: number }
+
+/** Virtual-pixel Y of the top of the entity's sprite quad (same math as
+ *  creature-entity.draw: foot_y = screenY + offsetY + TILE_H/2 - z*PX_PER_Z;
+ *  top_y = foot_y - footY). Returns NaN when the entity has no sprite sheet. */
+function entitySpriteTopY(e: import('./entities/client-entity.js').ClientEntity, offsetY: number, z: number): number {
+  const sheet = e.spriteSheet;
+  const scr = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
+  return scr.screenY + offsetY + TILE_H / 2 - sheet.footY - z * PX_PER_Z;
+}
+
+function drawEntityOverlays(
   gl: WebGL2RenderingContext,
   scene: Scene,
   offsetX: number,
   offsetY: number,
   resolution: readonly [number, number],
 ): void {
-  if (scene.entityMeta.size === 0) return;
+  const nameplates: NameplateItem[] = [];
+  const hpBars: HpBarItem[] = [];
 
-  // Build draw list first so we can skip begin/end when no named entity is visible.
-  const items: { surface: TextSurface; dstX: number; dstY: number }[] = [];
+  // HP bars: any creature/NPC (including local player) whose HP < max and
+  // isn't Dead. Positioned just above the sprite top so a 128px player and a
+  // 32px deer both get bars at the same relative location (over their head).
+  for (const [, e] of scene.entities) {
+    if (!e.health || e.health.currentHp >= e.health.maxHp) continue;
+    if (e.currentAction?.actionType === ActionType.Dead) continue;
+    if (!e.blueprint) continue;
+    const bp = getBlueprint(e.blueprint.blueprintId);
+    if (bp?.category !== 'creature' && bp?.category !== 'npc') continue;
+
+    const scr = tileToScreen(e.visualX, e.visualY, TILE_W, TILE_H);
+    const z = scene.getGroundZ(e.visualX, e.visualY);
+    const spriteTopY = entitySpriteTopY(e, offsetY, z);
+    const dstX = scr.screenX + offsetX + TILE_W / 2 - HP_BAR_W / 2;
+    const dstY = spriteTopY - OVERLAY_GAP - HP_BAR_H;
+    hpBars.push({ dstX, dstY, ratio: e.health.currentHp / e.health.maxHp });
+  }
+
+  // Nameplates: named entities except the local player. Stacks above the HP
+  // bar slot (same math regardless of whether a bar is actually drawn — the
+  // reserved slot keeps nameplates at a consistent height for an entity).
   for (const [eid, meta] of scene.entityMeta) {
     if (eid === scene.myEntityId) continue;
     const name = meta.get(MetaKey.Name);
@@ -239,15 +276,26 @@ function drawNameplates(
 
     const scr = tileToScreen(entity.visualX, entity.visualY, TILE_W, TILE_H);
     const z = scene.getGroundZ(entity.visualX, entity.visualY);
+    const spriteTopY = entitySpriteTopY(entity, offsetY, z);
     const dstX = scr.screenX + offsetX + TILE_W / 2 - cached.width / 2;
-    const dstY = scr.screenY + offsetY - z * PX_PER_Z - NAMEPLATE_OFFSET_Y - cached.height;
-    items.push({ surface: cached, dstX, dstY });
+    const dstY = spriteTopY - OVERLAY_GAP - HP_BAR_H - OVERLAY_GAP - cached.height;
+    nameplates.push({ surface: cached, dstX, dstY });
   }
 
-  if (items.length === 0) return;
+  if (nameplates.length === 0 && hpBars.length === 0) return;
 
   scene.spriteRenderer.begin(resolution);
-  for (const item of items) {
+
+  // HP bars first (bg then fg), nameplates on top.
+  for (const bar of hpBars) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, scene.effectSprites.hpBarBg);
+    scene.spriteRenderer.drawSprite(bar.dstX, bar.dstY, HP_BAR_W, HP_BAR_H, 0, 0, 1, 1);
+    gl.bindTexture(gl.TEXTURE_2D, scene.effectSprites.hpBarFg);
+    scene.spriteRenderer.drawSprite(bar.dstX, bar.dstY, HP_BAR_W * bar.ratio, HP_BAR_H, 0, 0, 1, 1);
+  }
+
+  for (const item of nameplates) {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, item.surface.texture);
     scene.spriteRenderer.drawSprite(
@@ -255,5 +303,6 @@ function drawNameplates(
       0, 0, 1, 1,
     );
   }
+
   scene.spriteRenderer.end();
 }

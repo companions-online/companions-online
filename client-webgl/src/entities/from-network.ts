@@ -5,6 +5,7 @@
 // unknown-entity sheet via spriteRegistry.resolve's fallback.
 
 import { getBlueprint } from '@shared/blueprints.js';
+import { ActionType } from '@shared/actions.js';
 import type { EntityComponents } from '@shared/protocol/codec.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import type { ClientEntity } from './client-entity.js';
@@ -54,8 +55,18 @@ export function applyComponentsToEntity(
       || prev.tileX !== next.position.tileX
       || prev.tileY !== next.position.tileY;
     if (moved) {
-      e.lerpFromX = e.visualX;
-      e.lerpFromY = e.visualY;
+      // Respawn path: entity was Dead in the prior tick and the server is
+      // teleporting it (usually back to spawn). Skip the lerp snapshot so the
+      // tick computes t=1 on the next frame and the sprite snaps to the new
+      // tile instead of sliding across the map.
+      const wasDead = e.currentAction?.actionType === ActionType.Dead;
+      if (wasDead) {
+        e.lerpFromX = next.position.tileX;
+        e.lerpFromY = next.position.tileY;
+      } else {
+        e.lerpFromX = e.visualX;
+        e.lerpFromY = e.visualY;
+      }
       e.checkpointMs = checkpointMs;
     }
     e.position = next.position;

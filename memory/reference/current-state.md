@@ -107,7 +107,43 @@ Test harness at `test/client-gl/` — vitest with mock GL and fakes; no
 browser needed for most work. Puppeteer reserved for actual rendering
 regressions. See `memory/clientgl/` for full orientation.
 
-## 309 Tests across 28 files — all passing
+## Game events channel + visual effects
+
+Discrete server→client notification channel parallel to `WorldDelta`.
+New `ServerOpcode.GameEvents = 0x37` carries batched `WireEvent[]`
+(CombatHitDealt / HarvestYield / CraftComplete / EntityDied —
+numeric subset of the server's string-union `GameEventType`).
+`broadcastEvent(tileX, tileY, event)` on GameWorld delivers to players
+within `INTEREST_RANGE` via `PlayerConnection.onBroadcastEvent`; MCP
+ignores broadcasts (first-person narration uses point-to-point
+`onGameEvent`), WS encodes a GameEvents batch per tick after its
+WorldDelta. Full writeup in `memory/reference/architecture.md::Event
+System`.
+
+Client-side effects wired onto the channel:
+- **Death smoke puff** — 9-frame `smoke-anim.png` sequence
+  `[3,2,1,0,1,2,3,4,5,6,7,8]` (build to peak, fade). Fires on
+  `EntityDied` wire event (creatures) and on `currentAction → Dead`
+  transition (persisting player entities).
+- **Attack / harvest / craft overlays** — `attack-anim.png` (6 frames),
+  `harvest-craft-anim.png` (7 frames) spawned once per fired event at
+  actor↔target midpoint; `scale: 0.5, alpha: 0.5` so they read as
+  flourish rather than flash.
+- **Action facing** — server sets actor direction on `startAttack`,
+  per-swing re-face in `runCombat`, and on entering Harvesting state
+  (shared `dirFromTo(fromX,fromY,toX,toY)` in `shared/direction.ts`).
+- **Player death flow** — `creature-entity.draw` early-returns while
+  Dead (sprite hidden); `applyComponentsToEntity` snaps position on
+  Dead→non-Dead transition so respawn teleports instead of sliding.
+- **AI target clearing on death** — `clearAiTargetsOn(deadEntityId)`
+  called from both `handlePlayerDeath` + `processEntityDeath`; critter
+  AI aggro scan skips Dead players.
+- **HP bar overlay** — 24×3 red bar above any damaged creature/NPC/
+  player (not Dead). `drawEntityOverlays` in `renderer.ts` runs one
+  unlit pass for bar + nameplate, positioned off `sheet.footY` so
+  128px and 32px sprites get consistent overhead placement.
+
+## Tests — all passing
 
 ## Known Issues
 - Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds. Fix: lower to ~0.50
