@@ -48,3 +48,4 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 ### Subsystems — deep orientation
 - [client-webgl/](client-webgl/overview.md) — WebGL client; also see architecture, file-map, gotchas, testing
 - [client-webgl/lighting](client-webgl/lighting.md) — day/night cycle + tinted point lights + wall-aware shadowcast
+- [client-webgl/inventory-panel](client-webgl/inventory-panel.md) — drag-and-drop inventory UI + placement mode + optimistic-decrement flicker fix

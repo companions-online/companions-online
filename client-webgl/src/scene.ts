@@ -117,6 +117,43 @@ export interface Scene {
    *  for nameplates; entries outlive any specific entity. */
   nameplateCache: Map<string, TextSurface>;
 
+  // --- Inventory / crafting UI state ---
+  /** True when the inventory panel is open. Gates world input (mouse
+   *  clicks in the game area don't fire actions while open) and tells the
+   *  HUD pass to draw the panel on top. Mutated by the keyboard
+   *  controller and the panel's own close paths. */
+  inventoryOpen: boolean;
+  /** Minecraft-style held stack on the cursor. Null when nothing held.
+   *  `source` tells the click dispatcher which inventory (player vs. open
+   *  container) the stack originated in — needed so that dropping onto
+   *  the other inventory produces a Transfer in the correct direction. */
+  heldStack: {
+    itemId: number;
+    blueprintId: number;
+    quantity: number;
+    source: 'inventory' | 'container';
+  } | null;
+  /** Last-seen cursor position in canvas pixels. Updated on mousemove,
+   *  consumed by the ghost-sprite + placement-mode draws. */
+  cursorScreenX: number;
+  cursorScreenY: number;
+  /** Client-local inventory grid layout: itemId → slot index. Preserved
+   *  across InventorySync by pruning ids no longer present and assigning
+   *  newcomers to the lowest free slot. Lost on page reload. */
+  gridOrder: Map<number, number>;
+  /** Optimistic in-flight removals: when a click sends Drop / Transfer /
+   *  Equip-with-quantity, we record the about-to-vanish amount here so
+   *  the source slot stays visually empty until the server's
+   *  InventorySync confirms. Cleared on every InventorySync; entries
+   *  older than `PENDING_DECREMENT_TTL_MS` are GC'd by the draw path so
+   *  a rejected action self-heals. */
+  pendingItemDecrements: Map<number, { quantity: number; timestamp: number }>;
+  /** World tile under the cursor while placement mode is active, or null
+   *  when placement mode is off. Placement is active iff inventory is
+   *  closed AND the hand-equipped item's blueprint has
+   *  category === 'placeable'. */
+  placementHoverTile: { tileX: number; tileY: number } | null;
+
   // --- Network mutators ---
   onWelcome(entityId: number, seed: number): void;
   onChunk(data: DecodedChunk): void;
@@ -335,6 +372,14 @@ export async function createScene(
     entityMeta: new Map(),
     nameplateCache: new Map(),
 
+    inventoryOpen: false,
+    heldStack: null,
+    cursorScreenX: 0,
+    cursorScreenY: 0,
+    gridOrder: new Map(),
+    pendingItemDecrements: new Map(),
+    placementHoverTile: null,
+
     onWelcome(entityId, seed) {
       this.myEntityId = entityId;
       this.seed = seed;
@@ -367,11 +412,35 @@ export async function createScene(
         }
       }
       this.inventory = items;
+
+      // Reconcile UI-local grid layout + held stack against the new
+      // server-authoritative inventory.
+      const presentIds = new Set(items.map(i => i.itemId));
+      for (const itemId of this.gridOrder.keys()) {
+        if (!presentIds.has(itemId)) this.gridOrder.delete(itemId);
+      }
+      const takenSlots = new Set(this.gridOrder.values());
+      let nextSlot = 0;
+      for (const item of items) {
+        if (this.gridOrder.has(item.itemId)) continue;
+        while (takenSlots.has(nextSlot)) nextSlot++;
+        this.gridOrder.set(item.itemId, nextSlot);
+        takenSlots.add(nextSlot);
+      }
+      if (this.heldStack && !presentIds.has(this.heldStack.itemId)) {
+        this.heldStack = null;
+      }
+      // Server's view is authoritative — any optimistic in-flight
+      // decrements are now superseded.
+      this.pendingItemDecrements.clear();
     },
 
     onContainerOpen(containerEntityId, items) {
       this.containerEntityId = containerEntityId;
       this.containerItems = items;
+      // Opening a chest pops the player's inventory panel automatically so
+      // the user sees both sides of the transfer.
+      this.inventoryOpen = true;
     },
 
     onDialogueOpen(npcEntityId, dialogue) {

@@ -62,7 +62,7 @@ export class InventoryManager {
     return true;
   }
 
-  equip(entityId: number, itemId: number): boolean {
+  equip(entityId: number, itemId: number, quantity?: number): boolean {
     const inv = this.inventories.get(entityId);
     if (!inv) return false;
 
@@ -72,9 +72,26 @@ export class InventoryManager {
     const bp = getBlueprint(item.blueprintId);
     if (!bp?.equipSlot) return false;
 
-    // If already equipped in the same slot, unequip
+    // If already equipped in the same slot, unequip (whole stack)
     if (item.equippedSlot) {
       item.equippedSlot = undefined;
+      return true;
+    }
+
+    // Split-equip: if caller requested fewer than the full stack, peel off
+    // `quantity` into a new inventory entry marked equipped. The remainder
+    // stays in the source stack, unequipped.
+    if (quantity !== undefined && quantity > 0 && quantity < item.quantity) {
+      // Unequip any existing occupant of the target slot first
+      const current = getEquipped(inv, bp.equipSlot);
+      if (current) current.equippedSlot = undefined;
+      item.quantity -= quantity;
+      inv.items.push({
+        itemId: this.nextItemId++,
+        blueprintId: item.blueprintId,
+        quantity,
+        equippedSlot: bp.equipSlot,
+      });
       return true;
     }
 
@@ -99,7 +116,7 @@ export class InventoryManager {
     return true;
   }
 
-  drop(entityId: number, itemId: number): { blueprintId: number; quantity: number } | null {
+  drop(entityId: number, itemId: number, quantity?: number): { blueprintId: number; quantity: number } | null {
     const inv = this.inventories.get(entityId);
     if (!inv) return null;
 
@@ -107,8 +124,15 @@ export class InventoryManager {
     if (idx === -1) return null;
 
     const item = inv.items[idx];
-    const result = { blueprintId: item.blueprintId, quantity: item.quantity };
-    inv.items.splice(idx, 1);
+    const take = quantity !== undefined && quantity > 0 && quantity < item.quantity
+      ? quantity
+      : item.quantity;
+    const result = { blueprintId: item.blueprintId, quantity: take };
+    if (take >= item.quantity) {
+      inv.items.splice(idx, 1);
+    } else {
+      item.quantity -= take;
+    }
     return result;
   }
 
@@ -160,27 +184,29 @@ export class InventoryManager {
     }));
   }
 
-  transferToContainer(playerEid: number, containerEid: number, itemId: number): boolean {
+  transferToContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): boolean {
     const playerInv = this.get(playerEid);
     const containerInv = this.get(containerEid);
     if (!playerInv || !containerInv) return false;
     const item = findItem(playerInv, itemId);
     if (!item) return false;
-    const result = this.addItem(containerEid, item.blueprintId, 1);
+    const take = quantity !== undefined && quantity > 0 && quantity < item.quantity ? quantity : item.quantity;
+    const result = this.addItem(containerEid, item.blueprintId, take);
     if (!result.success) return false;
-    this.removeItem(playerEid, itemId, 1);
+    this.removeItem(playerEid, itemId, take);
     return true;
   }
 
-  transferFromContainer(playerEid: number, containerEid: number, itemId: number): boolean {
+  transferFromContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): boolean {
     const containerInv = this.get(containerEid);
     const playerInv = this.get(playerEid);
     if (!containerInv || !playerInv) return false;
     const item = findItem(containerInv, itemId);
     if (!item) return false;
-    const result = this.addItem(playerEid, item.blueprintId, 1);
+    const take = quantity !== undefined && quantity > 0 && quantity < item.quantity ? quantity : item.quantity;
+    const result = this.addItem(playerEid, item.blueprintId, take);
     if (!result.success) return false;
-    this.removeItem(containerEid, itemId, 1);
+    this.removeItem(containerEid, itemId, take);
     return true;
   }
 
