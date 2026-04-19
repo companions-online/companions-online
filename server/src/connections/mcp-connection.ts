@@ -21,6 +21,8 @@ export interface ActionResult {
 
 export class McpConnection implements PlayerConnection {
   entityId = 0;
+  /** Set in app.ts once the MCP session initializes. */
+  sessionId: string | null = null;
   world: GameWorldView | null = null;
   readonly eventBuffer: EventBuffer;
   viewRange: number;

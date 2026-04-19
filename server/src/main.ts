@@ -156,8 +156,15 @@ async function main() {
   // --- Start HTTP server ---
   const httpServer = serve({ fetch: app.fetch, port: PORT });
 
+  // Disable Node's per-request timeouts. Defaults (requestTimeout=5min,
+  // headersTimeout=1min) kill long-lived MCP SSE streams, which we need to
+  // stay up for the entire playing session. See docs/plans/mcp-server-keepalive.md.
+  const nodeServer = httpServer as import('http').Server;
+  nodeServer.requestTimeout = 0;
+  nodeServer.headersTimeout = 0;
+
   // --- Attach WebSocket server ---
-  const wss = new WebSocketServer({ server: httpServer as import('http').Server, path: '/ws' });
+  const wss = new WebSocketServer({ server: nodeServer, path: '/ws' });
   wss.on('connection', (ws) => wsUpgrade(ws));
 }
 

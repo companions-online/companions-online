@@ -10,6 +10,8 @@
 
 **processAction as switch/dispatch** — each of the 17 action types has its own private handler method. `cancelConflictingStates()` handles pre-action cleanup. Say is handled before cancellation (doesn't interrupt other actions).
 
+**Tick phase order: move→resolve→channel→resolve-damage→observe** — actions → critterAI → respawns → **movement** → **pickups+interacts** → **harvest** → consumables → combat → broadcast → cleanup. All three arrival-triggered resolvers (pickups, interacts, harvest's pathfinding→channel transition) sit together right after movement so `hasMoveTarget` reflects post-move state. The previous layout ran harvest *before* movement, which left the distance-harvest case racing: movement's `arriveIdle` would flip `currentAction=Idle` at phase 5 and the MCP tool would resolve before harvest (phase 3 of the *next* tick) could promote to `Harvesting`. Moving harvest after movement makes that flip happen atomically within one tick. Combat stays last among resolution phases so damage/death is the "final word" before broadcast.
+
 **Hono server on one port** — MCP Streamable HTTP + WebSocket + static files all served from port 3001. Hono app created via factory function (`createApp(world)`) for testability.
 
 ## MCP Design
@@ -23,6 +25,12 @@
 **Action blocking model** — MCP action tools block via Promise. `awaitAction()` creates Promise, `onTick` resolves it when player's currentAction returns to Idle/Dead. Tick 1: if Idle → instant action (equip/craft/etc), resolve immediately. Subsequent ticks: wait for completion. 600-tick (30s) safety valve timeout.
 
 **One McpServer per session** — tool handlers close over session-specific state (conn, entityId). Sessions stored in Map, persist until explicit DELETE. No inactivity timeout (user decision).
+
+**Identify before play** — MCP sessions don't auto-spawn a player. Session + player identity are decoupled: new clients must call `identify(name)` first; every other tool rejects with `isError: true` until then. Reasons: (1) sets up the future login/auth surface for both WS and MCP, (2) gives every MCP player a deliberate name instead of a shared default, (3) the name lands via `setEntityMeta` (broadcasts + emits `entity_meta_changed`) so nearby players see it immediately. Double-identify returns an error pointing to `server_command(nick)` for rename; the tool is intentionally not idempotent so callers don't try to use it as a re-spawn.
+
+**`addPlayer` does not set a default name** — each caller (`app.ts` WS branch, `test/e2e/helpers.ts` via `addTestPlayer`, `identify` tool) sets the name explicitly via `setEntityMeta`. Previously `addPlayer` mutated `entityMeta` directly with no broadcast; that meant existing nearby WS players never received an `EntityMeta` packet for the new player, because the pre-emptive `knownEntities.add` loop in `addPlayer` also suppressed the `broadcastTick` "entered" path that would have triggered `sendMetaFor`. Both defects removed together — the default-name mutation is gone and the pre-seed loop is gone.
+
+**MCP keepalive: Node timeout + per-session ping** — Node's default `requestTimeout=300000ms` killed the long-lived GET-SSE stream at exactly the observed 5-minute drop mark. Two-part fix: (1) set `requestTimeout=headersTimeout=0` on the http.Server in `main.ts`, (2) start a 15s `setInterval` in `createSession` that calls `McpServer.server.ping()` — a proper MCP spec `PingRequest` that writes real bytes to the standalone SSE stream. The ping interval is `.unref()`'d so it doesn't keep the Node process alive. Rejected approaches: SSE `: keepalive` comments (SDK doesn't expose the stream controller), `closeStandaloneSSEStream` polling pattern (requires `eventStore` wiring, more moving parts), generic `notifications/message` (pollutes client log handlers).
 
 **McpConnection holds live GameWorldView ref** — reads entity state, terrain, inventory on demand. No delta accumulation needed (unlike WebSocket). EventBuffer for game events. Dialogue/container state cached from one-shot callbacks (not readable from world ref).
 
