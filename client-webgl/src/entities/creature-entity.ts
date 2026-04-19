@@ -109,6 +109,10 @@ export function createCreatureEntity(
     },
 
     draw(self, sprites, gl, offsetX, offsetY, scene) {
+      // Dead entities are invisible — the smoke puff (spawned on transition)
+      // covers the moment of death, and the entity stays hidden until respawn
+      // snaps it back (see applyComponentsToEntity's Dead→Idle snap path).
+      if (self.currentAction?.actionType === ActionType.Dead) return;
       drawCreatureSprite(self, sprites, gl, offsetX, offsetY, isMoving(self), scene);
     },
   };

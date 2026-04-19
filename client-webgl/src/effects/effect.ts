@@ -1,7 +1,7 @@
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 
-export type EffectKind = 'damage' | 'pickup' | 'chat';
+export type EffectKind = 'damage' | 'pickup' | 'chat' | 'sprite-anim';
 
 export interface Effect {
   readonly kind: EffectKind;

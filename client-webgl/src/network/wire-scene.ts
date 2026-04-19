@@ -29,6 +29,9 @@ export function wireSceneToConnection(scene: Scene, conn: Connection): void {
       case 'chatMessage':      scene.onChatMessage(msg.senderEntityId, msg.message); break;
       case 'environmentSync':  scene.onEnvironmentSync(msg.gameMinute, msg.weather, msg.serverTick); break;
       case 'entityMeta':       scene.onEntityMeta(msg.entityId, msg.key, msg.value); break;
+      case 'gameEvents':
+        for (const ev of msg.events) scene.onGameEvent(ev, msg.tick);
+        break;
     }
   });
 }

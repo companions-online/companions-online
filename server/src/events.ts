@@ -45,6 +45,7 @@ export interface CombatHitReceivedDetails {
 }
 
 export interface CombatHitDealtDetails {
+  attackerEntityId: number;
   targetEntityId: number;
   targetName: string;
   damage: number;
@@ -88,6 +89,7 @@ export interface CreatureAggroDetails {
 }
 
 export interface HarvestYieldDetails {
+  harvesterEntityId: number;
   blueprintId: number;
   resourceName: string;
   targetEntityId?: number;
@@ -109,6 +111,7 @@ export interface ItemPickedUpDetails {
 }
 
 export interface CraftCompleteDetails {
+  crafterEntityId: number;
   blueprintId: number;
   itemName: string;
   quantity: number;

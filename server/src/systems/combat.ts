@@ -1,6 +1,7 @@
 import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { getBlueprint } from '@shared/blueprints.js';
+import { dirFromTo } from '@shared/direction.js';
 import type { SystemState } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 
@@ -48,6 +49,10 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
   });
 
   world.entities.currentAction.set(attackerId, { actionType: ActionType.Attacking, targetEntity: targetId });
+
+  // Face the target so the swing animation plays toward them.
+  const dir = dirFromTo(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY);
+  if (dir !== undefined) world.entities.direction.set(attackerId, { dir });
 
   // If not adjacent, pathfind to target
   if (!isAdjacent(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY)) {
@@ -125,6 +130,11 @@ export function runCombat(world: SystemState): CombatResult {
       state.ticksRemaining--;
       continue;
     }
+
+    // Re-face target each swing so the swing animation lines up if the
+    // target has moved around the attacker.
+    const dirAtSwing = dirFromTo(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY);
+    if (dirAtSwing !== undefined) world.entities.direction.set(attackerId, { dir: dirAtSwing });
 
     // Deal damage
     const targetHealth = world.entities.health.get(state.targetEntityId);

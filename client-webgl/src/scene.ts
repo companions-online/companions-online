@@ -13,9 +13,10 @@ import { CHUNK_SIZE, INTEREST_RANGE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/
 import { WorldMap } from '@shared/world/world-map.js';
 import type {
   DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
-  SyncedInventoryItem,
+  SyncedInventoryItem, WireEvent,
 } from '@shared/protocol/codec.js';
 import type { MetaKey } from '@shared/entity-meta.js';
+import { WireEventType } from '@shared/protocol/opcodes.js';
 import type { TextSurface } from './effects/text-surface.js';
 import { Camera } from './platform/camera.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
@@ -26,6 +27,9 @@ import { createTextSurfaceFactory, type TextSurfaceFactory } from './effects/tex
 import { createDamageNumber } from './effects/damage-number.js';
 import { createPickupText } from './effects/pickup-text.js';
 import { createChatBubble } from './effects/chat-bubble.js';
+import { loadEffectSprites, type EffectSprites } from './effects/effect-sprites.js';
+import { createSpriteAnim } from './effects/sprite-anim.js';
+import { ActionType } from '@shared/actions.js';
 import { getBlueprint } from '@shared/blueprints.js';
 import type { ClientEntity } from './entities/client-entity.js';
 import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
@@ -73,6 +77,27 @@ export interface ChatLogEntry {
   receivedAt: number;
 }
 
+/** Frame order for the 9-frame smoke sheet: build from intensity 6→9, fade
+ *  to 1. Sheet layout: row 0 holds intensities 9,8,7; row 1 holds 6,5,4;
+ *  row 2 holds 3,2,1 — so sheet index 0 is peak intensity, index 8 is
+ *  wispiest. Sequence below is the intensity labels translated to sheet
+ *  indices: 6→9 means 3→0, then fade to 1 means 0→8. ~55ms per frame. */
+const SMOKE_FRAME_SEQUENCE = [3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+const SMOKE_DURATION_MS = 660;
+const ATTACK_DURATION_MS = 280;
+const HARVEST_CRAFT_DURATION_MS = 420;
+
+function createSmokePuff(effectSprites: EffectSprites, tileX: number, tileY: number, startTime: number) {
+  return createSpriteAnim({
+    sheet: effectSprites.smoke,
+    anchorX: tileX,
+    anchorY: tileY,
+    startTime,
+    totalDurationMs: SMOKE_DURATION_MS,
+    frameSequence: SMOKE_FRAME_SEQUENCE,
+  });
+}
+
 export interface Scene {
   gl: WebGL2RenderingContext;
   camera: Camera;
@@ -95,6 +120,7 @@ export interface Scene {
   time: number;
   effects: EffectManager;
   textSurfaceFactory: TextSurfaceFactory;
+  effectSprites: EffectSprites;
   lighting: LightingManager;
 
   // --- Replicated sync state (Phase 9) ---
@@ -130,6 +156,10 @@ export interface Scene {
   onChatMessage(senderEntityId: number, message: string): void;
   onEnvironmentSync(gameMinute: number, weather: number, serverTick: number): void;
   onEntityMeta(entityId: number, key: MetaKey, value: string): void;
+  /** Dispatched per event in a GameEvents batch. Animation layer hooks in
+   *  here by switching on `event.type`. `tick` is the server tick the batch
+   *  was flushed at (batches are tick-aligned with the preceding WorldDelta). */
+  onGameEvent(event: WireEvent, tick: number): void;
 
   /** Process dirty chunks: rebuild elevation/instances/walls, reconcile
    *  eviction based on player chunk position, upload to GPU. Called once
@@ -174,6 +204,10 @@ export interface CreateSceneOptions {
   /** Text surface factory for effects. Tests inject a fake that skips
    *  OffscreenCanvas; production omits this and uses the real implementation. */
   textSurfaceFactory?: TextSurfaceFactory;
+  /** Pre-built effect sprite sheets (smoke, attack, harvest-craft) + HP-bar
+   *  solid-color textures. Tests inject stubs; production omits this and
+   *  boots the real loader from /assets/. */
+  effectSprites?: EffectSprites;
 }
 
 export async function createScene(
@@ -191,6 +225,7 @@ export async function createScene(
 
   const effects = new EffectManager();
   const textSurfaceFactory = opts.textSurfaceFactory ?? createTextSurfaceFactory(gl);
+  const effectSprites = opts.effectSprites ?? await loadEffectSprites(gl);
   const lighting = new LightingManager(gl);
 
   const entities = new Map<number, ClientEntity>();
@@ -324,6 +359,7 @@ export async function createScene(
     time: 0,
     effects,
     textSurfaceFactory,
+    effectSprites,
     lighting,
 
     inventory: [],
@@ -416,6 +452,7 @@ export async function createScene(
       const existing = entities.get(update.entityId);
       if (existing) {
         const prevHp = existing.health?.currentHp;
+        const prevActionType = existing.currentAction?.actionType;
         applyComponentsToEntity(existing, update.components, this.time);
 
         // Damage number: spawn when HP decreased.
@@ -427,6 +464,14 @@ export async function createScene(
             existing, delta, this.time, textSurfaceFactory,
             { largeFont: existing.id === this.myEntityId },
           ));
+        }
+
+        // Death smoke puff: currentAction transitioned into Dead. Covers the
+        // player-death case where the entity persists (no EntityDied event
+        // fires for players; only currentAction replicates).
+        const nextActionType = update.components.currentAction?.actionType;
+        if (nextActionType === ActionType.Dead && prevActionType !== ActionType.Dead) {
+          effects.spawn(createSmokePuff(effectSprites, existing.visualX, existing.visualY, this.time));
         }
         return;
       }
@@ -451,6 +496,74 @@ export async function createScene(
         bucket.set(key, value);
       } else {
         this.entityMeta.set(entityId, new Map([[key, value]]));
+      }
+    },
+
+    onGameEvent(event, _tick) {
+      switch (event.type) {
+        case WireEventType.CombatHitDealt: {
+          const attacker = entities.get(event.attackerId);
+          const target = entities.get(event.targetId);
+          // Midpoint when both alive; attacker-only on the killing hit (target
+          // already removed by the preceding WorldDelta — smoke puff covers the
+          // moment of kill anyway).
+          const ax = target
+            ? ((attacker?.visualX ?? target.visualX) + target.visualX) / 2
+            : attacker?.visualX;
+          const ay = target
+            ? ((attacker?.visualY ?? target.visualY) + target.visualY) / 2
+            : attacker?.visualY;
+          if (ax !== undefined && ay !== undefined) {
+            effects.spawn(createSpriteAnim({
+              sheet: effectSprites.attack,
+              anchorX: ax, anchorY: ay,
+              startTime: this.time,
+              totalDurationMs: ATTACK_DURATION_MS,
+              scale: 0.5,
+              alpha: 0.5,
+            }));
+          }
+          break;
+        }
+        case WireEventType.HarvestYield: {
+          const harvester = entities.get(event.harvesterId);
+          const target = event.targetId === 0xFFFF ? undefined : entities.get(event.targetId);
+          const ax = target && harvester
+            ? (harvester.visualX + target.visualX) / 2
+            : harvester?.visualX;
+          const ay = target && harvester
+            ? (harvester.visualY + target.visualY) / 2
+            : harvester?.visualY;
+          if (ax !== undefined && ay !== undefined) {
+            effects.spawn(createSpriteAnim({
+              sheet: effectSprites.harvestCraft,
+              anchorX: ax, anchorY: ay,
+              startTime: this.time,
+              totalDurationMs: HARVEST_CRAFT_DURATION_MS,
+              scale: 0.5,
+              alpha: 0.5,
+            }));
+          }
+          break;
+        }
+        case WireEventType.CraftComplete: {
+          const crafter = entities.get(event.crafterId);
+          if (crafter) {
+            effects.spawn(createSpriteAnim({
+              sheet: effectSprites.harvestCraft,
+              anchorX: crafter.visualX,
+              anchorY: crafter.visualY,
+              startTime: this.time,
+              totalDurationMs: HARVEST_CRAFT_DURATION_MS,
+              scale: 0.5,
+              alpha: 0.5,
+            }));
+          }
+          break;
+        }
+        case WireEventType.EntityDied:
+          effects.spawn(createSmokePuff(effectSprites, event.tileX, event.tileY, this.time));
+          break;
       }
     },
 

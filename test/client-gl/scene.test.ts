@@ -3,6 +3,8 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { CHUNK_SIZE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
 import { Terrain, Building } from '@shared/terrain.js';
+import { WireEventType } from '@shared/protocol/opcodes.js';
+import type { WireEvent } from '@shared/protocol/codec.js';
 import { createTestScene } from './harness.js';
 
 describe('scene network wiring', () => {
@@ -85,6 +87,141 @@ describe('scene network wiring', () => {
     // Absent fields survive.
     expect(e.blueprint?.blueprintId).toBe(BlueprintType.Deer);
     expect(e.currentAction?.actionType).toBe(ActionType.Idle);
+  });
+
+  it('gameEvents message dispatches each event through scene.onGameEvent', async () => {
+    const { scene, conn } = await createTestScene();
+    const received: Array<{ ev: WireEvent; tick: number }> = [];
+    scene.onGameEvent = (ev, tick) => received.push({ ev, tick });
+
+    conn.deliver({
+      type: 'gameEvents',
+      tick: 77,
+      events: [
+        { type: WireEventType.CombatHitDealt, attackerId: 1, targetId: 2, damage: 5, targetHp: 10, targetMaxHp: 20 },
+        { type: WireEventType.EntityDied,    entityId: 2, killerId: 1, tileX: 5, tileY: 6 },
+      ],
+    });
+
+    expect(received).toHaveLength(2);
+    expect(received[0].tick).toBe(77);
+    expect(received[0].ev.type).toBe(WireEventType.CombatHitDealt);
+    expect(received[1].ev.type).toBe(WireEventType.EntityDied);
+  });
+
+  it('CombatHitDealt spawns an attack-anim effect when both parties are known', async () => {
+    const { scene, conn } = await createTestScene();
+    // Seed attacker and target entities.
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 50,
+        components: {
+          position: { tileX: 10, tileY: 10 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+        },
+      },
+    });
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 51,
+        components: {
+          position: { tileX: 11, tileY: 10 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+        },
+      },
+    });
+    expect(scene.effects.active).toHaveLength(0);
+    conn.deliver({
+      type: 'gameEvents',
+      tick: 1,
+      events: [{
+        type: WireEventType.CombatHitDealt,
+        attackerId: 50, targetId: 51, damage: 3, targetHp: 5, targetMaxHp: 10,
+      }],
+    });
+    expect(scene.effects.active).toHaveLength(1);
+    expect(scene.effects.active[0].kind).toBe('sprite-anim');
+  });
+
+  it('EntityDied event spawns a smoke-puff effect at the death tile', async () => {
+    const { scene, conn } = await createTestScene();
+    expect(scene.effects.active).toHaveLength(0);
+    conn.deliver({
+      type: 'gameEvents',
+      tick: 10,
+      events: [{ type: WireEventType.EntityDied, entityId: 5, killerId: 7, tileX: 12, tileY: 14 }],
+    });
+    expect(scene.effects.active).toHaveLength(1);
+    expect(scene.effects.active[0].kind).toBe('sprite-anim');
+  });
+
+  it('Dead → non-Dead position delta snaps instead of lerping', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 21,
+        components: {
+          position: { tileX: 5, tileY: 5 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+          currentAction: { actionType: ActionType.Dead },
+        },
+      },
+    });
+    const e = scene.entities.get(21)!;
+    expect(e.visualX).toBe(5);
+    expect(e.visualY).toBe(5);
+    // Server teleports to (50, 60) with currentAction=Idle in the same delta.
+    conn.deliver({
+      type: 'worldDelta',
+      data: {
+        tick: 7,
+        entityUpdates: [{
+          entityId: 21,
+          components: {
+            position: { tileX: 50, tileY: 60 },
+            currentAction: { actionType: ActionType.Idle },
+          },
+        }],
+        entityRemovals: [],
+        tileUpdates: [],
+      },
+    });
+    // lerpFromX/Y set to the destination so the next tick snaps (t=1 immediately).
+    expect(e.lerpFromX).toBe(50);
+    expect(e.lerpFromY).toBe(60);
+  });
+
+  it('currentAction → Dead transition spawns a smoke-puff (player death)', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 11,
+        components: {
+          position: { tileX: 5, tileY: 5 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+          currentAction: { actionType: ActionType.Idle },
+        },
+      },
+    });
+    expect(scene.effects.active).toHaveLength(0);
+    conn.deliver({
+      type: 'worldDelta',
+      data: {
+        tick: 3,
+        entityUpdates: [{
+          entityId: 11,
+          components: { currentAction: { actionType: ActionType.Dead } },
+        }],
+        entityRemovals: [],
+        tileUpdates: [],
+      },
+    });
+    expect(scene.effects.active).toHaveLength(1);
+    expect(scene.effects.active[0].kind).toBe('sprite-anim');
   });
 
   it('entity removal drops the entry', async () => {

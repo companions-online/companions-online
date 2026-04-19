@@ -1,7 +1,7 @@
 export { TICK_RATE, TICK_MS, MAP_SIZE, CHUNK_SIZE, VIEW_RANGE, INTEREST_RANGE, SPAWN_X, SPAWN_Y, TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_HOUR, GAME_MINUTES_PER_DAY, TICKS_PER_GAME_DAY } from './constants.js';
 export { gameMinuteFromTick, gameHourFromTick, ambientTint, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET } from './lighting.js';
 export type { RGB } from './lighting.js';
-export { Direction, DX, DY, isDiagonal } from './direction.js';
+export { Direction, DX, DY, isDiagonal, dirFromTo } from './direction.js';
 export { Terrain, Building, isWalkable } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
 export { StatusEffect } from './status-effects.js';
@@ -14,12 +14,13 @@ export { getRecipe, getAllRecipes } from './recipes.js';
 export type { Recipe } from './recipes.js';
 export { getWeight, findItem, getEquipped, hasItems, canCraft, equipSlotToNumber, numberToEquipSlot, EQUIP_SLOT_NONE, EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from './inventory.js';
 export type { InventoryItem, Inventory } from './inventory.js';
-export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit } from './protocol/opcodes.js';
+export { ClientOpcode, ServerOpcode, DeltaSectionTag, TileFieldBit, WireEventType } from './protocol/opcodes.js';
 export {
   BufferWriter, BufferReader,
   rleEncode, rleDecode,
   encodeAction, encodePing, encodePong, encodeWelcome, encodeInventorySync,
   encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync, encodeEntityMeta,
+  encodeGameEvents,
   decodeServerMessage, decodeClientMessage,
 } from './protocol/codec.js';
 export type {
@@ -30,6 +31,7 @@ export type {
   DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft,
   DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionServerCommand,
   DecodedServerMessage, DecodedClientMessage,
+  WireEvent,
 } from './protocol/codec.js';
 export { tileToScreen, screenToTile } from './coordinates.js';
 export type { ScreenPoint, TilePoint } from './coordinates.js';

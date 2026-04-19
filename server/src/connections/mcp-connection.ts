@@ -99,6 +99,11 @@ export class McpConnection implements PlayerConnection {
     this.eventBuffer.push(event);
   }
 
+  onBroadcastEvent(_entityId: number, _event: GameEvent): void {
+    // MCP narration uses point-to-point events only; spectator broadcasts
+    // would duplicate first-person events into third-person buffer entries.
+  }
+
   onEntityMeta(_entityId: number, _targetEntityId: number, _key: MetaKey, _value: string): void {
     // MCP formatters read live from world.entityMeta; no buffering needed.
   }

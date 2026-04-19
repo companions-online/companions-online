@@ -19,6 +19,7 @@ export interface ConnectionEvent {
 export class HeadlessConnection implements PlayerConnection {
   readonly events: ConnectionEvent[] = [];
   readonly gameEvents: GameEvent[] = [];
+  readonly broadcastEvents: GameEvent[] = [];
 
   onInitialState(entityId: number, _world: GameWorldView): void {
     this.events.push({ type: 'init', entityId });
@@ -52,6 +53,10 @@ export class HeadlessConnection implements PlayerConnection {
 
   onGameEvent(_entityId: number, event: GameEvent): void {
     this.gameEvents.push(event);
+  }
+
+  onBroadcastEvent(_entityId: number, event: GameEvent): void {
+    this.broadcastEvents.push(event);
   }
 
   onEntityMeta(entityId: number, targetEntityId: number, key: MetaKey, value: string): void {

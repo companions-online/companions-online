@@ -174,3 +174,53 @@ tickOffset` is what feeds the day/night formula. Only the time-of-day
 path should read `effectiveTick`. New worlds start at
 `TWILIGHT_TICK_OFFSET = 19 * TICKS_PER_GAME_HOUR` so the first scene
 isn't pitch-black.
+
+## Smoke sheet layout: index 0 is peak, not trough
+
+`smoke-anim.png` is 3×3 with intensities descending row-major: row 0 =
+9,8,7 (peak fog at (0,0)), row 2 = 3,2,1 (wispy at (2,2)). So **sheet
+index 0 is the most intense frame**, not the least. `SMOKE_FRAME_SEQUENCE
+= [3,2,1,0,1,2,3,4,5,6,7,8]` plays 6→9→1 in intensity terms. Easy to
+get backwards if you assume "frame 0 = first in animation."
+
+## Dead entities: sprite hidden, position snaps on respawn
+
+`creature-entity.draw` early-returns when `currentAction?.actionType ===
+Dead`. Player-death smoke puff covers the visual beat; after that the
+sprite is invisible until respawn. **Don't** lerp across the respawn
+position delta — that looks like the corpse is walking back to spawn.
+`applyComponentsToEntity` checks the *previous* `currentAction` before
+applying the new one; when it was Dead, `lerpFromX/Y` are set to the new
+position (not the old visual) so the lerp computes `t=1` immediately
+and the sprite snaps. HP bar + nameplate overlays also suppress on
+Dead entities (same `currentAction` check).
+
+## Overlay positioning: use `sheet.footY`, not a fixed offset
+
+Earlier `drawNameplates` used `NAMEPLATE_OFFSET_Y = 60` — fine for a
+64-px creature, but the player is 128 px tall so the nameplate drew
+*inside* the sprite. `drawEntityOverlays` computes sprite top as
+`screenY + TILE_H/2 - sheet.footY - z*PX_PER_Z` (same math as
+`creature-entity.draw`) and stacks HP bar + nameplate above it with a
+4-px gap. Any new overhead overlay should use `entitySpriteTopY` — a
+fixed pixel offset will break on mixed sprite heights.
+
+## Effect alpha/scale: pass via `SpriteAnimOpts`, not pre-baked
+
+`createSpriteAnim` accepts optional `scale` and `alpha` multipliers.
+Attack + harvest overlays use `scale: 0.5, alpha: 0.5` to read as
+"light flourish" rather than "flashing card." Smoke puff uses defaults
+(1.0/1.0) — deliberate, the smoke is the main visual of a death. Don't
+re-export the sheet at half size; the scale param keeps asset authoring
+decoupled from per-effect presentation.
+
+## Game events channel: point-to-point vs broadcast
+
+`PlayerConnection` has two event channels — `onGameEvent` (point-to-
+point, MCP consumes for first-person narration) and `onBroadcastEvent`
+(spectator-range, WS encodes to wire for visual effects). `WebSocketConnection.onGameEvent`
+is **deliberately a no-op today** because the browser client only cares
+about broadcast events. `McpConnection.onBroadcastEvent` is a no-op for
+the inverse reason — broadcasts would duplicate first-person events
+into third-person buffer entries. Don't collapse the two into one
+method; the asymmetry is load-bearing.

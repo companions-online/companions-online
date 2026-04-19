@@ -5,8 +5,8 @@ Everything under `client-webgl/src/`. Ordered by role, not alphabetically.
 ## Bootstrap + loop
 ```
 main.ts                  Bootstrap: createScene → connect → wireSceneToConnection → attachMouseControls → renderer.start.
-scene.ts                 Scene interface + createScene + chunk rebuild/eviction + lighting manager + onEnvironmentSync mutator + all on* mutators.
-renderer.ts              RAF loop: drain dirty chunks, tick entities, scene.lighting.update(), terrain + Y-sorted sprite passes (lit), effects pass (unlit), HUD.
+scene.ts                 Scene interface + createScene + chunk rebuild/eviction + lighting manager + onEnvironmentSync mutator + all on* mutators incl onGameEvent (action-anim + smoke-puff spawns).
+renderer.ts              RAF loop: drain dirty chunks, tick entities, scene.lighting.update(), terrain + Y-sorted sprite passes (lit), drawEntityOverlays (HP bar + nameplate, unlit), effects pass (unlit), HUD.
 ```
 
 ## Network
@@ -64,6 +64,17 @@ platform/config.ts           Render constants: TILE_W/H, GAME_X/Y/W/H, TERRAIN_V
 platform/gl-utils.ts         createImageTexture, linkProgram, createBuffer, createTextureArray, uploadBitmapLayer, checkGLError.
 ```
 
+## Effects
+```
+effects/effect.ts            EffectManager + Effect interface. EffectKind: 'damage' | 'pickup' | 'chat' | 'sprite-anim'. Tick+draw in unlit pass.
+effects/sprite-anim.ts       createSpriteAnim — generic one-shot sheet animation Effect. Playable by explicit frameSequence + totalDurationMs; optional scale + alpha multipliers; optional followEntityId to re-anchor each tick.
+effects/effect-sprites.ts    loadEffectSprites — boots smoke / attack / harvest-craft sheets + HP-bar solid-color 1×1 textures. Injected via CreateSceneOptions.effectSprites for tests.
+effects/damage-number.ts     createDamageNumber — red number floats up on HP decrease (largeFont for self).
+effects/pickup-text.ts       createPickupText — green "+N item" floats up on pickup.
+effects/chat-bubble.ts       createChatBubble — speech bubble fading out.
+effects/text-surface.ts      TextSurfaceFactory — rasterized text textures, cached.
+```
+
 ## UI
 ```
 ui/hud.ts                    Stub — no UI yet (Phase 9 holds state, UI is a later pass).
@@ -89,7 +100,7 @@ test/persistence.test.ts                Save/load round-trips tickOffset + new-w
 ## Assets + HTML
 ```
 client-webgl/index.html      <canvas id="game"> + <script type="module" src="/dist/main.js">.
-client-webgl/assets/         deer, player, tree-0/1/2, door, unknown-entity PNGs.
+client-webgl/assets/         deer, player, tree-0/1/2, door, unknown-entity PNGs; smoke-anim / attack-anim / harvest-craft-anim effect sheets.
 client-webgl/build.ts        esbuild one-shot build.
 client-webgl/dev.ts          esbuild --watch. No dev server — game server serves built bundle.
 ```

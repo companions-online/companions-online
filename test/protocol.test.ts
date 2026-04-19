@@ -3,11 +3,13 @@ import {
   ClientAction, ActionType, Direction,
   encodeAction, encodePing, encodePong, encodeWelcome,
   encodeWorldDelta, encodeEntityFullState, encodeChunk, encodeEnvironmentSync, encodeEntityMeta,
+  encodeGameEvents,
   decodeClientMessage, decodeServerMessage,
   rleEncode, rleDecode,
   BufferReader,
   WAYPOINT_NONE,
   MetaKey,
+  WireEventType,
 } from '@shared/index.js';
 
 // ---- Action messages ----
@@ -421,6 +423,92 @@ describe('Chunk', () => {
       expect(msg.data.terrain).toEqual(terrain);
       expect(msg.data.buildings).toEqual(buildings);
       expect(msg.data.buildingMeta).toEqual(meta);
+    }
+  });
+});
+
+// ---- GameEvents ----
+
+describe('GameEvents', () => {
+  it('round-trips CombatHitDealt', () => {
+    const buf = encodeGameEvents(42, [{
+      type: WireEventType.CombatHitDealt,
+      attackerId: 100, targetId: 200, damage: 7, targetHp: 73, targetMaxHp: 80,
+    }]);
+    const msg = decodeServerMessage(buf);
+    expect(msg.type).toBe('gameEvents');
+    if (msg.type === 'gameEvents') {
+      expect(msg.tick).toBe(42);
+      expect(msg.events).toEqual([{
+        type: WireEventType.CombatHitDealt,
+        attackerId: 100, targetId: 200, damage: 7, targetHp: 73, targetMaxHp: 80,
+      }]);
+    }
+  });
+
+  it('round-trips HarvestYield with targetId sentinel', () => {
+    const buf = encodeGameEvents(1, [{
+      type: WireEventType.HarvestYield,
+      harvesterId: 5, targetId: 0xFFFF, yieldBlueprintId: 12,
+    }]);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events[0]).toEqual({
+        type: WireEventType.HarvestYield,
+        harvesterId: 5, targetId: 0xFFFF, yieldBlueprintId: 12,
+      });
+    }
+  });
+
+  it('round-trips CraftComplete', () => {
+    const buf = encodeGameEvents(99, [{
+      type: WireEventType.CraftComplete,
+      crafterId: 8, blueprintId: 33, quantity: 2,
+    }]);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events[0]).toEqual({
+        type: WireEventType.CraftComplete,
+        crafterId: 8, blueprintId: 33, quantity: 2,
+      });
+    }
+  });
+
+  it('round-trips EntityDied', () => {
+    const buf = encodeGameEvents(7, [{
+      type: WireEventType.EntityDied,
+      entityId: 900, killerId: 1, tileX: 64, tileY: 72,
+    }]);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events[0]).toEqual({
+        type: WireEventType.EntityDied,
+        entityId: 900, killerId: 1, tileX: 64, tileY: 72,
+      });
+    }
+  });
+
+  it('round-trips a mixed batch preserving order', () => {
+    const buf = encodeGameEvents(500, [
+      { type: WireEventType.CombatHitDealt, attackerId: 1, targetId: 2, damage: 3, targetHp: 4, targetMaxHp: 5 },
+      { type: WireEventType.HarvestYield, harvesterId: 10, targetId: 11, yieldBlueprintId: 12 },
+      { type: WireEventType.EntityDied, entityId: 20, killerId: 21, tileX: 22, tileY: 23 },
+    ]);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events).toHaveLength(3);
+      expect(msg.events[0].type).toBe(WireEventType.CombatHitDealt);
+      expect(msg.events[1].type).toBe(WireEventType.HarvestYield);
+      expect(msg.events[2].type).toBe(WireEventType.EntityDied);
+    }
+  });
+
+  it('round-trips an empty batch', () => {
+    const buf = encodeGameEvents(0, []);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events).toEqual([]);
+      expect(msg.tick).toBe(0);
     }
   });
 });
