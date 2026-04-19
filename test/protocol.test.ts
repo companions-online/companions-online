@@ -83,6 +83,60 @@ describe('ACTION messages', () => {
       expect((msg.data as any).parameter).toBe('hello world how are you');
     }
   });
+
+  it('round-trips Drop without quantity (whole stack)', () => {
+    const buf = encodeAction({ action: ClientAction.Drop, itemId: 123 });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect(msg.data.action).toBe(ClientAction.Drop);
+      expect((msg.data as any).itemId).toBe(123);
+      expect((msg.data as any).quantity).toBeUndefined();
+    }
+  });
+
+  it('round-trips Drop with partial quantity', () => {
+    const buf = encodeAction({ action: ClientAction.Drop, itemId: 123, quantity: 5 });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect(msg.data.action).toBe(ClientAction.Drop);
+      expect((msg.data as any).itemId).toBe(123);
+      expect((msg.data as any).quantity).toBe(5);
+    }
+  });
+
+  it('round-trips Equip with partial quantity', () => {
+    const buf = encodeAction({ action: ClientAction.Equip, itemId: 7, quantity: 2 });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect(msg.data.action).toBe(ClientAction.Equip);
+      expect((msg.data as any).itemId).toBe(7);
+      expect((msg.data as any).quantity).toBe(2);
+    }
+  });
+
+  it('round-trips Transfer with partial quantity', () => {
+    const buf = encodeAction({
+      action: ClientAction.Transfer, itemId: 9, containerId: 42, direction: 0, quantity: 3,
+    });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect(msg.data.action).toBe(ClientAction.Transfer);
+      expect((msg.data as any).itemId).toBe(9);
+      expect((msg.data as any).containerId).toBe(42);
+      expect((msg.data as any).direction).toBe(0);
+      expect((msg.data as any).quantity).toBe(3);
+    }
+  });
+
+  it('round-trips Transfer without quantity (whole stack)', () => {
+    const buf = encodeAction({
+      action: ClientAction.Transfer, itemId: 9, containerId: 42, direction: 1,
+    });
+    const msg = decodeClientMessage(buf);
+    if (msg.type === 'action') {
+      expect((msg.data as any).quantity).toBeUndefined();
+    }
+  });
 });
 
 // ---- EntityMeta ----

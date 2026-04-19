@@ -581,7 +581,7 @@ export class GameWorld implements SystemState {
 
   private handleEquip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
     const a = action as DecodedActionEquip;
-    if (this.inventoryMgr.equip(eid, a.itemId)) {
+    if (this.inventoryMgr.equip(eid, a.itemId, a.quantity)) {
       slot.connection.onInventoryChanged(eid, this);
     }
   }
@@ -596,7 +596,7 @@ export class GameWorld implements SystemState {
 
   private handleDrop(eid: number, slot: PlayerSlot, action: DecodedAction): void {
     const a = action as DecodedActionDrop;
-    const dropped = this.inventoryMgr.drop(eid, a.itemId);
+    const dropped = this.inventoryMgr.drop(eid, a.itemId, a.quantity);
     if (dropped) {
       const playerPos = this.entities.position.get(eid);
       if (playerPos) {
@@ -698,8 +698,8 @@ export class GameWorld implements SystemState {
     if (!bp || bp.blueprintId !== BlueprintType.StorageChest) return;
 
     const ok = a.direction === 0
-      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId)
-      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId);
+      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId, a.quantity)
+      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId, a.quantity);
     if (ok) {
       slot.connection.onInventoryChanged(eid, this);
       slot.connection.onContainerOpen(eid, a.containerId, this);

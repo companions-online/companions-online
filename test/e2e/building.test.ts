@@ -220,11 +220,12 @@ describe('E2E: Container system', () => {
     world.setAction(player, { action: ClientAction.Transfer, itemId: woodItem.itemId, containerId: chestEid, direction: 0 });
     world.runTicks(1);
 
-    // Player should have less wood, chest should have some
+    // Transfer with no quantity = whole stack: player's wood moves to chest in full.
     const playerWood = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     const chestWood = world.inventoryMgr.get(chestEid)!.items.find(i => i.blueprintId === BlueprintType.Wood);
+    expect(playerWood).toBeUndefined();
     expect(chestWood).toBeDefined();
-    expect(chestWood!.quantity).toBe(1);
+    expect(chestWood!.quantity).toBe(7);
 
     // Transfer back (direction 1 = chest→player)
     world.setAction(player, { action: ClientAction.Transfer, itemId: chestWood!.itemId, containerId: chestEid, direction: 1 });

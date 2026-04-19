@@ -54,7 +54,7 @@ export function createPickupText(
 
       const scr = tileToScreen(anchorX, anchorY, TILE_W, TILE_H);
       const dstX = scr.screenX + offsetX + TILE_W / 2 - surface.width / 2;
-      const dstY = scr.screenY + offsetY - floatY - surface.height - 20;
+      const dstY = scr.screenY + offsetY - floatY - surface.height - 70;
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, surface.texture);

@@ -143,14 +143,14 @@ export interface DecodedActionMoveTo { action: number; tileX: number; tileY: num
 export interface DecodedActionInteract { action: number; entityId: number; }
 export interface DecodedActionBuild { action: number; buildingType: number; tileX: number; tileY: number; }
 export interface DecodedActionPickup { action: number; entityId: number; }
-export interface DecodedActionEquip { action: number; itemId: number; }
+export interface DecodedActionEquip { action: number; itemId: number; quantity?: number; }
 export interface DecodedActionUnequip { action: number; slot: number; }
-export interface DecodedActionDrop { action: number; itemId: number; }
+export interface DecodedActionDrop { action: number; itemId: number; quantity?: number; }
 export interface DecodedActionCraft { action: number; recipeId: number; }
 export interface DecodedActionHarvest { action: number; tileX: number; tileY: number; }
 export interface DecodedActionUseItemAt { action: number; itemId: number; tileX: number; tileY: number; }
 export interface DecodedActionAttack { action: number; entityId: number; }
-export interface DecodedActionTransfer { action: number; itemId: number; containerId: number; direction: number; }
+export interface DecodedActionTransfer { action: number; itemId: number; containerId: number; direction: number; quantity?: number; }
 export interface DecodedActionDialogueSelect { action: number; npcEntityId: number; optionId: number; }
 export interface DecodedActionTrade { action: number; npcEntityId: number; tradeId: number; }
 export interface DecodedActionUseConsumable { action: number; itemId: number; }
@@ -327,11 +327,15 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
   } else if (action.action === ClientAction.Pickup) {
     w.writeU16((action as DecodedActionPickup).entityId);
   } else if (action.action === ClientAction.Equip) {
-    w.writeU16((action as DecodedActionEquip).itemId);
+    const a = action as DecodedActionEquip;
+    w.writeU16(a.itemId);
+    w.writeU8(a.quantity ?? 0);
   } else if (action.action === ClientAction.Unequip) {
     w.writeU8((action as DecodedActionUnequip).slot);
   } else if (action.action === ClientAction.Drop) {
-    w.writeU16((action as DecodedActionDrop).itemId);
+    const a = action as DecodedActionDrop;
+    w.writeU16(a.itemId);
+    w.writeU8(a.quantity ?? 0);
   } else if (action.action === ClientAction.Craft) {
     w.writeU16((action as DecodedActionCraft).recipeId);
   } else if (action.action === ClientAction.Harvest) {
@@ -350,6 +354,7 @@ export function encodeAction(action: DecodedAction): ArrayBuffer {
     w.writeU16(a.itemId);
     w.writeU16(a.containerId);
     w.writeU8(a.direction);
+    w.writeU8(a.quantity ?? 0);
   } else if (action.action === ClientAction.DialogueSelect) {
     const a = action as DecodedActionDialogueSelect;
     w.writeU16(a.npcEntityId);
@@ -682,12 +687,18 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action };
     case ClientAction.Pickup:
       return { action, entityId: r.readU16() };
-    case ClientAction.Equip:
-      return { action, itemId: r.readU16() };
+    case ClientAction.Equip: {
+      const itemId = r.readU16();
+      const qty = r.readU8();
+      return qty === 0 ? { action, itemId } : { action, itemId, quantity: qty };
+    }
     case ClientAction.Unequip:
       return { action, slot: r.readU8() };
-    case ClientAction.Drop:
-      return { action, itemId: r.readU16() };
+    case ClientAction.Drop: {
+      const itemId = r.readU16();
+      const qty = r.readU8();
+      return qty === 0 ? { action, itemId } : { action, itemId, quantity: qty };
+    }
     case ClientAction.Craft:
       return { action, recipeId: r.readU16() };
     case ClientAction.Harvest:
@@ -696,8 +707,15 @@ function decodeAction(r: BufferReader): DecodedAction {
       return { action, itemId: r.readU16(), tileX: r.readU16(), tileY: r.readU16() };
     case ClientAction.Attack:
       return { action, entityId: r.readU16() };
-    case ClientAction.Transfer:
-      return { action, itemId: r.readU16(), containerId: r.readU16(), direction: r.readU8() };
+    case ClientAction.Transfer: {
+      const itemId = r.readU16();
+      const containerId = r.readU16();
+      const direction = r.readU8();
+      const qty = r.readU8();
+      return qty === 0
+        ? { action, itemId, containerId, direction }
+        : { action, itemId, containerId, direction, quantity: qty };
+    }
     case ClientAction.DialogueSelect:
       return { action, npcEntityId: r.readU16(), optionId: r.readU8() };
     case ClientAction.Trade:

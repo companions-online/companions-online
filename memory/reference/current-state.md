@@ -47,6 +47,7 @@
 - **Point lights** (per-blueprint lightRadius/Color, per-target raycast with wall occlusion, 80×80 RGB8 lightmap window)
 - **Weather byte reserved** (wire field + GameWorld.weather, no rendering yet)
 - **Dashboard time-of-day display** (HH:MM in header, updated per second)
+- **WebGL inventory / crafting / chest UI** — Minecraft-style drag-and-drop panel centered in the game viewport. Full cursor-held mechanics (left-pick-whole, right-pick-half, shift-toggle-equip / shift-quick-transfer, drag-out-to-drop), client-local grid order, optimistic in-flight decrements for flicker-free drops. Wire protocol gained optional `quantity` on `Drop` / `Transfer` / `Equip`. World placement mode (ghost sprite + `UseItemAt`) for equipped placeables. Full orientation in `memory/client-webgl/inventory-panel.md`.
 
 **All 17 game actions + 21 MCP tools implemented.** (Action count
 unchanged since server commands are modeled as `ClientAction.ServerCommand`
@@ -123,7 +124,7 @@ regressions. See `memory/clientgl/` for full orientation.
 3. Critter alive zones: only run AI for critters near players
 
 ### Future
-- WebGL client UI (HUD, inventory, dialogue panel, chat — state is all wired, UI is the next pass)
+- WebGL client HUD / dialogue panel (inventory + crafting + chest + placement mode landed; dialogue panel still text-only on CLI)
 - Bend-only waypoint server optimization (plan in `docs/plans/bend-only-waypoints.md`)
 - 2D asset pipeline (web client)
 - Campfire burn timer
