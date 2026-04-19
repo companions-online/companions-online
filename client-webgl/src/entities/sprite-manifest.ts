@@ -85,4 +85,22 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Hide,       name: 'hide',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.RawMeat,    name: 'rawmeat', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.RawFish,    name: 'fish',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  // Tools / weapons / armor / consumables — same ground-item template (64px PNGs → 32px display).
+  { blueprintId: BlueprintType.Axe,        name: 'axe',        frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Pickaxe,    name: 'pickaxe',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Hammer,     name: 'Hammer',     frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.FishingRod, name: 'FishingRod', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.WoodenClub, name: 'WoodenClub', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.StoneKnife, name: 'StoneKnife', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.HideVest,   name: 'HideVest',   frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.HideCap,    name: 'HideCap',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.IronHelm,   name: 'IronHelm',   frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.CookedFish, name: 'CookedFish', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.CookedMeat, name: 'CookedMeat', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.Bandage,    name: 'Bandage',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  // Placeables — tile-sized render (64×64 PNGs kept at native size), south-vertex anchor.
+  { blueprintId: BlueprintType.StorageChest, name: 'StorageChest', frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
+  // WoodenWall is a building tile (wall-sprites.ts draws it in the world). This
+  // entry only feeds the inventory icon and placement preview.
+  { blueprintId: BlueprintType.WoodenWall,   name: 'WoodenWall',   frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
 ];
