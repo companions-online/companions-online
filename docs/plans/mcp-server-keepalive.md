@@ -1,3 +1,11 @@
+> **Status: Fix 1 + Fix 2 implemented** on the `mcp-bugfix` branch.
+> - Fix 1 — `main.ts` disables `requestTimeout` and `headersTimeout` on the Node HTTP server after `serve()`.
+> - Fix 2 — `mcp-session.ts::createSession` starts a 15s `setInterval(... server.server.ping() ...)` per session, cleared in `destroySession`. Unit test in `test/mcp-keepalive.test.ts`.
+> - Fix 3 (grace period) and Fix 4 (identity decoupled from session) are deferred; identity *is* now decoupled via a new `identify(name)` MCP tool (see `memory/reference/server-commands.md` and `memory/reference/current-state.md`), but the session-drop-preserves-entity workflow is not yet wired.
+> Original investigation transcript preserved below for reference.
+
+---
+
 
 ❯ okay, here is a big picture. we're writing a multiplayer RPG, that can be played by both humans, and LLMs. The game   is in ~/server/001-companion-online . Your harness (claude code) is in current directory. Observation:                  * I use the harness to spawn a sonnet, she's given a skill.md against the game's MCP
 * she plays relatively well! and things are coming together, we're building a house

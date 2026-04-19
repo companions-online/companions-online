@@ -17,9 +17,10 @@
 | `mcp-spec-draft.md` | Events | Evolved to 18 types (3 priority tiers), "teleportation model" cuts snapshot-inferrable events |
 | `mcp-spec-draft.md` | Medium/Low events | player_entered/left, entity_spawned/despawned removed. creature_fleeing + creature_died kept for continuity |
 | `mcp-spec-draft.md` | Event generation | Emitted at authoritative source (handlers/systems), not from delta reconstruction |
-| `mcp-spec-draft.md` | Inactivity timeout | Removed — MCP clients stay connected indefinitely, only dropped on session DELETE |
+| `mcp-spec-draft.md` | Inactivity timeout | Removed — MCP clients stay connected indefinitely. Long-session survival: Node HTTP `requestTimeout`/`headersTimeout` disabled + per-session 15s `McpServer.server.ping()` keepalive |
 | `mcp-spec-draft.md` | Action blocking | 30s (600 tick) safety valve timeout. Instant actions resolve in 1 tick |
 | `mcp-spec-draft.md` | Transport | Hono + @modelcontextprotocol/sdk WebStandardStreamableHTTPServerTransport, one McpServer per session |
+| `mcp-spec-draft.md` | Player identity | MCP sessions don't auto-spawn — client must call `identify(name)` first. All other tools reject pre-identify with `isError: true`. 21 tools total (17 action + 4 query). Name validation shares `validateName` with `/nick` |
 
 ## What to trust
 1. **Code** — always authoritative

@@ -4,6 +4,7 @@ import { ActionType } from '../../shared/src/actions.js';
 import { BlueprintType } from '../../shared/src/blueprints.js';
 import { WAYPOINT_NONE } from '../../shared/src/components.js';
 import { MAP_SIZE } from '../../shared/src/constants.js';
+import { MetaKey } from '../../shared/src/entity-meta.js';
 import { GameWorld } from '../../server/src/game-world.js';
 import { HeadlessConnection } from '../../server/src/connections/headless-connection.js';
 import { initTreeResource } from '../../server/src/systems/resources.js';
@@ -26,6 +27,9 @@ export function addTestPlayer(world: GameWorld, x: number, y: number): {
 } {
   const connection = new HeadlessConnection();
   const entityId = world.addPlayer(connection);
+  // Mirror the real WS spawn path: default display name, set via
+  // setEntityMeta so it broadcasts + emits entity_meta_changed.
+  world.setEntityMeta(entityId, MetaKey.Name, 'Player');
 
   // Override position to exact coordinates
   const pos = world.entities.position.get(entityId);
@@ -34,6 +38,14 @@ export function addTestPlayer(world: GameWorld, x: number, y: number): {
   }
   world.entities.position.set(entityId, { tileX: x, tileY: y });
   world.occupancy.set(x, y, entityId);
+
+  // Tests expect a clean event slate post-setup; drop the spawn-time meta
+  // broadcast noise from every player (self + any observers already added).
+  for (const slot of world.players.values()) {
+    const c = slot.connection as HeadlessConnection;
+    c.events.length = 0;
+    c.gameEvents.length = 0;
+  }
 
   return { entityId, connection };
 }

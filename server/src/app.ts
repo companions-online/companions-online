@@ -3,6 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { decodeClientMessage, encodePong } from '@shared/protocol/codec.js';
+import { MetaKey } from '@shared/entity-meta.js';
 import type { WebSocket } from 'ws';
 import type { GameWorld } from './game-world.js';
 import { McpConnection } from './connections/mcp-connection.js';
@@ -28,7 +29,9 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
       return (session.transport as WebStandardStreamableHTTPServerTransport).handleRequest(c.req.raw);
     }
 
-    // New session — create transport, server, and connection
+    // New session — create transport, server, and connection.
+    // The player entity is NOT spawned here; the MCP client must call the
+    // `identify` tool first. Other tools reject until then.
     const conn = new McpConnection(8);
     const mcpServer = new McpServer({ name: 'companions-online', version: '0.1.0' });
     registerTools(mcpServer, conn, world);
@@ -41,8 +44,8 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
         return storedSessionId;
       },
       onsessioninitialized: (sid: string) => {
-        const entityId = world.addPlayer(conn);
-        createSession(sid, transport, conn, entityId);
+        conn.sessionId = sid;
+        createSession(sid, transport, conn, 0, mcpServer);
       },
     });
 
@@ -60,6 +63,9 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
     wsConnectionCount++;
     const conn = new WebSocketConnection(rawWs, telemetry);
     const entityId = world.addPlayer(conn);
+    // WS players keep the legacy default name. Goes through setEntityMeta so
+    // the name actually broadcasts + emits entity_meta_changed.
+    world.setEntityMeta(entityId, MetaKey.Name, 'Player');
 
     rawWs.on('message', (data: Buffer | ArrayBuffer) => {
       try {

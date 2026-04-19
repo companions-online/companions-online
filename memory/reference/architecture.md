@@ -88,13 +88,15 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 ## MCP Layer
 
-**McpConnection** — thin PlayerConnection impl. Holds live `GameWorldView` reference for on-demand reads (no delta accumulation). EventBuffer for game events. Action blocking: `awaitAction()` returns Promise, resolved by `onTick` when player's currentAction returns to Idle/Dead or 30s timeout.
+**McpConnection** — thin PlayerConnection impl. Holds live `GameWorldView` reference for on-demand reads (no delta accumulation). EventBuffer for game events. Action blocking: `awaitAction()` returns Promise, resolved by `onTick` when player's currentAction returns to Idle/Dead or 30s timeout. `sessionId` field set by `app.ts` on session init; used by `identify` to upgrade the session's entityId after spawning.
 
-**mcp-tools.ts** — 20 tools (16 action + 4 query) registered on per-session McpServer. Action tools call `world.setAction()` + `await conn.awaitAction()`, then format the response using the shape matching what actually changed (see below). Query tools return immediately.
+**mcp-tools.ts** — 21 tools (17 action + 4 query). `identify` is the only tool that runs pre-spawn; every other tool is wrapped by the `guarded(...)` helper that returns `NOT_IDENTIFIED` with `isError: true` when `conn.entityId === 0`. Action tools call `world.setAction()` + `await conn.awaitAction()`, then format the response using the shape matching what actually changed (see below). Query tools return immediately. Error returns use the CallToolResult `isError: true` field per MCP spec.
 
-**mcp-session.ts** — session lifecycle. One McpServer + transport + McpConnection per session. Sessions persist until explicit DELETE.
+**mcp-session.ts** — session lifecycle. One McpServer + transport + McpConnection per session. `McpSession.entityId` starts at `0` (sentinel for "not identified"); `setSessionEntity` promotes it when `identify` spawns the player. `keepaliveTimer` holds a per-session `setInterval` that issues `server.server.ping()` every 15s (`.unref()`'d so it doesn't keep the process alive). `destroySession` clears the timer, resolves any pending action, and calls `removePlayer` only if `entityId !== 0`. Sessions persist until explicit DELETE or transport close.
 
 **mcp-formatters.ts** — pure section functions (`formatSelf`, `formatMap`, `formatEntities`, `formatTerrain`, `formatEvents`, `formatInventory`, `formatRecipes`, `formatContainer`, `formatDialogue`) composed by a single `formatEnvelope(conn, actionText, shape)` function. `ResponseShape` is an 8-variant union (`full`, `full_inv`, `self_inv`, `transfer`, `dialogue`, `container`, `social`, `meta`) — each action tool picks the shape that reflects what its action actually changed. Pathfound actions (`harvest`, `pickup`) pick between compact (`self_inv`) and full (`full_inv`) by comparing player position pre/post. `interact` branches on side effects (dialogue/container/world). Cuts token usage on instant inventory-only actions and surfaces container/dialogue state directly in action responses.
+
+**Identify + keepalive contract.** New MCP sessions stay entity-less until the client calls `identify(name)`. Pre-identify tool calls return an `isError` text block steering to identify. Node HTTP timeouts (`requestTimeout`, `headersTimeout`) are disabled in `main.ts` to keep long-lived SSE streams alive; a 15s MCP-native `ping()` interval per session produces real bytes on the standalone SSE stream so upstream proxies / harness liveness checks don't tear the stream down either. Background in `docs/plans/mcp-server-keepalive.md`.
 
 ## SystemState Interface
 
@@ -106,18 +108,29 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 0. Process player respawns (dead → alive after 5s timer)
 1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
-3. Run harvest (channeled gathering, yields on timer) → returns HarvestEvent[]
-3.5. Run consumables (channeled healing) → returns ConsumeEvent[]
-4. Run respawns (depleted trees respawn after 30s)
-5. Run movement (A* pathfinding, occupancy collision, wait-and-repath)
-6. Run combat (damage, death detection) → returns CombatResult { deaths, hits }
-7. Process deaths → loot drops + player death handling
-8. Resolve pending pickups + pending interacts
-9. Per-player visibility diff + chunk streaming + tile deltas → broadcast via PlayerConnection
-10. Clear dirty/destroyed + dirty tiles
+3. Tree respawns (depleted trees respawn after 30s)
+4. Movement (A* pathfinding, occupancy collision, wait-and-repath; arriveIdle fires Idle)
+5. Arrival-triggered resolvers (walk-to-then-do):
+   5a. Pending pickups — dist check, pick up if adjacent
+   5b. Pending interacts — dist check, execute interact if adjacent
+6. Harvest — pathfinding→channel transition (arrival flip) + channel tick + yield
+7. Consumables — channel tick + heal
+8. Combat (damage, death detection) → returns CombatResult { deaths, hits }
+9. Broadcast (per-player visibility diff + chunk streaming + tile deltas) via PlayerConnection
+10. Cleanup (clear dirty/destroyed + dirty tiles)
 ```
 
 20Hz tick rate (50ms budget).
+
+**Why arrival-triggered resolvers sit together right after movement**: all three
+(pickups, interacts, harvest's pathfinding→channel flip) check `hasMoveTarget`
+to see whether the player has actually finished walking. Before this order,
+harvest ran *before* movement, so on the arrival tick it saw a still-pending
+move target, skipped the transition, and let `arriveIdle` flip the player to
+`Idle`. The MCP tool then saw `Idle` on broadcast and resolved as complete —
+with no yield. Placing harvest after movement lets the flip happen atomically
+in the same tick as arrival, so the MCP player sees `Harvesting` and keeps
+awaiting. Pickups and interacts already lived here for the same reason.
 
 ## Action System (17 actions)
 

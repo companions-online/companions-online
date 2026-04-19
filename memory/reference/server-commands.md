@@ -82,15 +82,44 @@ Key behaviors:
 
 ## Default name
 
-Every player spawns with `MetaKey.Name = 'Player'`, set by direct
-`entityMeta.set(eid, new Map([[MetaKey.Name, 'Player']]))` in
-`addPlayer` — **not** via `setEntityMeta`. Reason: that path would
-emit an `entity_meta_changed` event and an `onEntityMeta` broadcast
-for every spawn, which is noise. Instead, the default name rides along
-on the initial `EntityFullState` via `ws-connection.sendMetaFor`.
+`GameWorld.addPlayer` sets **no name**. Each caller decides how to name
+its player:
 
-Consequence: the first `/nick` sets `oldValue = "Player"` (not
-`undefined`). Downstream code and tests should expect this.
+- **WS branch** (`app.ts:wsUpgrade`) sets `MetaKey.Name = 'Player'` via
+  `world.setEntityMeta` immediately after `addPlayer`. Goes through the
+  broadcast path so nearby players receive an `EntityMeta` packet.
+- **Test helper** (`test/e2e/helpers.ts::addTestPlayer`) sets `'Player'`
+  the same way, then clears spawn-time event buffers so tests see a
+  clean slate.
+- **MCP identify** tool (`mcp-tools.ts`) sets the client-supplied name
+  after validating it via the shared `validateName` helper.
+
+Reason for the flip: previously `addPlayer` used direct
+`entityMeta.set(...)` to avoid broadcast noise, but that quietly
+regressed the nametag-visibility feature — existing WS players never
+received an `EntityMeta` packet for new players (compounded by a
+pre-emptive `knownEntities.add` loop that defeated the
+`broadcastTick`-entered path). Moving the default-name mutation to a
+proper `setEntityMeta` call emits the broadcast, and removing the
+pre-seed loop lets the entered path fire normally — so new entities
+show up with their nameplate from the moment they enter visibility.
+
+Consequence: the first `/nick` on a WS player sets
+`oldValue = "Player"` as before. MCP players get no default name —
+they pick one via `identify(name)`.
+
+## identify tool (MCP)
+
+Callable exactly once per session. Skips the `guarded(...)` wrapper
+that rejects every other tool when `conn.entityId === 0`. Validates
+`name` with `validateName` (shared with `/nick`), calls
+`world.addPlayer(conn)` to spawn, `world.setEntityMeta(...)` to name
+(broadcasts), and `setSessionEntity(sessionId, entityId)` to promote
+the tracked session. Second call while identified returns `[error]
+already identified as "<name>"; use server_command(nick) to rename`
+with `isError: true`. Reasons to reject re-identify rather than allow
+silent re-spawn: it's not idempotent (would leak the old entity), and
+the intent is almost always "rename".
 
 ## Visibility / replay rules
 
@@ -145,6 +174,11 @@ type ServerCommandHandler =
 
 Current built-ins: `nick`, `name`.
 
+The `validateName(raw)` helper (also in `server-commands.ts`) is shared
+with the MCP `identify` tool — same rules (1–16 chars, `[A-Za-z0-9_-]`,
+trim-surrounding-whitespace, same error messages). Use it for any
+future command or tool that takes a display name.
+
 ### Adding a new command (typical shape)
 
 ```ts
@@ -177,17 +211,25 @@ If you want it to render above the entity, add a draw path similar to
 
 ## MCP surface
 
-One tool: `server_command { command: string; parameter: string }`.
+Two tools touch identity:
 
-Unlike other action tools it **does not** route through
-`setAction` + `awaitAction`. It calls `dispatchServerCommand` directly
-so the tool response can surface the `{ok, error}` result
-synchronously. On success it wraps `formatActionResponse`; on failure
-it prefixes `[error] …`. WS clients still go through `setAction` to
-preserve action-queue ordering with their normal command loop.
+- **`identify { name }`** — one-shot spawn + name; required before any
+  other tool. See the "identify tool" section above.
+- **`server_command { command: string; parameter: string }`** —
+  post-identify only (guard rejects pre-identify with `isError: true`).
+  Does **not** route through `setAction` + `awaitAction`; it calls
+  `dispatchServerCommand` directly so the tool response can surface
+  the `{ok, error}` result synchronously. On success it wraps
+  `formatEnvelope(..., ResponseShape.Meta)`; on failure it returns
+  `[error] …` with `isError: true`. WS clients still go through
+  `setAction` to preserve action-queue ordering with their normal
+  command loop.
 
-`formatSelf` prepends `name:"<name>"` when set (always set, given the
-default).
+`formatSelf` prepends `name:"<name>"` when set. For WS players the
+default `'Player'` is set on spawn; for MCP players the name is set
+by `identify`, so pre-identify `formatSelf` would omit the prefix —
+but MCP tools all reject pre-identify, so that branch isn't reachable
+by the LLM in practice.
 
 ## Client-webgl
 
@@ -240,8 +282,13 @@ person doesn't have to re-derive it.
 - **`test/client-gl/naming.test.ts`** — scene mutator correctness,
   empty-clear, entity-removal prune, keyboard slash-parsing for
   plain/`/nick foo`/no-param/multi-word.
-- **`test/e2e/mcp-e2e.test.ts`** — `server_command` tool surface
-  (success flows through, invalid nick returns `[error]`, tool count).
+- **`test/e2e/mcp-e2e.test.ts`** — identify lifecycle (reject-before,
+  spawn+name, double-identify error, invalid-name rejection, nametag
+  broadcast to nearby players), `server_command` tool surface (success
+  flows through, invalid nick returns `[error]` with `isError: true`),
+  tool count (21).
+- **`test/mcp-keepalive.test.ts`** — per-session ping cadence, cleanup
+  on `destroySession`, rejection-swallowing, no-timer-without-server.
 - **`test/events.test.ts`** — `EVENT_PRIORITY` maps all 19 event
   types (entity_meta_changed included).
 
@@ -252,15 +299,21 @@ person doesn't have to re-derive it.
 - `shared/src/protocol/opcodes.ts` — `ServerOpcode.EntityMeta = 0x36`.
 - `shared/src/protocol/codec.ts` — encode/decode for ServerCommand
   action and EntityMeta message.
-- `server/src/server-commands.ts` — dispatcher + built-in handlers.
+- `server/src/server-commands.ts` — dispatcher + built-in handlers;
+  exported `validateName` helper shared with the MCP `identify` tool.
 - `server/src/game-world.ts` — `entityMeta` map,
-  `setEntityMeta`/`getEntityMeta`, `handleServerCommand`, default-name
-  seed in `addPlayer`, Say senderName reads from meta.
+  `setEntityMeta`/`getEntityMeta`, `handleServerCommand`, Say senderName
+  reads from meta. `addPlayer` does **not** seed a default name —
+  callers do it via `setEntityMeta` so it broadcasts.
 - `server/src/connections/ws-connection.ts` — `onEntityMeta` +
   `sendMetaFor` replay on initial state / `delta.entered`.
 - `server/src/connections/{headless,mcp}-connection.ts` — capture /
   stub.
-- `server/src/mcp-tools.ts` — `server_command` tool.
+- `server/src/mcp-tools.ts` — `identify` tool, `server_command` tool,
+  `guarded(...)` wrapper that enforces pre-identify rejection for every
+  other tool.
+- `server/src/mcp-session.ts` — `setSessionEntity` used by `identify`
+  to upgrade the session once the player is spawned.
 - `server/src/mcp-formatters.ts` — `<self>` includes name; `<events>`
   renders `entity_meta_changed`.
 - `server/src/events.ts` — `entity_meta_changed` event type.

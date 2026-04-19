@@ -15,11 +15,20 @@ let world: GameWorld;
 let server: Server;
 let loop: GameLoop;
 let baseUrl: string;
+let clientSeq = 0;
 
 async function createMcpClient(): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await client.connect(transport);
+  return client;
+}
+
+/** Connect + identify with a unique name so tests don't collide on the same player. */
+async function createIdentifiedMcpClient(name?: string): Promise<Client> {
+  const client = await createMcpClient();
+  const finalName = name ?? `t${++clientSeq}`;
+  await client.callTool({ name: 'identify', arguments: { name: finalName } });
   return client;
 }
 
@@ -52,6 +61,7 @@ describe('MCP E2E', () => {
     const tools = await client.listTools();
     const toolNames = tools.tools.map(t => t.name);
 
+    expect(toolNames).toContain('identify');
     expect(toolNames).toContain('move_to');
     expect(toolNames).toContain('attack');
     expect(toolNames).toContain('harvest');
@@ -59,13 +69,73 @@ describe('MCP E2E', () => {
     expect(toolNames).toContain('get_inventory');
     expect(toolNames).toContain('craft');
     expect(toolNames).toContain('server_command');
-    expect(tools.tools.length).toBe(20);
+    expect(tools.tools.length).toBe(21);
 
     await client.close();
   });
 
-  it('get_surroundings returns formatted world state with all sections', async () => {
+  it('tools reject before identify', async () => {
     const client = await createMcpClient();
+    const result = await client.callTool({ name: 'get_surroundings', arguments: {} });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[error]');
+    expect(text).toContain('identify');
+
+    await client.close();
+  });
+
+  it('identify spawns player and returns Full envelope with name', async () => {
+    const client = await createMcpClient();
+    const result = await client.callTool({ name: 'identify', arguments: { name: 'alice' } });
+
+    expect(result.isError).toBeFalsy();
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('<action');
+    expect(text).toContain('Identified as alice');
+    expect(text).toContain('<self>');
+    expect(text).toMatch(/name:"alice"/);
+    expect(text).toContain('<map>');
+    expect(text).toContain('<entities>');
+
+    await client.close();
+  });
+
+  it('double identify returns error pointing to server_command', async () => {
+    const client = await createMcpClient();
+    await client.callTool({ name: 'identify', arguments: { name: 'first' } });
+    const result = await client.callTool({ name: 'identify', arguments: { name: 'second' } });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[error]');
+    expect(text).toContain('already identified');
+    expect(text).toContain('server_command');
+
+    await client.close();
+  });
+
+  it('identify rejects invalid names', async () => {
+    const cases = [
+      { arg: '', reason: 'characters' },
+      { arg: 'has space', reason: 'letters' },
+      { arg: '!', reason: 'letters' },
+      { arg: 'a'.repeat(17), reason: 'characters' },
+    ];
+    for (const { arg, reason } of cases) {
+      const client = await createMcpClient();
+      const result = await client.callTool({ name: 'identify', arguments: { name: arg } });
+      expect(result.isError).toBe(true);
+      const text = (result.content as any[])[0].text as string;
+      expect(text).toContain('[error]');
+      expect(text).toMatch(new RegExp(reason));
+      await client.close();
+    }
+  });
+
+  it('get_surroundings returns formatted world state with all sections', async () => {
+    const client = await createIdentifiedMcpClient();
     const result = await client.callTool({ name: 'get_surroundings', arguments: {} });
 
     const text = (result.content as any[])[0].text as string;
@@ -89,7 +159,7 @@ describe('MCP E2E', () => {
   });
 
   it('get_inventory returns player inventory with item IDs', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
     const result = await client.callTool({ name: 'get_inventory', arguments: {} });
 
     const text = (result.content as any[])[0].text as string;
@@ -107,7 +177,7 @@ describe('MCP E2E', () => {
   });
 
   it('get_recipes returns craftable recipes', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
     const result = await client.callTool({ name: 'get_recipes', arguments: {} });
 
     const text = (result.content as any[])[0].text as string;
@@ -120,7 +190,7 @@ describe('MCP E2E', () => {
   });
 
   it('craft tool returns with craft result + events', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     // Craft axe (recipe 0: 2 Wood + 1 Rock)
     const result = await client.callTool({ name: 'craft', arguments: { recipe_id: 0 } });
@@ -136,7 +206,7 @@ describe('MCP E2E', () => {
   });
 
   it('say tool returns immediately', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     const result = await client.callTool({ name: 'say', arguments: { message: 'hello world' } });
 
@@ -148,7 +218,7 @@ describe('MCP E2E', () => {
   });
 
   it('server_command sets player name and surfaces it in <self>', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient('placeholder');
 
     const setResult = await client.callTool({
       name: 'server_command',
@@ -165,12 +235,13 @@ describe('MCP E2E', () => {
   });
 
   it('server_command rejects invalid nicks with an error prefix', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     const result = await client.callTool({
       name: 'server_command',
       arguments: { command: 'nick', parameter: 'has space' },
     });
+    expect(result.isError).toBe(true);
     const text = (result.content as any[])[0].text as string;
     expect(text).toContain('[error]');
 
@@ -178,7 +249,7 @@ describe('MCP E2E', () => {
   });
 
   it('say returns social shape: events only, no <map> or <entities>', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     const result = await client.callTool({ name: 'say', arguments: { message: 'ping' } });
     const text = (result.content as any[])[0].text as string;
@@ -194,7 +265,7 @@ describe('MCP E2E', () => {
   });
 
   it('interact on adjacent chest returns container shape, not map', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     // Find this client's player (most-recently-added — only one active session at a time here).
     const playerIds = [...world.players.keys()];
@@ -233,7 +304,7 @@ describe('MCP E2E', () => {
   });
 
   it('equip returns self_inv shape: self + inventory + events, no map', async () => {
-    const client = await createMcpClient();
+    const client = await createIdentifiedMcpClient();
 
     // Player starts with 2 Wood + 1 Rock + an Axe recipe could craft, but default
     // inventory has no equippable tool. Simplest path: inject an Axe via world state.
@@ -256,5 +327,29 @@ describe('MCP E2E', () => {
     expect(text).toContain('hand:Axe');
 
     await client.close();
+  });
+
+  it('identify broadcasts nametag to nearby players', async () => {
+    // Two MCP clients; the second identifies after the first is already there.
+    // The first should see an entity_meta_changed event for the second.
+    const alice = await createIdentifiedMcpClient('alice');
+
+    // Place alice and a second session's player at close coords before B identifies.
+    // We can't position alice, but both spawn near SPAWN so they're in range.
+    const bob = await createMcpClient();
+    await bob.callTool({ name: 'identify', arguments: { name: 'bob' } });
+
+    // Pump a tick so the event emitted on bob's spawn reaches alice's event buffer.
+    world.runTick();
+
+    const surround = await alice.callTool({ name: 'get_surroundings', arguments: {} });
+    const text = (surround.content as any[])[0].text as string;
+    // Either alice saw bob's meta change in events, or bob shows in alice's entities.
+    // We accept either: the meta event is the stricter signal.
+    const mentionsBob = text.includes('bob') || text.includes('changed name');
+    expect(mentionsBob).toBe(true);
+
+    await alice.close();
+    await bob.close();
   });
 });

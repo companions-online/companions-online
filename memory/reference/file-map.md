@@ -44,8 +44,8 @@ dashboard.ts             ANSI telemetry dashboard rendering; shows in-game time 
 world-persistence.ts     saveWorld/loadWorld/createNewWorld; tickOffset on meta, createNewWorld seeds TWILIGHT_TICK_OFFSET
 npc-dialogues.ts         Static dialogue trees + trade offers for Hermit, Trader, Wanderer
 server-commands.ts       Slash-command registry + dispatcher; built-in /nick /name → handleNick
-mcp-tools.ts             20 MCP tool registrations (16 action + 4 query) — incl server_command
-mcp-session.ts           MCP session lifecycle (create/destroy/lookup, session Map)
+mcp-tools.ts             21 MCP tool registrations (identify + 16 action + 4 query); all but identify wrapped by guarded(...) that rejects pre-identify with isError:true
+mcp-session.ts           MCP session lifecycle (create/destroy/lookup, session Map); per-session 15s ping keepalive timer; setSessionEntity promotes entityId after identify
 mcp-formatters.ts        Text formatters: self, map, entities, terrain, events, inventory, recipes, container, envelopes
 ecs/component-store.ts   ComponentStore<T> — generic Map with auto-dirty
 ecs/entity-manager.ts    EntityManager — entity lifecycle, 7 component stores, dirty/destroyed tracking
@@ -106,7 +106,8 @@ e2e/consumable.test.ts   Bandage/food healing, interruption, HP cap
 e2e/chat.test.ts         Say broadcast, range filtering, non-interruption
 e2e/events.test.ts       Event emission from all 18 event types through real game actions
 e2e/environment.test.ts  Env sync emission cadence + tickOffset behavior + effectiveTick math
-e2e/mcp-e2e.test.ts      Real server E2E: MCP client → HTTP → tools → game → response format
+e2e/mcp-e2e.test.ts      Real server E2E: MCP client → HTTP → tools → game → response format; identify lifecycle; nametag broadcast
+mcp-keepalive.test.ts    Per-session ping cadence, cleanup on destroy, rejection swallow (unit-level)
 lighting.test.ts         Keyframe interpolation + gameMinute math
 persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight seed
 client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
