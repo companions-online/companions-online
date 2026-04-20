@@ -8,7 +8,7 @@ import { Direction } from '@shared/direction.js';
 import { ActionType } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
-import { MAP_SIZE, MAX_HARVEST_YIELDS } from '@shared/constants.js';
+import { MAP_SIZE, MAX_HARVEST_YIELDS, ACTION_BASE_TICKS } from '@shared/constants.js';
 import { startHarvest, runHarvest, cancelHarvest, isHarvesting } from '../server/src/systems/harvest.js';
 import { initTreeResource, runResourceRespawns } from '../server/src/systems/resources.js';
 import { runMovement } from '../server/src/systems/movement.js';
@@ -77,7 +77,7 @@ describe('Harvest system', () => {
     expect(startHarvest(player, 11, 10, w)).toBe(true);
     expect(isHarvesting(player, w)).toBe(true);
 
-    for (let i = 0; i < 10; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) runHarvest(w);
 
     const inv = w.inventoryMgr.get(player)!;
     expect(inv.items.some(i => i.blueprintId === BlueprintType.Wood)).toBe(true);
@@ -92,7 +92,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 4; i++) runHarvest(w);
+    for (let i = 0; i < 4 * ACTION_BASE_TICKS; i++) runHarvest(w);
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
@@ -105,7 +105,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 50; i++) runHarvest(w);
+    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood?.quantity).toBe(5);
@@ -131,7 +131,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 10; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) runHarvest(w);
 
     const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock).toBeDefined();
@@ -146,8 +146,8 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    // Pickaxe tick cost is 4; MAX_HARVEST_YIELDS=5 → ~20 ticks needed. Give plenty of slack.
-    for (let i = 0; i < 60; i++) runHarvest(w);
+    // Pickaxe base tickCost 4 → resolves to 4 × ACTION_BASE_TICKS. 5 yields needs 20 × ACTION_BASE_TICKS; loop slack is generous.
+    for (let i = 0; i < 5 * 4 * ACTION_BASE_TICKS + 20; i++) runHarvest(w);
 
     const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock?.quantity).toBe(MAX_HARVEST_YIELDS);
@@ -170,7 +170,7 @@ describe('Harvest system', () => {
       w.entities.clearDirty();
     }
 
-    for (let i = 0; i < 15; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
@@ -184,7 +184,7 @@ describe('Tree respawning', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 50; i++) runHarvest(w);
+    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
 
     const countBefore = w.entities.getEntityCount();
 

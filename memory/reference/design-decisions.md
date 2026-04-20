@@ -56,7 +56,9 @@
 
 **Player death** — doesn't destroy the entity. Sets `ActionType.Dead`, drops equipped items, schedules respawn in 100 ticks.
 
-**Fist as default weapon** — Player base damage=1, attackSpeed=2.
+**Fist as default weapon** — Player base damage=1, attackSpeed=2 (base).
+
+**`ACTION_BASE_TICKS` dial** — global multiplier in `shared/src/constants.ts` applied via `Math.round(X * ACTION_BASE_TICKS)` at every harvest `tickCost` resolution (`systems/harvest.ts`) and attack-speed resolution (`systems/combat.ts`). Blueprint `weaponSpeed` / creature `attackSpeed` and the harvest-system literals are **base** values (what you'd feel at `ACTION_BASE_TICKS = 1`). One-line tuning for the combat/harvest cadence without touching data. Tests import the constant and compute budgets from it, so flipping the dial keeps the suite green.
 
 ## Pathfinding & Movement
 

@@ -2,6 +2,7 @@ import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { getBlueprint } from '@shared/blueprints.js';
 import { dirFromTo } from '@shared/direction.js';
+import { ACTION_BASE_TICKS } from '@shared/constants.js';
 import type { SystemState } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 
@@ -36,6 +37,8 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
       if (bpDef?.attackSpeed) attackSpeed = bpDef.attackSpeed;
     }
   }
+
+  attackSpeed = Math.round(attackSpeed * ACTION_BASE_TICKS);
 
   if (damage <= 0 || attackSpeed <= 0) return false;
 
