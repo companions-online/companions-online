@@ -1205,6 +1205,57 @@ export class GameWorld implements SystemState {
     this.spawnRng = (this.spawnRng * 1664525 + 1013904223) >>> 0;
     return (this.spawnRng % 5) - 2;
   }
+
+  // --- Generic entity spawn helpers (used by worldgen + /spawn command) ---
+
+  /** Spawn a creature/NPC/tree entity with the full component shape used by
+   *  `createDefaultWorld`. Sets occupancy unconditionally (callers ensure the
+   *  tile is free). Does NOT init critter-AI state — call
+   *  `initCritterForEntity` separately when appropriate. */
+  spawnCreatureEntity(blueprintType: BlueprintType, tileX: number, tileY: number, variant = 0): number {
+    const bp = getBlueprint(blueprintType);
+    if (!bp) throw new Error(`unknown blueprint ${blueprintType}`);
+    const eid = this.entities.create();
+    this.entities.position.set(eid, { tileX, tileY });
+    this.entities.direction.set(eid, { dir: Direction.S });
+    this.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
+    this.entities.currentAction.set(eid, { actionType: ActionType.Idle });
+    if (bp.maxHp) this.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
+    this.entities.blueprint.set(eid, { blueprintId: blueprintType, variant });
+    this.entities.statusEffects.set(eid, { effects: 0 });
+    if (bp.speed) this.entities.speed.set(eid, bp.speed);
+    this.occupancy.set(tileX, tileY, eid);
+    return eid;
+  }
+
+  /** Spawn a ground-item entity: position + blueprint only, no statusEffects
+   *  (that absence is what distinguishes ground items from placed entities).
+   *  No occupancy. Mirrors the drop handler's shape. */
+  spawnGroundItem(blueprintType: BlueprintType, tileX: number, tileY: number): number {
+    const eid = this.entities.create();
+    this.entities.position.set(eid, { tileX, tileY });
+    this.entities.blueprint.set(eid, { blueprintId: blueprintType, variant: 0 });
+    return eid;
+  }
+
+  /** Chebyshev-ring search outward from (cx,cy) up to `radius`, returning the
+   *  first walkable tile (optionally also unoccupied). Deterministic iteration
+   *  order. Returns null if no tile qualifies within range. */
+  findOpenTileNear(cx: number, cy: number, radius: number, requireUnoccupied: boolean): { x: number; y: number } | null {
+    for (let r = 0; r <= radius; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = cx + dx;
+          const y = cy + dy;
+          if (!this.map.isWalkable(x, y)) continue;
+          if (requireUnoccupied && this.occupancy.isOccupied(x, y)) continue;
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  }
 }
 
 /** Create a fully initialized world with terrain, entities, critter AI, tree resources. */
@@ -1213,18 +1264,8 @@ export function createDefaultWorld(seed: number): GameWorld {
   const world = new GameWorld(map, seed);
 
   for (const spawn of entitySpawns) {
-    const bp = getBlueprint(spawn.blueprint);
-    if (!bp) continue;
-    const eid = world.entities.create();
-    world.entities.position.set(eid, { tileX: spawn.x, tileY: spawn.y });
-    world.entities.direction.set(eid, { dir: Direction.S });
-    world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-    world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-    if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-    world.entities.blueprint.set(eid, { blueprintId: spawn.blueprint, variant: spawn.variant });
-    world.entities.statusEffects.set(eid, { effects: 0 });
-    if (bp.speed) world.entities.speed.set(eid, bp.speed);
-    world.occupancy.set(spawn.x, spawn.y, eid);
+    if (!getBlueprint(spawn.blueprint)) continue;
+    const eid = world.spawnCreatureEntity(spawn.blueprint, spawn.x, spawn.y, spawn.variant);
     if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
   }
   world.entities.clearDirty();

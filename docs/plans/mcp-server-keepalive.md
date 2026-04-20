@@ -1,3 +1,8 @@
+Done
+
+
+
+
 > **Status: Fix 1 + Fix 2 implemented** on the `mcp-bugfix` branch.
 > - Fix 1 — `main.ts` disables `requestTimeout` and `headersTimeout` on the Node HTTP server after `serve()`.
 > - Fix 2 — `mcp-session.ts::createSession` starts a 15s `setInterval(... server.server.ping() ...)` per session, cleared in `destroySession`. Unit test in `test/mcp-keepalive.test.ts`.
@@ -7,9 +12,11 @@
 ---
 
 
-❯ okay, here is a big picture. we're writing a multiplayer RPG, that can be played by both humans, and LLMs. The game   is in ~/server/001-companion-online . Your harness (claude code) is in current directory. Observation:                  * I use the harness to spawn a sonnet, she's given a skill.md against the game's MCP
+❯ okay, here is a big picture. we're writing a multiplayer RPG, that can be played by both humans, and LLMs. The game   is in ~/server/001-companion-online . Your harness (claude code) is in current directory. Observation:
+* I use the harness to spawn a sonnet, she's given a skill.md against the game's MCP
 * she plays relatively well! and things are coming together, we're building a house
-* after about 3-5 minutes, her MCP connection drops, and she re-spawns as a new character -losing all her inventory     * this is almost definitely an MCP timeout issue; we're identifying sessions using the mcp session ID header            * the question is, why did that got reset? this could be either your harness, or the game.                              Do an exploration, find the root cause, and explain it to me; exploration & explanation only (maybe with suggestions on  what we can do game-side about it); use as many subagents as necessary to find this.
+* after about 3-5 minutes, her MCP connection drops, and she re-spawns as a new character -losing all her inventory     * this is almost definitely an MCP timeout issue; we're identifying sessions using the mcp session ID header            * the question is, why did that got reset? this could be either your harness, or the game.
+Do an exploration, find the root cause, and explain it to me; exploration & explanation only (maybe with suggestions on  what we can do game-side about it); use as many subagents as necessary to find this.
 
 ● Let me launch parallel investigations into both the harness and the game server to find the root cause.
 
@@ -46,10 +53,12 @@ Root Cause: Node.js requestTimeout kills SSE after 5 minutes
 
 The chain of events
 
-1. Agent connects — POST to /mcp creates a session, spawns a player entity with inventory                               2. SSE stream opens — GET to /mcp opens a long-lived HTTP request for server→client notifications
+1. Agent connects — POST to /mcp creates a session, spawns a player entity with inventory
+2. SSE stream opens — GET to /mcp opens a long-lived HTTP request for server→client notifications
 3. 5 minutes pass — Node.js HTTP server's default requestTimeout of 300,000ms (5 min) fires and kills the GET request   4. Server destroys everything — transport.onclose fires → destroySession() → world.removePlayer() — player entity +     inventory gone (mcp-session.ts:41)
 
-5. Harness reconnects — detects the drop, clears its MCP client cache, calls connectToServer() fresh                    6. New session — POST arrives at /mcp with no mcp-session-id header → new UUID, new player entity, starting inventory   (2 Wood + 1 Rock)
+5. Harness reconnects — detects the drop, clears its MCP client cache, calls connectToServer() fresh
+6. New session — POST arrives at /mcp with no mcp-session-id header → new UUID, new player entity, starting inventory   (2 Wood + 1 Rock)
 
 
 

@@ -32,16 +32,22 @@ function randRange(state: { rng: number }, min: number, max: number): number {
   return min + (state.rng % (max - min + 1));
 }
 
+/** Initialize critter-AI state for a single entity. No-op if the entity has
+ *  no blueprint or the blueprint has no BEHAVIOR_CONFIGS entry. */
+export function initCritterForEntity(eid: number, world: SystemState): void {
+  const bp = world.entities.blueprint.get(eid);
+  if (!bp) return;
+  const config = BEHAVIOR_CONFIGS[bp.blueprintId];
+  if (!config) return;
+
+  const state: CritterState = { idleTicksRemaining: 0, rng: eid * 2654435761, behavior: 'wander' };
+  state.idleTicksRemaining = randRange(state, 1, config.idleMax);
+  world.critterStates.set(eid, state);
+}
+
 export function initCritterAI(world: SystemState): void {
   for (const eid of world.entities.getAllEntities()) {
-    const bp = world.entities.blueprint.get(eid);
-    if (!bp) continue;
-    const config = BEHAVIOR_CONFIGS[bp.blueprintId];
-    if (!config) continue;
-
-    const state: CritterState = { idleTicksRemaining: 0, rng: eid * 2654435761, behavior: 'wander' };
-    state.idleTicksRemaining = randRange(state, 1, config.idleMax);
-    world.critterStates.set(eid, state);
+    initCritterForEntity(eid, world);
   }
 }
 

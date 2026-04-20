@@ -172,7 +172,28 @@ type ServerCommandHandler =
   returns a structured result.
 - Handlers run instantly on the current tick; don't do async work.
 
-Current built-ins: `nick`, `name`.
+Current built-ins: `nick`, `name`, `spawn`, `time`.
+
+### `/spawn <name>` — dev/god
+
+Resolves `parameter` to a blueprint by display name (case-insensitive,
+whitespace-collapsed via `getBlueprintByName` in `shared/src/blueprints.ts`),
+finds the first open tile within Chebyshev-radius 6 via
+`GameWorld.findOpenTileNear`, and spawns it. Creatures go through
+`GameWorld.spawnCreatureEntity` + `initCritterForEntity` so AI kicks in on
+the next tick; items go through `GameWorld.spawnGroundItem`. Out-of-scope
+targets (`Player`, `Tree`, NPC category, placeable category) return an
+`{ok:false}` with a guidance message — placeables specifically point back
+at `UseItemAt`. Ungated god command — add an auth check before multiplayer.
+
+### `/time <preset|HH|HH:MM>` — dev/god
+
+Shifts `world.tickOffset` so the current effective in-game time matches
+the request. Presets: `day`/`noon` → 12:00, `night`/`midnight` → 0:00,
+`dawn`/`sunrise` → 5:00, `twilight`/`dusk`/`sunset` → 19:00. Also accepts
+`HH` (0–23) and `HH:MM`. Uses existing `world.setTickOffset`, which resets
+`_lastEnvEmitHour = -1` so the next `broadcastTick` emits a fresh
+`Environment` section and WS clients snap immediately. Ungated god command.
 
 The `validateName(raw)` helper (also in `server-commands.ts`) is shared
 with the MCP `identify` tool — same rules (1–16 chars, `[A-Za-z0-9_-]`,

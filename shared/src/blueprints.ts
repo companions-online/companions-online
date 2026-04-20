@@ -152,12 +152,19 @@ const BLUEPRINTS: Blueprint[] = [
 ];
 
 const blueprintMap = new Map<number, Blueprint>();
+const blueprintByName = new Map<string, Blueprint>();
 for (const bp of BLUEPRINTS) {
   blueprintMap.set(bp.id, bp);
+  blueprintByName.set(bp.name.toLowerCase(), bp);
 }
 
 export function getBlueprint(id: number): Blueprint | undefined {
   return blueprintMap.get(id);
+}
+
+/** Case-insensitive, whitespace-collapsed lookup by display name. */
+export function getBlueprintByName(name: string): Blueprint | undefined {
+  return blueprintByName.get(name.trim().toLowerCase().replace(/\s+/g, ' '));
 }
 
 import { Building } from './terrain.js';
