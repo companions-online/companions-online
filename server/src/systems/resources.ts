@@ -35,7 +35,7 @@ function rand(world: SystemState): number {
   return (world.respawnRng >>> 0) / 0x100000000;
 }
 
-export function runRespawns(world: SystemState): void {
+export function runResourceRespawns(world: SystemState): void {
   // Set absolute tick for newly queued items
   for (const entry of world.respawnQueue) {
     if (entry.tick === -1) entry.tick = world.currentTick + TREE_RESPAWN_TICKS;

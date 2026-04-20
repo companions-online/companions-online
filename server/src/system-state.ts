@@ -67,4 +67,6 @@ export interface SystemState {
 
   respawnRng: number;
   currentTick: number;
+  /** currentTick + tickOffset — feeds day/night schedule lookups. */
+  readonly effectiveTick: number;
 }

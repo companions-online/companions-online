@@ -414,7 +414,9 @@ function formatEventText(event: GameEvent, currentTick: number): string {
     case 'creature_fleeing':
       return `${prefix}  ${d.creatureName}#${d.creatureEntityId} is fleeing`;
     case 'creature_died':
-      return `${prefix}  ${d.entityName}#${d.entityId} killed by ${d.killerName}#${d.killerEntityId} at (${d.tileX},${d.tileY})`;
+      return d.killerEntityId === 0
+        ? `${prefix}  ${d.entityName}#${d.entityId} died at (${d.tileX},${d.tileY})`
+        : `${prefix}  ${d.entityName}#${d.entityId} killed by ${d.killerName}#${d.killerEntityId} at (${d.tileX},${d.tileY})`;
     case 'entity_meta_changed': {
       const label = metaKeyLabel(d.key as MetaKey);
       if (d.key === MetaKey.Name) {

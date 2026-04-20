@@ -117,7 +117,7 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 0. Process player respawns (dead → alive after 5s timer)
 1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
-3. Tree respawns (depleted trees respawn after 30s)
+3. World pulse — resource respawns (trees) + creature respawns (night skeleton spawner) + creature lifecycle (skeleton sun damage, returns deaths → processEntityDeath(killerEntityId=0))
 4. Movement (A* pathfinding, occupancy collision, wait-and-repath; arriveIdle fires Idle)
 5. Arrival-triggered resolvers (walk-to-then-do):
    5a. Pending pickups — dist check, pick up if adjacent

@@ -26,7 +26,8 @@ import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems
 import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
 import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/combat.js';
 import { startConsume, cancelConsume, isConsuming, runConsume, type ConsumableState } from './systems/consumable.js';
-import { initTreeResource, runRespawns } from './systems/resources.js';
+import { initTreeResource, runResourceRespawns } from './systems/resources.js';
+import { runCreatureRespawns, runCreatureLifecycle } from './systems/creature-lifecycle.js';
 import { Telemetry } from './telemetry.js';
 import { EventPriority, EVENT_PRIORITY, type GameEvent } from './events.js';
 
@@ -307,10 +308,17 @@ export class GameWorld implements SystemState {
     }
     t.endPhase('critterAI');
 
-    // 3. Tree respawns
-    t.beginPhase('respawns');
-    runRespawns(this);
-    t.endPhase('respawns');
+    // 3. World pulse — resource respawns + creature respawns + creature lifecycle.
+    //    Creature lifecycle returns deaths routed through processEntityDeath
+    //    so loot + death events fire through the same path as combat kills.
+    t.beginPhase('worldPulse');
+    runResourceRespawns(this);
+    runCreatureRespawns(this);
+    const lifecycleDeaths = runCreatureLifecycle(this);
+    for (const d of lifecycleDeaths) {
+      this.processEntityDeath(d.entityId, d.killerEntityId);
+    }
+    t.endPhase('worldPulse');
 
     // 4. Movement
     t.beginPhase('movement');

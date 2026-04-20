@@ -47,6 +47,7 @@
 - **Point lights** (per-blueprint lightRadius/Color, per-target raycast with wall occlusion, 80×80 RGB8 lightmap window)
 - **Weather byte reserved** (wire field + GameWorld.weather, no rendering yet)
 - **Dashboard time-of-day display** (HH:MM in header, updated per second)
+- **Night skeletons** — dynamic creature spawning tied to day/night cycle. `systems/creature-lifecycle.ts` hosts both `runCreatureRespawns` (night: roll `SKELETON_NIGHT_SPAWN_PER_HOUR / TICKS_PER_GAME_HOUR` per tick, place a Skeleton on a walkable/unoccupied tile in `[SKELETON_MIN_PLAYER_DISTANCE, SKELETON_MAX_PLAYER_DISTANCE]` of any player where no `lightRadius` emitter's Chebyshev AABB reaches — no server shadowcast) and `runCreatureLifecycle` (daylight: `SKELETON_SUN_DAMAGE = 4` every `SKELETON_SUN_DAMAGE_TICKS = 25` to all living Skeletons; deaths route through `processEntityDeath` with `killerEntityId=0`, formatter drops the "killed by" clause). `runRespawns` → `runResourceRespawns`; tick-loop step 3 now a single `worldPulse` phase.
 - **WebGL inventory / crafting / chest UI** — Minecraft-style drag-and-drop panel centered in the game viewport. Full cursor-held mechanics (left-pick-whole, right-pick-half, shift-toggle-equip / shift-quick-transfer, drag-out-to-drop), client-local grid order, optimistic in-flight decrements for flicker-free drops. Wire protocol gained optional `quantity` on `Drop` / `Transfer` / `Equip`. World placement mode (ghost sprite + `UseItemAt`) for equipped placeables. Full orientation in `memory/client-webgl/inventory-panel.md`.
 
 **All 17 game actions + 21 MCP tools implemented.** (Action count
@@ -60,7 +61,7 @@ rose by one with the new `identify` tool.)
 0. player respawns
 1. actions              ← player decisions dispatched
 2. critterAI            ← NPC decisions
-3. tree respawns        ← world restoration
+3. worldPulse           ← resource respawns + creature respawns + creature lifecycle (sun damage)
 4. movement             ← translate (arriveIdle fires Idle)
 5. pickups + interacts  ← arrival-triggered resolvers
 6. harvest              ← pathfinding→channel transition + tick (arrival-triggered)

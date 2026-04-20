@@ -128,6 +128,11 @@ const CREATURES: Record<string, CreatureConfig> = {
     walkSuffix: (dir) => `_custom-bunny hops on four legs_${dir}.gif`,
     outputName: 'rabbit.png',
   },
+  skeleton: {
+    prefix: 'humanoid_skeleton_warrior_upright_bipedal_stance_t',
+    walkSuffix: (dir) => `_walk_${dir}.gif`,
+    outputName: 'skeleton.png',
+  },
   wolf: {
     prefix: 'adult_gray_wolf_large_lean_quadruped_standing_aler',
     walkSuffix: (dir) => `_walk-6-frames_${dir}.gif`,

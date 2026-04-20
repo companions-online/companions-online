@@ -70,6 +70,7 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Rabbit,     name: 'rabbit', frameW: 92, frameH: 92,  footX: 46, footY: 70, scale: 0.6  },
   { blueprintId: BlueprintType.Fox,        name: 'fox',    frameW: 92, frameH: 92,  footX: 46, footY: 70, scale: 0.8 },
   { blueprintId: BlueprintType.Wolf,       name: 'wolf',   frameW: 92, frameH: 92,  footX: 46, footY: 70 },
+  { blueprintId: BlueprintType.Skeleton,   name: 'skeleton', frameW: 92, frameH: 92, footX: 46, footY: 82 },
   { blueprintId: BlueprintType.Player,     name: 'player', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   // Tall structures — base at tile center. Single static image.
   { blueprintId: BlueprintType.Tree,       name: 'tree',   frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true, layout: 'static' },

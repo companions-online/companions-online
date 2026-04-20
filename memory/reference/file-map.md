@@ -55,7 +55,8 @@ systems/consumable.ts    Channeled healing, single-use, interruptible → return
 systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }. startAttack + per-swing sets attacker direction via dirFromTo so swing animation faces target.
 systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]. Skips Dead players when scanning for nearest aggro target.
 systems/harvest.ts       (see above) — faceHarvestTarget helper sets harvester direction when entering Harvesting state so harvest-craft anim plays toward the target.
-systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay)
+systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay). Exports runResourceRespawns (renamed from runRespawns as part of the worldPulse split).
+systems/creature-lifecycle.ts   Night skeleton spawner + sunrise decay. runCreatureRespawns rolls 1/720 per tick at night and spawns a skeleton 10–20 tiles from any player on an unlit, walkable, unoccupied tile (AABB light check, no shadowcast). runCreatureLifecycle pulses 4 damage every 25 ticks on all living Skeletons during daylight; returned deaths route through processEntityDeath with killerEntityId=0.
 connections/ws-connection.ts      WebSocket PlayerConnection (binary encoding, byte counting); sends EnvironmentSync on welcome + environment delta section in onTick. onGameEvent no-op (point-to-point is MCP-only); onBroadcastEvent translates via WIRE_EVENT_MAP and flushes a GameEvents batch per tick after WorldDelta.
 connections/headless-connection.ts HeadlessConnection (test spy, captures events + gameEvents[] for point-to-point + broadcastEvents[] for broadcasts)
 connections/mcp-connection.ts     MCP PlayerConnection (live world ref, EventBuffer, action blocking via awaitAction/onTick)

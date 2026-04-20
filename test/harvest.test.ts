@@ -10,7 +10,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE, MAX_HARVEST_YIELDS } from '@shared/constants.js';
 import { startHarvest, runHarvest, cancelHarvest, isHarvesting } from '../server/src/systems/harvest.js';
-import { initTreeResource, runRespawns } from '../server/src/systems/resources.js';
+import { initTreeResource, runResourceRespawns } from '../server/src/systems/resources.js';
 import { runMovement } from '../server/src/systems/movement.js';
 import type { SystemState } from '../server/src/system-state.js';
 import {
@@ -190,7 +190,7 @@ describe('Tree respawning', () => {
 
     for (let tick = 1; tick <= 601; tick++) {
       (w as any).currentTick = tick;
-      runRespawns(w);
+      runResourceRespawns(w);
     }
 
     expect(w.entities.getEntityCount()).toBeGreaterThan(countBefore);
