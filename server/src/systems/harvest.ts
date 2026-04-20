@@ -2,7 +2,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { Terrain } from '@shared/terrain.js';
-import { MAX_HARVEST_YIELDS } from '@shared/constants.js';
+import { MAX_HARVEST_YIELDS, ACTION_BASE_TICKS } from '@shared/constants.js';
 import { dirFromTo } from '@shared/direction.js';
 import type { SystemState, HarvestContext } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
@@ -24,7 +24,7 @@ function resolveHarvestContext(
     const bpData = world.entities.blueprint.get(targetEid);
     if (bpData) {
       if (bpData.blueprintId === BlueprintType.Tree) {
-        const tickCost = equippedBpId === BlueprintType.Axe ? 4 : 10;
+        const tickCost = Math.round((equippedBpId === BlueprintType.Axe ? 4 : 10) * ACTION_BASE_TICKS);
         return { context: { yieldBlueprintId: BlueprintType.Wood, tickCost }, targetEntityId: targetEid };
       }
     }
@@ -34,16 +34,16 @@ function resolveHarvestContext(
 
   if (t === Terrain.Rock) {
     if (equippedBpId === BlueprintType.Pickaxe) {
-      return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 4, bonusChance: 0.3, bonusBlueprintId: BlueprintType.Iron } };
+      return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: Math.round(4 * ACTION_BASE_TICKS), bonusChance: 0.3, bonusBlueprintId: BlueprintType.Iron } };
     }
     if (equippedBpId === BlueprintType.Axe) {
-      return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 6 } };
+      return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: Math.round(6 * ACTION_BASE_TICKS) } };
     }
-    return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: 10 } };
+    return { context: { yieldBlueprintId: BlueprintType.Rock, tickCost: Math.round(10 * ACTION_BASE_TICKS) } };
   }
 
   if ((t === Terrain.Water || t === Terrain.River) && equippedBpId === BlueprintType.FishingRod) {
-    const tickCost = 8 + ((targetX * 7 + targetY * 13) % 13);
+    const tickCost = Math.round((8 + ((targetX * 7 + targetY * 13) % 13)) * ACTION_BASE_TICKS);
     return { context: { yieldBlueprintId: BlueprintType.RawFish, tickCost } };
   }
 

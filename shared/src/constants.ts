@@ -17,6 +17,10 @@ export const AUTOSAVE_WORLD_TICKS = 6000; // 5 minutes at 20Hz
  *  depletes a tree while rocks/fishing cap at this many. */
 export const MAX_HARVEST_YIELDS = 5;
 
+/** Multiplier applied to every harvest/attack tick cost at resolution.
+ *  1 = base timings; 2 = doubled. */
+export const ACTION_BASE_TICKS = 2;
+
 /** Time scale: 6 real seconds = 10 in-game minutes = 100× speedup. At 20 Hz that's
  *  12 ticks per in-game minute, 720 ticks per in-game hour, 17280 per day (14.4 min real). */
 export const TICKS_PER_GAME_MINUTE = 12;

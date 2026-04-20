@@ -42,6 +42,7 @@
 - **MCP session keepalive** — Node HTTP `requestTimeout`/`headersTimeout` disabled (Fix 1), plus per-session 15s `McpServer.server.ping()` interval (Fix 2). Fixes the 5-minute session drop diagnosed in `docs/plans/mcp-server-keepalive.md`.
 - **Nametag broadcast on spawn** — WS players' default `'Player'` name now rides via `setEntityMeta` (broadcasts + emits `entity_meta_changed`), not direct map mutation. `addPlayer`'s pre-emptive `knownEntities.add` loop removed so `broadcastTick`'s entered path fires `sendMetaFor` naturally. Existing nearby players see new entities with nameplates immediately.
 - **Server-side harvest cap** (`MAX_HARVEST_YIELDS`=5, `shared/constants.ts`) applied to all players via `runHarvest`
+- **`ACTION_BASE_TICKS` dial** (`shared/constants.ts`, currently `2`) multiplies every harvest `tickCost` and attack `attackSpeed` at resolution. Blueprint / harvest literals are base values; the dial scales the whole cadence uniformly. Tests parameterized on the constant.
 - **Server migration** from raw ws to Hono (MCP + WS + static on one port)
 - **Lighting + day/night** (shared keyframes, ambient tint, tickOffset on meta, twilight default, hourly env sync cadence)
 - **Point lights** (per-blueprint lightRadius/Color, per-target raycast with wall occlusion, 80×80 RGB8 lightmap window)

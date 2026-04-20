@@ -227,18 +227,18 @@ With your formula `ticksPerStep = Math.round(TICK_RATE / speed)` and Player spee
 - Player movement: **7 ticks per step = 350ms per tile**
 - Walking across the full 128-tile map diagonally would take roughly 90 seconds, which feels right
 
-For action speeds, I'd recommend expressing them in raw ticks rather than going through the speed formula, since actions aren't "movement" — they're fixed-duration channels:
+For action speeds, I'd recommend expressing them in raw ticks rather than going through the speed formula, since actions aren't "movement" — they're fixed-duration channels. All harvest/attack costs below are **base ticks**; the server multiplies them by `ACTION_BASE_TICKS` (in `shared/src/constants.ts`, currently `2`) at resolution. Flip the constant to retune the whole cadence.
 
 ```
-Fist attack:           2 ticks  = 100ms  (very fast, very weak)
-Stone Knife attack:    3 ticks  = 150ms
-Iron Sword attack:     4 ticks  = 200ms
-Wooden Club attack:    5 ticks  = 250ms
-Iron Spear attack:     4 ticks  = 200ms
-Eat food:              3 ticks  = 150ms
-Bandage channel:      10 ticks  = 500ms
-Harvest (fast):        4 ticks  = 200ms per resource unit
-Harvest (slow):       10 ticks  = 500ms per resource unit
+Fist attack:           2 base ticks  × ACTION_BASE_TICKS
+Stone Knife attack:    3 base ticks  × ACTION_BASE_TICKS
+Iron Sword attack:     4 base ticks  × ACTION_BASE_TICKS
+Wooden Club attack:    5 base ticks  × ACTION_BASE_TICKS
+Iron Spear attack:     4 base ticks  × ACTION_BASE_TICKS
+Eat food:              3 ticks  (not scaled)
+Bandage channel:      10 ticks  (not scaled)
+Harvest (fast):        4 base ticks  × ACTION_BASE_TICKS per resource unit
+Harvest (slow):       10 base ticks  × ACTION_BASE_TICKS per resource unit
 ```
 
-These feel snappy at 20Hz. A sword fight between two iron-sword players is about 2 swings per second, which gives enough time to react (run, eat food, swap weapons) without feeling sluggish.
+At `ACTION_BASE_TICKS = 1` these read as the original snappy timings; at `2` combat has more breathing room between swings (roughly 1 iron-sword swing per second) while still feeling responsive.
