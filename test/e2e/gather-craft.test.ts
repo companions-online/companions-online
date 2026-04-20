@@ -4,6 +4,7 @@ import { ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { getAllRecipes } from '@shared/recipes.js';
 import { Terrain, Building } from '@shared/terrain.js';
+import { ACTION_BASE_TICKS } from '@shared/constants.js';
 
 describe('E2E: Gather & Craft', () => {
   it('player walks to tree, harvests wood, tree depletes', () => {
@@ -13,7 +14,8 @@ describe('E2E: Gather & Craft', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Harvest, tileX: 10, tileY: 10 });
-    world.runTicks(200);
+    // 5 yields × 10 base-ticks bare-hand × ACTION_BASE_TICKS + pathfinding/slack
+    world.runTicks(5 * 10 * ACTION_BASE_TICKS + 50);
 
     expect(world.entities.exists(treeEid)).toBe(false);
     const inv = world.inventoryMgr.get(player)!;
@@ -86,7 +88,8 @@ describe('E2E: Gather & Craft', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Harvest, tileX: 10, tileY: 5 });
-    world.runTicks(15); // bare-hand = 10 ticks
+    // bare-hand = 10 base-ticks × ACTION_BASE_TICKS; slack must stay below the next yield (< 10 × ACTION_BASE_TICKS)
+    world.runTicks(10 * ACTION_BASE_TICKS + 2);
 
     const inv = world.inventoryMgr.get(player)!;
     const rock = inv.items.find(i => i.blueprintId === BlueprintType.Rock);

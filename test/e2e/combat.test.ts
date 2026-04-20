@@ -5,6 +5,7 @@ import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { Direction } from '../../shared/src/direction.js';
 import { ActionType } from '../../shared/src/actions.js';
 import { WAYPOINT_NONE } from '../../shared/src/components.js';
+import { ACTION_BASE_TICKS } from '@shared/constants.js';
 import { initCritterAI } from '../../server/src/systems/critter-ai.js';
 
 function placeCritter(world: ReturnType<typeof createTestWorld>, bp: BlueprintType, x: number, y: number): number {
@@ -30,7 +31,8 @@ describe('E2E: Combat', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Attack, entityId: deer });
-    world.runTicks(100); // fist: 1 dmg, 2 tick speed, deer has 12 HP → 24 ticks + pathfinding
+    // fist: 1 dmg, base 2-tick swing; deer has 12 HP → 12 swings × 2 × ACTION_BASE_TICKS + pathfinding/slack
+    world.runTicks(12 * 2 * ACTION_BASE_TICKS + 60);
 
     expect(world.entities.exists(deer)).toBe(false);
 
@@ -61,7 +63,8 @@ describe('E2E: Combat', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Attack, entityId: deer });
-    world.runTicks(20); // 7 dmg per 4 ticks → deer (12 HP) dies in 2 swings = 8 ticks
+    // iron sword: 7 dmg, base 4-tick swing; deer (12 HP) dies in 2 swings × 4 × ACTION_BASE_TICKS + slack
+    world.runTicks(2 * 4 * ACTION_BASE_TICKS + 20);
 
     expect(world.entities.exists(deer)).toBe(false);
   });
@@ -74,7 +77,8 @@ describe('E2E: Combat', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Attack, entityId: wolf });
-    world.runTicks(30);
+    // ≥1 wolf swing at base 4-tick cooldown + aggro/pathfinding buffer
+    world.runTicks(3 * 4 * ACTION_BASE_TICKS + 30);
 
     // Player should have taken damage from wolf fighting back
     const playerHp = world.entities.health.get(player);
@@ -138,7 +142,8 @@ describe('E2E: Combat', () => {
     world.entities.clearDirty();
 
     world.setAction(player, { action: ClientAction.Attack, entityId: skeleton });
-    world.runTicks(50);
+    // iron sword: 7 dmg, base 4-tick swing; skeleton (25 HP) dies in 4 swings × 4 × ACTION_BASE_TICKS + pathfinding/slack
+    world.runTicks(4 * 4 * ACTION_BASE_TICKS + 40);
 
     expect(world.entities.exists(skeleton)).toBe(false);
 
@@ -193,8 +198,8 @@ describe('E2E: Combat', () => {
     if (wolfState) wolfState.idleTicksRemaining = 0;
     world.entities.clearDirty();
 
-    // Run enough ticks for wolf to aggro and deal damage
-    world.runTicks(15);
+    // Run enough ticks for wolf to aggro and deal damage: 1 wolf swing × 4 × ACTION_BASE_TICKS + aggro buffer
+    world.runTicks(1 * 4 * ACTION_BASE_TICKS + 20);
 
     // Player entity should still exist (not destroyed)
     expect(world.entities.exists(player)).toBe(true);
