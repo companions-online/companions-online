@@ -10,6 +10,7 @@ import { createApp } from '../../server/src/app.js';
 import { TICK_RATE } from '../../shared/src/constants.js';
 import { destroySession } from '../../server/src/mcp-session.js';
 import { BlueprintType } from '../../shared/src/blueprints.js';
+import { StatusEffect } from '../../shared/src/status-effects.js';
 
 let world: GameWorld;
 let server: Server;
@@ -284,7 +285,7 @@ describe('MCP E2E', () => {
     const chestEid = world.entities.create();
     world.entities.position.set(chestEid, { tileX: chestX, tileY: chestY });
     world.entities.blueprint.set(chestEid, { blueprintId: BlueprintType.StorageChest, variant: 0 });
-    world.entities.statusEffects.set(chestEid, { effects: 0 });
+    world.entities.statusEffects.set(chestEid, { effects: StatusEffect.Placed });
     world.entities.health.set(chestEid, { currentHp: 50, maxHp: 50 });
     world.occupancy.set(chestX, chestY, chestEid);
     world.inventoryMgr.create(chestEid, 100);

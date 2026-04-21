@@ -111,7 +111,7 @@ function placeDoor(world: ReturnType<typeof createTestWorld>, x: number, y: numb
   const eid = world.entities.create();
   world.entities.position.set(eid, { tileX: x, tileY: y });
   world.entities.blueprint.set(eid, { blueprintId: BlueprintType.WoodenDoor, variant: 0 });
-  world.entities.statusEffects.set(eid, { effects: 0 });
+  world.entities.statusEffects.set(eid, { effects: StatusEffect.Placed });
   world.entities.health.set(eid, { currentHp: 30, maxHp: 30 });
   world.occupancy.set(x, y, eid);
   return eid;
@@ -184,7 +184,7 @@ function placeChest(world: ReturnType<typeof createTestWorld>, x: number, y: num
   const eid = world.entities.create();
   world.entities.position.set(eid, { tileX: x, tileY: y });
   world.entities.blueprint.set(eid, { blueprintId: BlueprintType.StorageChest, variant: 0 });
-  world.entities.statusEffects.set(eid, { effects: 0 });
+  world.entities.statusEffects.set(eid, { effects: StatusEffect.Placed });
   world.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
   world.occupancy.set(x, y, eid);
   world.inventoryMgr.create(eid, 100);

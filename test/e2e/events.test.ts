@@ -5,6 +5,7 @@ import { HeadlessConnection } from '../../server/src/connections/headless-connec
 import { ClientAction } from '../../shared/src/actions.js';
 import { BlueprintType } from '../../shared/src/blueprints.js';
 import { Terrain } from '../../shared/src/terrain.js';
+import { StatusEffect } from '../../shared/src/status-effects.js';
 import type { GameEvent, GameEventType } from '../../server/src/events.js';
 
 function eventsOfType(conn: HeadlessConnection, type: GameEventType): GameEvent[] {
@@ -174,7 +175,7 @@ describe('E2E: Game Events', () => {
     const campEid = world.entities.create();
     world.entities.position.set(campEid, { tileX: 11, tileY: 10 });
     world.entities.blueprint.set(campEid, { blueprintId: BlueprintType.Campfire, variant: 0 });
-    world.entities.statusEffects.set(campEid, { effects: 0 });
+    world.entities.statusEffects.set(campEid, { effects: StatusEffect.Placed });
     world.occupancy.set(11, 10, campEid);
 
     world.inventoryMgr.addItem(entityId, BlueprintType.RawFish, 1);

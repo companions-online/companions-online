@@ -3,6 +3,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { ClientAction } from '@shared/actions.js';
 import { Direction } from '@shared/direction.js';
 import { Terrain } from '@shared/terrain.js';
+import { StatusEffect } from '@shared/status-effects.js';
 import { CHUNK_SIZE } from '@shared/constants.js';
 import { resolveAction } from '@shared/action-resolver.js';
 import { createTestScene } from './harness.js';
@@ -80,7 +81,7 @@ describe('buildCursorContext', () => {
         components: {
           position: { tileX: 7, tileY: 7 },
           blueprint: { blueprintId: BlueprintType.Tree, variant: 0 },
-          statusEffects: { effects: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
         },
       },
     });
@@ -123,7 +124,7 @@ describe('resolveAction against cursor context', () => {
         components: {
           position: { tileX: 7, tileY: 7 },
           blueprint: { blueprintId: BlueprintType.Tree, variant: 0 },
-          statusEffects: { effects: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
         },
       },
     });
@@ -169,7 +170,7 @@ describe('resolveAction against cursor context', () => {
         components: {
           position: { tileX: 5, tileY: 5 },
           blueprint: { blueprintId: BlueprintType.WoodenDoor, variant: 0 },
-          statusEffects: { effects: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
         },
       },
     });

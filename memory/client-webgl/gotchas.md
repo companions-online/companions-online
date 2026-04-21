@@ -99,14 +99,9 @@ sends the full list every time (small, ≤ few dozen items). No delta
 diffing on the client. Corollary: don't hold references to old
 inventory items across syncs.
 
-## Door `statusEffects` vs ground-item detection
+## Ground-item detection uses `StatusEffect.Placed`, not component presence
 
-`buildCursorContext` treats an entity without `statusEffects` as a
-ground item (because ground items from Drop have only
-`position + blueprintId`). Doors, chests, campfires always carry
-`statusEffects` (even if `effects: 0`) so they're not ground items.
-Careful if you add a new placeable type — remember to emit
-`statusEffects` on the server side.
+`buildCursorContext`, `mouse.ts`, `renderer.ts` all call `isPlaced(statusEffects)` from `@shared/status-effects`. Ground items lack the `Placed` bit; doors/chests/campfires/trees placed by `handleUseItemAt` or worldgen carry it. Don't regress to `!e.statusEffects` — that presence-based check silently mis-classified worldgen resources (which had `{effects:0}` from `spawnCreatureEntity`) as structures, and mis-classified reloaded ground items the same way after a save/load cycle. If you add a new placeable blueprint, set `StatusEffect.Placed` wherever you spawn it.
 
 ## Debug hooks in main.ts
 

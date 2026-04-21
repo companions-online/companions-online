@@ -4,7 +4,7 @@ export type { RGB } from './lighting.js';
 export { Direction, DX, DY, isDiagonal, dirFromTo } from './direction.js';
 export { Terrain, Building, isWalkable } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
-export { StatusEffect } from './status-effects.js';
+export { StatusEffect, isPlaced } from './status-effects.js';
 export { MetaKey, metaKeyLabel } from './entity-meta.js';
 export { ComponentBit, WAYPOINT_NONE } from './components.js';
 export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintData, StatusEffectsData } from './components.js';

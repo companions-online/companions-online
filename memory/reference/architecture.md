@@ -180,7 +180,7 @@ NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams wit
 ## Building Layer vs Entities
 
 Static structures (WoodenWall) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas.
-Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health).
+Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health). Placed vs ground-item is keyed on the `StatusEffect.Placed` bit — `isPlaced(se)` in `shared/src/status-effects.ts` is the canonical check used by the MCP formatter, WebGL cursor/click routing, and CLI render. `handleUseItemAt` sets the bit on placement; `spawnCreatureEntity` sets it at worldgen for `category === 'placeable'` entities and Trees; `handleDrop` + `spawnGroundItem` leave it off. Persistence round-trips the bit inside the existing statusEffects byte.
 
 ## Player Death + Respawn
 

@@ -14,6 +14,7 @@
 
 import { ClientAction } from '@shared/actions.js';
 import { dirFromTo } from '@shared/direction.js';
+import { isPlaced } from '@shared/status-effects.js';
 import { resolveAction } from '@shared/action-resolver.js';
 import type { DecodedAction, DecodedActionMoveTo } from '@shared/protocol/codec.js';
 import { GAME_ZOOM } from '../platform/config.js';
@@ -133,7 +134,7 @@ export function attachMouseControls(
     const vy = cy / GAME_ZOOM;
     const hit = hitTestEntities(scene, vx, vy);
     if (hit && hit.blueprint) {
-      const isGroundItem = !hit.statusEffects;
+      const isGroundItem = !isPlaced(hit.statusEffects);
       const ctx = buildContextFromEntity(scene, {
         entityId: hit.id,
         blueprintId: hit.blueprint.blueprintId,

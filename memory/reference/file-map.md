@@ -17,7 +17,7 @@ components.ts            ComponentBit enum (7 synced components), wire data inte
 coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
 terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
-status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open)
+status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open, Placed) + isPlaced(se) helper
 protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync, GameEvents=0x37; DeltaSectionTag.Environment; WireEventType enum (numeric subset of GameEventType for the wire)
 protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action, EntityMeta msg, GameEvents batch (encodeGameEvents/decodeGameEvents + WireEvent discriminated union), DecodedAction union
 entity-meta.ts           MetaKey enum (Name=0) + metaKeyLabel — observer-visible string metadata

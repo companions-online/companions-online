@@ -3,6 +3,7 @@ import { Terrain, Building } from '../shared/src/terrain.js';
 import { tileChar } from '../shared/src/ascii.js';
 import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
 import { ActionType } from '../shared/src/actions.js';
+import { isPlaced } from '../shared/src/status-effects.js';
 import { resolveAction, describeAction } from '../shared/src/action-resolver.js';
 import type { ActionContext } from '../shared/src/action-resolver.js';
 import { state, getBpId, getEffects, getActionType, getHp } from './state.js';
@@ -15,8 +16,8 @@ export function entityAtWorldTile(wx: number, wy: number): { entityId: number; b
     const bpId = getBpId(comp.blueprint);
     if (bpId === undefined) continue;
     if (comp.position.tileY * MAP_SIZE + comp.position.tileX === key && eid !== state.myEntityId) {
-      // Ground items (from Drop) have only position+blueprintId; placed entities always have statusEffects
-      const isGroundItem = !comp.statusEffects;
+      // Placed structures carry StatusEffect.Placed; ground items don't.
+      const isGroundItem = !isPlaced(comp.statusEffects);
       return { entityId: eid, blueprintId: bpId, isGroundItem };
     }
   }

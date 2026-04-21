@@ -5,9 +5,10 @@ import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
+import { StatusEffect } from '@shared/status-effects.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import { WorldMap } from '@shared/world/world-map.js';
-import { TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
+import { MORNING_TICK_OFFSET, TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
 import { GameWorld } from './game-world.js';
 import { initTreeResource } from './systems/resources.js';
 import { initCritterAI } from './systems/critter-ai.js';
@@ -231,11 +232,20 @@ export async function createNewWorld(
   // Generate world (same logic as createDefaultWorld)
   const { map, entitySpawns } = generateWorld(seed);
   const world = new GameWorld(map, seed);
-  world.tickOffset = TWILIGHT_TICK_OFFSET;
+  world.tickOffset = MORNING_TICK_OFFSET;
 
   for (const spawn of entitySpawns) {
     const bp = getBlueprint(spawn.blueprint);
     if (!bp) continue;
+    // Match createDefaultWorld's dispatch: ground-item resources/items go
+    // through spawnGroundItem (no statusEffects, no occupancy). Everything
+    // else gets the full creature/structure shape — placeables get Placed.
+    const isGroundItem = (bp.category === 'resource' || bp.category === 'item')
+      && spawn.blueprint !== BlueprintType.Tree;
+    if (isGroundItem) {
+      world.spawnGroundItem(spawn.blueprint, spawn.x, spawn.y);
+      continue;
+    }
     const eid = world.entities.create();
     world.entities.position.set(eid, { tileX: spawn.x, tileY: spawn.y });
     world.entities.direction.set(eid, { dir: Direction.S });
@@ -243,7 +253,9 @@ export async function createNewWorld(
     world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
     if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
     world.entities.blueprint.set(eid, { blueprintId: spawn.blueprint, variant: spawn.variant });
-    world.entities.statusEffects.set(eid, { effects: 0 });
+    const isStructure = bp.category === 'placeable' || spawn.blueprint === BlueprintType.Tree;
+    const initialEffects = isStructure ? StatusEffect.Placed : 0;
+    world.entities.statusEffects.set(eid, { effects: initialEffects });
     if (bp.speed) world.entities.speed.set(eid, bp.speed);
     world.occupancy.set(spawn.x, spawn.y, eid);
     if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
@@ -257,7 +269,7 @@ export async function createNewWorld(
     createdAt: new Date().toISOString(),
     savedAt: new Date().toISOString(),
     tick: 0,
-    tickOffset: TWILIGHT_TICK_OFFSET,
+    tickOffset: MORNING_TICK_OFFSET,
     mapWidth: map.width,
     mapHeight: map.height,
   };

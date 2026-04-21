@@ -108,9 +108,26 @@ export function generateWorld(seed: number): WorldGenResult {
   const treeSet = new Set<number>();
   const key = (x: number, y: number) => y * MAP_SIZE + x;
 
+  // Tree tiles must be grass with all 8 neighbors also grass — one-tile
+  // buffer from water/sand/dirt/rock/river so the canopy sprite doesn't
+  // overhang into shoreline/terrain transitions.
+  const surroundedByGrass = (x: number, y: number): boolean => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!map.inBounds(nx, ny)) return false;
+        if (map.getTerrain(nx, ny) !== Terrain.Grass) return false;
+      }
+    }
+    return true;
+  };
+
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       if (map.getTerrain(x, y) !== Terrain.Grass) continue;
+      if (!surroundedByGrass(x, y)) continue;
 
       const f = forest.octave2d(x * forestFreq, y * forestFreq, 3, 0.5);
       if (f < 0.2) continue;

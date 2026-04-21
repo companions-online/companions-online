@@ -42,7 +42,7 @@
 
 **WoodenWall → building tile layer**. Static structures use `map.setBuilding()`. Synced via chunk streaming + tile deltas. No entity overhead.
 
-**Door, Campfire, StorageChest → entities**. These have interactive behavior. Ground item detection: `!comp.statusEffects` distinguishes ground items from placed entities.
+**Door, Campfire, StorageChest → entities**. These have interactive behavior. Ground-item vs placed-structure is discriminated by the `StatusEffect.Placed` bit (set at spawn by `handleUseItemAt` and the worldgen `spawnCreatureEntity` path for `category === 'placeable'` + Tree). Use `isPlaced(statusEffects)` from `shared/src/status-effects.ts` — never rely on "has the statusEffects component at all" (that convention predated the bit and was quietly broken by worldgen + persistence).
 
 **Campfire has collides: true** — needed for cooking (server finds campfire via `occupancy.get(tileX, tileY)`).
 

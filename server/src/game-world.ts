@@ -1184,7 +1184,7 @@ export class GameWorld implements SystemState {
       const newEid = this.entities.create();
       this.entities.position.set(newEid, { tileX, tileY });
       this.entities.blueprint.set(newEid, { blueprintId: item.blueprintId, variant: 0 });
-      this.entities.statusEffects.set(newEid, { effects: 0 });
+      this.entities.statusEffects.set(newEid, { effects: StatusEffect.Placed });
       if (bp.maxHp) this.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
       if (bp.collides) this.occupancy.set(tileX, tileY, newEid);
       if (item.blueprintId === BlueprintType.StorageChest) this.inventoryMgr.create(newEid, 100);
@@ -1443,15 +1443,23 @@ export class GameWorld implements SystemState {
     this.entities.currentAction.set(eid, { actionType: ActionType.Idle });
     if (bp.maxHp) this.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
     this.entities.blueprint.set(eid, { blueprintId: blueprintType, variant });
-    this.entities.statusEffects.set(eid, { effects: 0 });
+    // Placeables (campfires/doors/chests) and Trees are installed world
+    // structures — mark them with StatusEffect.Placed so MCP/client
+    // classifiers distinguish them from pickupable ground items.
+    // NPCs/creatures are disambiguated by category upstream of the Placed
+    // check, so they stay at effects=0.
+    const isStructure = bp.category === 'placeable' || blueprintType === BlueprintType.Tree;
+    const initialEffects = isStructure ? StatusEffect.Placed : 0;
+    this.entities.statusEffects.set(eid, { effects: initialEffects });
     if (bp.speed) this.entities.speed.set(eid, bp.speed);
     this.occupancy.set(tileX, tileY, eid);
     return eid;
   }
 
   /** Spawn a ground-item entity: position + blueprint only, no statusEffects
-   *  (that absence is what distinguishes ground items from placed entities).
-   *  No occupancy. Mirrors the drop handler's shape. */
+   *  component and no occupancy. `StatusEffect.Placed` absence is what
+   *  distinguishes ground items from placed structures. Mirrors the drop
+   *  handler's shape. */
   spawnGroundItem(blueprintType: BlueprintType, tileX: number, tileY: number): number {
     const eid = this.entities.create();
     this.entities.position.set(eid, { tileX, tileY });
@@ -1485,9 +1493,21 @@ export function createDefaultWorld(seed: number): GameWorld {
   const world = new GameWorld(map, seed);
 
   for (const spawn of entitySpawns) {
-    if (!getBlueprint(spawn.blueprint)) continue;
-    const eid = world.spawnCreatureEntity(spawn.blueprint, spawn.x, spawn.y, spawn.variant);
-    if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
+    const bp = getBlueprint(spawn.blueprint);
+    if (!bp) continue;
+    // Resource/item spawns (e.g. the worldgen test base's Wood/Rock/Iron/Hide/
+    // RawMeat/RawFish piles) are ground items — route through spawnGroundItem
+    // so they don't acquire a statusEffects component or occupancy. Tree is
+    // category=resource but a full-entity structure, so keep it on the
+    // creature path.
+    const isGroundItem = (bp.category === 'resource' || bp.category === 'item')
+      && spawn.blueprint !== BlueprintType.Tree;
+    if (isGroundItem) {
+      world.spawnGroundItem(spawn.blueprint, spawn.x, spawn.y);
+    } else {
+      const eid = world.spawnCreatureEntity(spawn.blueprint, spawn.x, spawn.y, spawn.variant);
+      if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
+    }
   }
   world.entities.clearDirty();
 

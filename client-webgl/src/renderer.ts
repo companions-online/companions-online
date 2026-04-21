@@ -1,5 +1,6 @@
 import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H, TILE_W, TILE_H, PX_PER_Z, GAME_ZOOM } from './platform/config.js';
 import { tileToScreen } from '@shared/coordinates.js';
+import { isPlaced } from '@shared/status-effects.js';
 import { resolveAction, describeAction } from '@shared/action-resolver.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import { getBlueprint } from '@shared/blueprints.js';
@@ -184,7 +185,7 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
         const ctx = buildContextFromEntity(scene, {
           entityId: hit.id,
           blueprintId: hit.blueprint.blueprintId,
-          isGroundItem: !hit.statusEffects,
+          isGroundItem: !isPlaced(hit.statusEffects),
         });
         if (ctx) {
           const action = resolveAction(ctx);

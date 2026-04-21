@@ -5,6 +5,7 @@ import { BlueprintType } from '../../shared/src/blueprints.js';
 import { WAYPOINT_NONE } from '../../shared/src/components.js';
 import { MAP_SIZE } from '../../shared/src/constants.js';
 import { MetaKey } from '../../shared/src/entity-meta.js';
+import { StatusEffect } from '../../shared/src/status-effects.js';
 import { GameWorld } from '../../server/src/game-world.js';
 import { HeadlessConnection } from '../../server/src/connections/headless-connection.js';
 import { initTreeResource } from '../../server/src/systems/resources.js';
@@ -58,7 +59,7 @@ export function placeTree(world: GameWorld, x: number, y: number): number {
   world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
   world.entities.health.set(eid, { currentHp: 50, maxHp: 50 });
   world.entities.blueprint.set(eid, { blueprintId: BlueprintType.Tree, variant: 0 });
-  world.entities.statusEffects.set(eid, { effects: 0 });
+  world.entities.statusEffects.set(eid, { effects: StatusEffect.Placed });
   world.occupancy.set(x, y, eid);
   initTreeResource(eid, world);
   return eid;

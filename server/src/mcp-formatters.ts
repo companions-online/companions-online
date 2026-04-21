@@ -2,7 +2,7 @@ import { ActionType } from '@shared/actions.js';
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { Terrain } from '@shared/terrain.js';
 import { terrainChar, buildingChar, blueprintChar } from '@shared/ascii.js';
-import { StatusEffect } from '@shared/status-effects.js';
+import { StatusEffect, isPlaced } from '@shared/status-effects.js';
 import { getWeight, getEquipped, canCraft } from '@shared/inventory.js';
 import { getAllRecipes } from '@shared/recipes.js';
 import { MetaKey, metaKeyLabel } from '@shared/entity-meta.js';
@@ -199,14 +199,16 @@ function categorizeEntity(
     return { ...base, category: 'player' };
   }
 
-  // Ground item: resource/item/placeable without statusEffects
-  if ((bpDef.category === 'resource' || bpDef.category === 'item' || bpDef.category === 'placeable') && !effects) {
+  // Resources and items (except Tree, handled above) are always ground items —
+  // no code path places them as structures.
+  if (bpDef.category === 'resource' || bpDef.category === 'item') {
     return { ...base, category: 'ground_item' };
   }
 
-  // Structure: placeable with statusEffects
-  if (bpDef.category === 'placeable' && effects) {
-    return { ...base, category: 'structure' };
+  // Placeables are dual-use: placed via UseItemAt/worldgen → structure,
+  // dropped via Drop → ground item. StatusEffect.Placed discriminates.
+  if (bpDef.category === 'placeable') {
+    return { ...base, category: isPlaced(effects) ? 'structure' : 'ground_item' };
   }
 
   // Hostile creature

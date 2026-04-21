@@ -4,6 +4,7 @@
 // webgl Scene (entities Map + WorldMap + inventory) instead of flat grids.
 
 import { Terrain, Building } from '@shared/terrain.js';
+import { isPlaced } from '@shared/status-effects.js';
 import type { ActionContext } from '@shared/action-resolver.js';
 import type { Scene } from '../scene.js';
 
@@ -49,9 +50,8 @@ function entityAtTile(
     if (!e.position || e.blueprint === undefined) continue;
     if (e.position.tileX !== tx || e.position.tileY !== ty) continue;
     if (eid === scene.myEntityId) continue;
-    // Ground items (spawned by Drop) have only position + blueprint.
-    // Placed entities (doors, chests, creatures) always carry statusEffects.
-    const isGroundItem = !e.statusEffects;
+    // Placed structures carry StatusEffect.Placed; ground items don't.
+    const isGroundItem = !isPlaced(e.statusEffects);
     return { entityId: eid, blueprintId: e.blueprint.blueprintId, isGroundItem };
   }
   return undefined;

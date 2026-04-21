@@ -6,6 +6,8 @@
 
 import { TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_HOUR, GAME_MINUTES_PER_DAY } from './constants.js';
 
+export const MORNING_TICK_OFFSET = 5 * TICKS_PER_GAME_HOUR;
+
 /** Default tickOffset for newly-created worlds — lands them at 19:00
  *  (mid-sunset) so the first boot shows an interesting lighting state. */
 export const TWILIGHT_TICK_OFFSET = 19 * TICKS_PER_GAME_HOUR;
