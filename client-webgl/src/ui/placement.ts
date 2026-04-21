@@ -1,43 +1,36 @@
-// World placement mode — active while inventory is closed AND the player
-// has a placeable item equipped in the hand slot.
+// World placement mode — active while inventory is closed AND the
+// currently-selected quickslot holds a hand-equippable placeable.
 //
-// Behavior:
+// Control scheme:
 //   • mousemove updates scene.placementHoverTile
 //   • ghost sprite rendered at that tile (half alpha)
-//   • left-click sends UseItemAt(itemId, tileX, tileY)
-//   • right-click clears the hover tile for one frame (visual "cancel";
-//     next mousemove repopulates it)
+//   • LEFT-click is deliberately NOT consumed — falls through to the
+//     normal resolveAction pipeline (MoveTo / Attack / etc.)
+//   • RIGHT-click sends UseItemAt(itemId, tileX, tileY) to place
 //
 // Validity checking is deliberately left to the server — mismatched
 // placements bounce back with no harm. A client-side green/red hint is a
 // future enhancement once the sprite renderer grows a color-tint uniform.
 
 import { ClientAction } from '@shared/actions.js';
-import { getBlueprint } from '@shared/blueprints.js';
-import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
 import { tileToScreen } from '@shared/coordinates.js';
 import { TILE_W, TILE_H, PX_PER_Z } from '../platform/config.js';
 import type { Scene } from '../scene.js';
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Connection } from '../network/connection.js';
 import type { SyncedInventoryItem } from '@shared/protocol/codec.js';
+import { selectedItem, selectedMode } from './quickslot.js';
 
-/** The hand-equipped item if it's a placeable, or null. Drives whether
- *  placement mode is active. */
+/** The quickslot-selected item when placement mode is active, else null. */
 export function getPlacementHandItem(scene: Scene): SyncedInventoryItem | null {
-  for (const item of scene.inventory) {
-    if (item.equippedSlot !== EQUIP_SLOT_HAND) continue;
-    const bp = getBlueprint(item.blueprintId);
-    if (bp?.category === 'placeable') return item;
-  }
-  return null;
+  if (selectedMode(scene) !== 'placement') return null;
+  return selectedItem(scene);
 }
 
-/** True when placement-mode gestures should be active. Inventory must be
- *  closed (so the panel doesn't swallow clicks) AND a placeable must be
- *  hand-equipped. */
+/** True when placement-mode gestures should be active: inventory closed
+ *  AND the selected quickslot holds a placeable. */
 export function isPlacementActive(scene: Scene): boolean {
-  return !scene.inventoryOpen && getPlacementHandItem(scene) !== null;
+  return !scene.inventoryOpen && selectedMode(scene) === 'placement';
 }
 
 /** Update `scene.placementHoverTile` from canvas-pixel coords. Called from
@@ -52,7 +45,11 @@ export function updatePlacementHover(scene: Scene, canvasX: number, canvasY: num
 }
 
 /** Handle a mousedown in placement mode. Returns true if the click was
- *  consumed (caller should skip the normal world-click pipeline). */
+ *  consumed (caller should skip the normal world-click pipeline).
+ *
+ *  Only right-click places — left-click is intentionally not consumed so
+ *  the player can still move / attack / interact while a placeable is
+ *  selected. */
 export function handlePlacementClick(
   scene: Scene,
   connection: Connection,
@@ -62,7 +59,7 @@ export function handlePlacementClick(
   const handItem = getPlacementHandItem(scene);
   if (!handItem) return false;
 
-  if (button === 'left') {
+  if (button === 'right') {
     if (!scene.placementHoverTile) return true;
     connection.send({
       action: ClientAction.UseItemAt,
@@ -73,13 +70,8 @@ export function handlePlacementClick(
     return true;
   }
 
-  if (button === 'right') {
-    // Cancel: drop the hover for one frame. Next mousemove will repopulate
-    // it. Item stays equipped — Esc unequips (handled in keyboard.ts).
-    scene.placementHoverTile = null;
-    return true;
-  }
-
+  // Left-click: NOT consumed — fall through to resolveAction so the
+  // player can move around even with a placeable ghost up.
   return false;
 }
 

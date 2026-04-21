@@ -167,7 +167,7 @@ Custom compact binary over WebSocket. Opcodes:
 - RLE chunk compression for terrain
 - Chunk streaming: only viewport chunks on connect, stream as player moves
 - Environment section inside WorldDelta (gameMinute u16, weather u8) — emitted on keyframe-hour crossings, weather change, or forced resync after `setTickOffset`
-- `GameEvents` batches discrete notifications (`WireEventType` — CombatHitDealt / HarvestYield / CraftComplete / EntityDied today). Flushed per-tick after WorldDelta so referenced entity ids are in-scope client-side. Separate channel from state replication — see Event System above.
+- `GameEvents` batches discrete notifications (`WireEventType` — CombatHitDealt / HarvestYield / CraftComplete / EntityDied / PlayerHealed today). Flushed per-tick after WorldDelta so referenced entity ids are in-scope client-side. Separate channel from state replication — see Event System above.
 
 ## World Generation
 

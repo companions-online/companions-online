@@ -1,5 +1,5 @@
 export type BlueprintCategory = 'creature' | 'item' | 'resource' | 'placeable' | 'npc';
-export type EquipSlot = 'hand' | 'body' | 'head';
+export type EquipSlot = 'hand' | 'body' | 'head' | 'boot';
 
 export interface Blueprint {
   id: number;

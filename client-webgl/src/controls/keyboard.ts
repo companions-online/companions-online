@@ -9,6 +9,7 @@ import type { Connection } from '../network/connection.js';
 import type { Scene } from '../scene.js';
 import { isPlacementActive } from '../ui/placement.js';
 import { markPendingDecrement } from '../ui/inventory-panel.js';
+import { selectQuickSlot, clearQuickSlotSelection } from '../ui/quickslot.js';
 
 const MAX_CHAT_LENGTH = 200;
 
@@ -108,19 +109,37 @@ export function attachKeyboardControls(
       return;
     }
 
-    // --- Inventory open: Esc closes, I toggles shut ---
+    // --- Inventory open: Esc closes, I toggles shut, 1..9 still drive
+    //     quickslot selection so the player can swap hand items while
+    //     browsing. Other keys are swallowed so world input doesn't fire
+    //     underneath the panel. ---
     if (scene.inventoryOpen) {
       if (ev.key === 'Escape' || ev.key === 'i' || ev.key === 'I') {
         closeInventory();
         ev.preventDefault();
         return;
       }
-      // Swallow other keys so world input doesn't fire underneath.
+      if (ev.key.length === 1 && ev.key >= '1' && ev.key <= '9') {
+        selectQuickSlot(scene, connection, ev.key.charCodeAt(0) - '1'.charCodeAt(0));
+        ev.preventDefault();
+        return;
+      }
       return;
     }
 
     // --- Not in chat mode, inventory closed ---
-    // Esc during placement mode unequips the hand slot.
+    // Esc clears any quickslot selection first (also unequips hand if
+    // the selected slot was equippable). Only then falls through.
+    if (ev.key === 'Escape' && scene.selectedQuickSlot !== null) {
+      clearQuickSlotSelection(scene, connection);
+      scene.placementHoverTile = null;
+      ev.preventDefault();
+      return;
+    }
+    // Esc during placement mode unequips the hand slot (legacy path; the
+    // selection-clear above usually runs first, but keep this as a safety
+    // net for edge cases where a placeable is in hand without a
+    // selection — e.g. a stale equip state from before this feature).
     if (ev.key === 'Escape' && isPlacementActive(scene)) {
       connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
       scene.placementHoverTile = null;
@@ -139,6 +158,12 @@ export function attachKeyboardControls(
     }
     if (ev.key === 'i' || ev.key === 'I') {
       scene.inventoryOpen = true;
+      ev.preventDefault();
+      return;
+    }
+    // Quickslot selection: 1..9 → slot index 0..8.
+    if (ev.key.length === 1 && ev.key >= '1' && ev.key <= '9') {
+      selectQuickSlot(scene, connection, ev.key.charCodeAt(0) - '1'.charCodeAt(0));
       ev.preventDefault();
       return;
     }

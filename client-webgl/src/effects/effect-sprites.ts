@@ -24,6 +24,7 @@ export interface EffectSprites {
   smoke: EffectSheet;        // 3×3, 9 frames
   attack: EffectSheet;       // 3×3, 6 frames
   harvestCraft: EffectSheet; // 3×3, 7 frames
+  healing: EffectSheet;      // 3×3, 9 frames
   /** 1×1 solid-color textures for simple filled-rect overlays (HP bar). */
   hpBarBg: WebGLTexture;
   hpBarFg: WebGLTexture;
@@ -77,13 +78,14 @@ export function createSolidColorTexture(
 }
 
 export async function loadEffectSprites(gl: WebGL2RenderingContext): Promise<EffectSprites> {
-  const [smoke, attack, harvestCraft] = await Promise.all([
+  const [smoke, attack, harvestCraft, healing] = await Promise.all([
     loadSheet(gl, '/assets/smoke-anim.png',         3, 3, 9),
     loadSheet(gl, '/assets/attack-anim.png',        3, 3, 6),
     loadSheet(gl, '/assets/harvest-craft-anim.png', 3, 3, 7),
+    loadSheet(gl, '/assets/healing-anim.png',       3, 3, 9),
   ]);
   return {
-    smoke, attack, harvestCraft,
+    smoke, attack, harvestCraft, healing,
     // #e63946 bright red, #4a0e0e dark red
     hpBarFg: createSolidColorTexture(gl, 0xe6, 0x39, 0x46, 0xff),
     hpBarBg: createSolidColorTexture(gl, 0x4a, 0x0e, 0x0e, 0xff),

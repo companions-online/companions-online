@@ -54,6 +54,7 @@ export const EQUIP_SLOT_NONE = 0;
 export const EQUIP_SLOT_HAND = 1;
 export const EQUIP_SLOT_BODY = 2;
 export const EQUIP_SLOT_HEAD = 3;
+export const EQUIP_SLOT_BOOT = 4;
 
 export function equipSlotToNumber(slot?: EquipSlot): number {
   if (!slot) return EQUIP_SLOT_NONE;
@@ -61,6 +62,7 @@ export function equipSlotToNumber(slot?: EquipSlot): number {
     case 'hand': return EQUIP_SLOT_HAND;
     case 'body': return EQUIP_SLOT_BODY;
     case 'head': return EQUIP_SLOT_HEAD;
+    case 'boot': return EQUIP_SLOT_BOOT;
   }
 }
 
@@ -69,6 +71,7 @@ export function numberToEquipSlot(n: number): EquipSlot | undefined {
     case EQUIP_SLOT_HAND: return 'hand';
     case EQUIP_SLOT_BODY: return 'body';
     case EQUIP_SLOT_HEAD: return 'head';
+    case EQUIP_SLOT_BOOT: return 'boot';
     default: return undefined;
   }
 }

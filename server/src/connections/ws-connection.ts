@@ -21,6 +21,7 @@ const WIRE_EVENT_MAP: Partial<Record<GameEventType, WireEventType>> = {
   harvest_yield:    WireEventType.HarvestYield,
   craft_complete:   WireEventType.CraftComplete,
   entity_died:      WireEventType.EntityDied,
+  player_healed:    WireEventType.PlayerHealed,
 };
 
 /** Translate a server-side GameEvent into a wire event, or `null` if the
@@ -60,6 +61,14 @@ function toWireEvent(event: GameEvent): WireEvent | null {
         killerId: d.killerEntityId,
         tileX: d.tileX,
         tileY: d.tileY,
+      };
+    case WireEventType.PlayerHealed:
+      return {
+        type: WireEventType.PlayerHealed,
+        entityId: d.entityId,
+        tileX: d.tileX,
+        tileY: d.tileY,
+        healAmount: d.healAmount,
       };
   }
   return null;

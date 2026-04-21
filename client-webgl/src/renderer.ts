@@ -167,6 +167,10 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       scene.spriteRenderer.end();
     }
 
+    // Cooking highlight: the adjacent campfire is tinted red inside the
+    // main sprite pass (see static-entity.ts::drawAnimatedStatic). No
+    // separate pass needed.
+
     gl.disable(gl.SCISSOR_TEST);
 
     // Debug overlay: resolve action under mouse cursor.

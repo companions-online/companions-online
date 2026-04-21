@@ -23,6 +23,8 @@ import type { Connection } from '../network/connection.js';
 import { buildCursorContext, buildContextFromEntity } from './cursor-context.js';
 import { hitTestInventoryPanel, handleInventoryPanelClick } from '../ui/inventory-panel.js';
 import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
+import { selectedItem, selectedMode } from '../ui/quickslot.js';
+import { handleCookingClick, isCookingActive } from '../ui/cooking-highlight.js';
 
 function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
   if (action.action !== ClientAction.MoveTo) return;
@@ -92,7 +94,34 @@ export function attachMouseControls(
       return;
     }
 
-    // Placement mode: equipped placeable → click-to-place, right-click to cancel.
+    // Right-click is context-sensitive based on the selected quickslot:
+    //   • consumable → UseConsumable on self (no tile needed)
+    //   • placement → UseItemAt at the hover tile (placement.ts handles it)
+    //   • cook → UseItemAt on an adjacent campfire (cooking-highlight.ts)
+    //   • tool/none → falls through to no-op
+    if (button === 'right') {
+      const mode = selectedMode(scene);
+      if (mode === 'consumable') {
+        const item = selectedItem(scene);
+        if (item) {
+          connection.send({ action: ClientAction.UseConsumable, itemId: item.itemId });
+        }
+        return;
+      }
+      if (mode === 'placement') {
+        if (handlePlacementClick(scene, connection, button)) return;
+      }
+      if (mode === 'cook') {
+        const tile = scene.camera.tileAt(cx, cy);
+        if (tile && handleCookingClick(scene, connection, tile.tx, tile.ty)) return;
+        return; // cook mode swallows right-clicks even when off-target
+      }
+      return; // right-click has no default world action
+    }
+
+    // Left-click path. Placement mode is intentionally a pass-through for
+    // left-clicks so movement / attack / interact still work while a
+    // placeable ghost is up. (handlePlacementClick returns false on left.)
     if (isPlacementActive(scene)) {
       if (handlePlacementClick(scene, connection, button)) return;
     }

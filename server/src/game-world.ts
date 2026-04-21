@@ -424,6 +424,19 @@ export class GameWorld implements SystemState {
           maxHp: ce.maxHp,
         }));
       }
+      // Spectator-visible heal puff. Broadcast on the player's current
+      // tile so nearby observers see the same visual as the healer.
+      const pos = this.entities.position.get(ce.entityId);
+      if (pos && ce.healAmount > 0) {
+        this.broadcastEvent(pos.tileX, pos.tileY, this.makeEvent('player_healed', {
+          entityId: ce.entityId,
+          tileX: pos.tileX,
+          tileY: pos.tileY,
+          healAmount: ce.healAmount,
+          currentHp: ce.currentHp,
+          maxHp: ce.maxHp,
+        }));
+      }
     }
 
     // 8. Combat

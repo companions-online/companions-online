@@ -7,52 +7,68 @@ import {
   getPlacementHandItem,
   handlePlacementClick,
 } from '@client-webgl/ui/placement.js';
-import { createTestScene } from './harness.js';
+import { createTestScene, type FakeConnection } from './harness.js';
+import type { Scene } from '@client-webgl/scene.js';
+
+/** Put `itemId` in quickslot 0 and select it, so the selected-quickslot
+ *  driven helpers in placement.ts see the item as "in hand". */
+function equipViaQuickslot(scene: Scene, itemId: number): void {
+  scene.quickSlots[0] = itemId;
+  scene.selectedQuickSlot = 0;
+}
 
 describe('placement mode', () => {
-  it('inactive when nothing is hand-equipped', async () => {
-    const { scene } = await createTestScene();
+  it('inactive when no quickslot is selected', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 5, blueprintId: BlueprintType.WoodenWall, quantity: 3, equippedSlot: EQUIP_SLOT_HAND }],
+    });
     expect(isPlacementActive(scene)).toBe(false);
     expect(getPlacementHandItem(scene)).toBeNull();
   });
 
-  it('inactive when the hand-equipped item is not a placeable', async () => {
+  it('inactive when the selected quickslot holds a non-placeable', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 1, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: EQUIP_SLOT_HAND }],
     });
+    equipViaQuickslot(scene, 1);
     expect(isPlacementActive(scene)).toBe(false);
   });
 
-  it('active when a placeable (WoodenWall) is hand-equipped and inventory closed', async () => {
+  it('active when the selected quickslot holds a placeable (WoodenWall)', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 5, blueprintId: BlueprintType.WoodenWall, quantity: 3, equippedSlot: EQUIP_SLOT_HAND }],
     });
+    equipViaQuickslot(scene, 5);
     expect(isPlacementActive(scene)).toBe(true);
     expect(getPlacementHandItem(scene)?.itemId).toBe(5);
   });
 
-  it('inactive when inventory is open even with placeable equipped', async () => {
+  it('inactive when inventory is open even with placeable selected', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 5, blueprintId: BlueprintType.Campfire, quantity: 1, equippedSlot: EQUIP_SLOT_HAND }],
     });
+    equipViaQuickslot(scene, 5);
     scene.inventoryOpen = true;
     expect(isPlacementActive(scene)).toBe(false);
   });
 
-  it('left-click sends UseItemAt with the equipped itemId and hover tile', async () => {
+  it('right-click sends UseItemAt with the selected itemId and hover tile', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 5, blueprintId: BlueprintType.WoodenWall, quantity: 3, equippedSlot: EQUIP_SLOT_HAND }],
     });
+    equipViaQuickslot(scene, 5);
     scene.placementHoverTile = { tileX: 42, tileY: 30 };
-    const consumed = handlePlacementClick(scene, conn, 'left');
+    const consumed = handlePlacementClick(scene, conn, 'right');
     expect(consumed).toBe(true);
     expect(conn.sent).toHaveLength(1);
     expect(conn.sent[0]).toEqual({
@@ -60,34 +76,35 @@ describe('placement mode', () => {
     });
   });
 
-  it('right-click cancels (clears hover), does not send an action', async () => {
+  it('left-click is NOT consumed (falls through to world resolveAction)', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 5, blueprintId: BlueprintType.WoodenWall, quantity: 3, equippedSlot: EQUIP_SLOT_HAND }],
     });
-    scene.placementHoverTile = { tileX: 10, tileY: 10 };
-    const consumed = handlePlacementClick(scene, conn, 'right');
-    expect(consumed).toBe(true);
-    expect(scene.placementHoverTile).toBeNull();
+    equipViaQuickslot(scene, 5);
+    scene.placementHoverTile = { tileX: 42, tileY: 30 };
+    const consumed = handlePlacementClick(scene, conn, 'left');
+    expect(consumed).toBe(false);
     expect(conn.sent).toHaveLength(0);
   });
 
-  it('left-click with no hover tile consumes the event but sends nothing', async () => {
+  it('right-click with no hover tile consumes the event but sends nothing', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
       items: [{ itemId: 5, blueprintId: BlueprintType.WoodenWall, quantity: 3, equippedSlot: EQUIP_SLOT_HAND }],
     });
+    equipViaQuickslot(scene, 5);
     scene.placementHoverTile = null;
-    const consumed = handlePlacementClick(scene, conn, 'left');
+    const consumed = handlePlacementClick(scene, conn, 'right');
     expect(consumed).toBe(true);
     expect(conn.sent).toHaveLength(0);
   });
 
   it('returns false when placement mode is inactive (click falls through)', async () => {
     const { scene, conn } = await createTestScene();
-    const consumed = handlePlacementClick(scene, conn, 'left');
-    expect(consumed).toBe(false);
+    expect(handlePlacementClick(scene, conn, 'right')).toBe(false);
+    expect(handlePlacementClick(scene, conn, 'left')).toBe(false);
   });
 });

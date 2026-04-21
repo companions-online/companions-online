@@ -25,6 +25,7 @@ interface SpriteUniforms {
   lightmapSize: WebGLUniformLocation;
   spriteTileXY: WebGLUniformLocation;
   lit: WebGLUniformLocation;
+  tint: WebGLUniformLocation;
 }
 
 function getUniformOrThrow(
@@ -79,6 +80,7 @@ export class SpriteRenderer {
       lightmapSize: getUniformOrThrow(gl, this.program, 'u_lightmapSize'),
       spriteTileXY: getUniformOrThrow(gl, this.program, 'u_spriteTileXY'),
       lit: getUniformOrThrow(gl, this.program, 'u_lit'),
+      tint: getUniformOrThrow(gl, this.program, 'u_tint'),
     };
   }
 
@@ -105,6 +107,8 @@ export class SpriteRenderer {
     gl.uniform1i(this.uniforms.texture, 0);
     gl.uniform1f(this.uniforms.alpha, 1.0);
     gl.uniform2f(this.uniforms.spriteTileXY, 0, 0);
+    // Tint defaults to off so a leftover value from a prior pass can't bleed in.
+    gl.uniform4f(this.uniforms.tint, 0, 0, 0, 0);
     if (lightmap) {
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, lightmap.texture);
@@ -131,6 +135,13 @@ export class SpriteRenderer {
   /** Toggle lightmap sampling for subsequent draws (1 = lit, 0 = pass-through). */
   setLit(lit: boolean): void {
     this.gl.uniform1i(this.uniforms.lit, lit ? 1 : 0);
+  }
+
+  /** Set RGB tint for subsequent draws. `a` is the mix weight (0 = no tint,
+   *  1 = solid tint replaces sprite color). Reset to `(0,0,0,0)` on begin().
+   *  Callers that apply a tint for a single draw should reset after. */
+  setTint(r: number, g: number, b: number, a: number): void {
+    this.gl.uniform4f(this.uniforms.tint, r, g, b, a);
   }
 
   /**
