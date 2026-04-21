@@ -1,14 +1,13 @@
 
-Inventory + currently, there is no way for the player in client-gl to use an item -eat meat, apply bandage,     cook meat. enter game design mode -think minecraft/ultima online-what would be a good UX to           implement this? 
-^^ minecraft quick-menu
+
+
+
 ---
 pathfinding vs closed doors; pathfinding vs water
 -water should not be walkable
 -and no trees should be spawned in water
 
 ---
-* slow attacks (and harvesting) down, by factor of 1.5-2
-
 * piles for the ground
 
 
@@ -18,7 +17,7 @@ pathfinding vs closed doors; pathfinding vs water
 
 
 -when doing AABB sprite selection on click, look at alpha on the clicked area, and pass through click to the next one, if there are no active pixels there
--inventory pickup fx should start at the top of character
+
 ---
 
 
@@ -34,10 +33,6 @@ pathfinding vs closed doors; pathfinding vs water
 
 * environmental effects: sunshine, rain
 ** rain doesn't fall inside of buildings
-
-
--missing sprites for skeleton / etc
--during night, spawn skeletons around player; when the sun comes up, they die
 
 
 -town generator: find an empty place, put 3-4 houses in there
@@ -114,3 +109,25 @@ Ideation mode: we want to cover the cases where: user equips item, user drops it
 -healthbar (for player / other entities when damaged)
 
 -death: play puff of smoke animation; enemies resume idle / next target search; print "you died, respawn in 5 seconds" on console; then respawn;  respawn teleports player, no moving animation
+
+----
+-inventory pickup fx should start at the top of character
+----
+Inventory system upgrade:
+* currently, there is no way for the player in client-gl to use an item -eat meat, apply bandage, cook meat.
+*  we want to have minecraft-like "quick slots" (1-9) where players can equip items. This is purely client-side; when user presses a quick slot button (1-9), it automatically sends the equip command server-side.
+
+Details:
+* on the inventory view, this is displayed below the inventory section, user can drag&drop items there. Currently selected one is highlighted
+* from the left section, remove "hand"; instead: new player-armor type: boot; and the display order is top-down: head / body / boot
+* make the inventory section be 9x3, and below the quickmenu 1-9 with spacing
+* dragging & dropping an item to the quick slot -> attaches there (and stores it client side)
+* when a ground-usable item is selected, new convention: left click still moves/actions, right click is _depending on the selected item_ places/uses. for building, use the existing highlight system, but left click moves, right click places it; for cooking, highlight the cook-places (eg campfire) to use it with, left click moves/actions, right click places ;  for medkits, selecting a quickslot (bandage), then right click uses the medkit.
+Review the relevant source code, and ask any questions that's useful for implementation.
+
+---
+* slow attacks (and harvesting) down, by factor of 1.5-2
+
+---
+-missing sprites for skeleton / etc
+-during night, spawn skeletons around player; when the sun comes up, they die

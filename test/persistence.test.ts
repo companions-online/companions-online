@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createNewWorld, saveWorld, loadWorld } from '../server/src/world-persistence.js';
 import { TICKS_PER_GAME_HOUR } from '@shared/constants.js';
-import { TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
+import { TWILIGHT_TICK_OFFSET, MORNING_TICK_OFFSET } from '@shared/lighting.js';
 
 describe('World persistence: tickOffset', () => {
   const tempDirs: string[] = [];
@@ -22,12 +22,12 @@ describe('World persistence: tickOffset', () => {
     return dir;
   }
 
-  it('createNewWorld seeds TWILIGHT_TICK_OFFSET', async () => {
+  it('createNewWorld seeds MORNING_TICK_OFFSET', async () => {
     const dir = await makeTempDir();
     const { world, meta } = await createNewWorld(42, dir);
-    expect(world.tickOffset).toBe(TWILIGHT_TICK_OFFSET);
-    expect(meta.tickOffset).toBe(TWILIGHT_TICK_OFFSET);
-    expect(world.effectiveTick).toBe(TWILIGHT_TICK_OFFSET); // tick=0 + offset
+    expect(world.tickOffset).toBe(MORNING_TICK_OFFSET);
+    expect(meta.tickOffset).toBe(MORNING_TICK_OFFSET);
+    expect(world.effectiveTick).toBe(MORNING_TICK_OFFSET); // tick=0 + offset
   });
 
   it('round-trips tickOffset through save + load', async () => {
