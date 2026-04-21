@@ -46,6 +46,7 @@ export function createFakeEffectSprites(): EffectSprites {
     smoke:        fakeSheet(3, 3, 9),
     attack:       fakeSheet(3, 3, 6),
     harvestCraft: fakeSheet(3, 3, 7),
+    healing:      fakeSheet(3, 3, 9),
     hpBarFg: 0 as unknown as WebGLTexture,
     hpBarBg: 0 as unknown as WebGLTexture,
   };

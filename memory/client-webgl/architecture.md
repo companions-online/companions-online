@@ -228,6 +228,12 @@ tick)`, which spawns short-lived `createSpriteAnim` effects:
 - `EntityDied` → smoke puff at `event.tileX, event.tileY`. Frame
   sequence `[3,2,1,0,1,2,3,4,5,6,7,8]` (build from intensity 6 to peak
   9 at sheet index 0, then fade to 1 at sheet index 8). 660ms.
+- `PlayerHealed` → `healing-anim` (3×3 sheet, 9 frames played in order)
+  at the healed entity's `visualX/Y`. 720ms. Follows the entity via
+  `followEntityId` so the puff tracks movement during / after the heal.
+  Lifted by `screenOffsetY = footY/2 - TILE_H/2` so tall sprites (player
+  footY≈82 → +25 px) center the puff on the character's torso rather
+  than at the tile line; short sprites sit just above tile center.
 
 Events are a subset of the server's `GameEventType` union —
 MCP-only events (`trade_complete`, `action_interrupted`, etc.) do not

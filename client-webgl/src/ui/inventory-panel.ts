@@ -1,17 +1,18 @@
 // Minecraft-style inventory panel for the WebGL client.
 //
-// Drawn by the HUD pass when `keyboard.inventoryOpen` is set. Three
-// sections over a translucent backdrop:
-//   • LEFT   — player stats (name, HP, weight) + hand/body/head equipment
-//              slot widgets
-//   • CENTER — 6×5 grid of inventory cells (icon + quantity badge), slot
-//              layout comes from `scene.gridOrder`
-//   • RIGHT  — recipe cards (output icon + input list; dimmed when
-//              canCraft returns false)
+// Drawn by the HUD pass when `keyboard.inventoryOpen` is set. Sections
+// over a translucent backdrop:
+//   • LEFT     — player stats (name, HP, weight) + head/body/boot armor
+//                slot widgets (hand is driven by the quickbar below)
+//   • CENTER   — 9×3 grid of inventory cells (icon + quantity badge),
+//                slot layout comes from `scene.gridOrder`
+//   • QUICKBAR — 9-cell row beneath the grid. Binds itemIds to slots
+//                1..9; items bound here are NOT shown in the main grid.
+//                Selection highlight reflects `scene.selectedQuickSlot`.
+//   • RIGHT    — recipe cards (when no chest open) OR container items.
 //
 // Hit-testing and click routing live alongside the draw path — the mouse
-// controller calls `hitTestInventoryPanel` and `handleInventoryPanelClick`
-// in phase D.
+// controller calls `hitTestInventoryPanel` and `handleInventoryPanelClick`.
 
 import { getBlueprint, BlueprintType } from '@shared/blueprints.js';
 import { getAllRecipes } from '@shared/recipes.js';
@@ -70,15 +71,22 @@ const PAD = 16;
 const LEFT_X = PANEL_X + PAD;
 const LEFT_W = 220;
 
-const GRID_COLS = 6;
-const GRID_ROWS = 5;
+const GRID_COLS = 9;
+const GRID_ROWS = 3;
 export const GRID_SLOT_COUNT = GRID_COLS * GRID_ROWS;
-const CELL_SIZE = 56;
+const CELL_SIZE = 48;
 const CELL_GAP = 6;
 const GRID_W = GRID_COLS * CELL_SIZE + (GRID_COLS - 1) * CELL_GAP;
 const GRID_H = GRID_ROWS * CELL_SIZE + (GRID_ROWS - 1) * CELL_GAP;
 const GRID_X = LEFT_X + LEFT_W + PAD;
 const GRID_Y = PANEL_Y + PAD + 36; // leave room for a section title
+
+// Quickbar: a 9-cell row beneath the grid with a small visual gap.
+const QUICKBAR_GAP = 24;
+export const QUICKSLOT_COUNT = 9;
+const QUICKBAR_X = GRID_X;
+const QUICKBAR_Y = GRID_Y + GRID_H + QUICKBAR_GAP;
+const QUICKBAR_W = GRID_W;
 
 const RIGHT_X = GRID_X + GRID_W + PAD;
 const RIGHT_W = PANEL_W - (RIGHT_X - PANEL_X) - PAD;
@@ -87,13 +95,18 @@ const RECIPE_ROW_H = 42;
 const RECIPE_GAP = 4;
 
 // Container grid uses the same cell size as the player grid, laid out in
-// the right-hand column when a container is open.
+// the right-hand column when a container is open. Rows are sized for the
+// right-column capacity, decoupled from GRID_ROWS.
 const CONTAINER_COLS = Math.max(1, Math.floor((RIGHT_W + CELL_GAP) / (CELL_SIZE + CELL_GAP)));
-const CONTAINER_ROWS = GRID_ROWS;
+const CONTAINER_ROWS = 5;
 export const CONTAINER_SLOT_COUNT = CONTAINER_COLS * CONTAINER_ROWS;
 
-const EQUIP_SLOTS: EquipSlot[] = ['hand', 'body', 'head'];
-const EQUIP_LABEL: Record<EquipSlot, string> = { hand: 'HAND', body: 'BODY', head: 'HEAD' };
+// Armor slots only — top-down head → body → boot. The hand slot is now
+// driven by the quickbar and has no left-column widget.
+const EQUIP_SLOTS: EquipSlot[] = ['head', 'body', 'boot'];
+const EQUIP_LABEL: Record<EquipSlot, string> = {
+  hand: 'HAND', body: 'BODY', head: 'HEAD', boot: 'BOOT',
+};
 
 // ---------------------------------------------------------------------------
 // Shared solid-color textures (generated lazily on first draw)
@@ -104,6 +117,7 @@ interface Solids {
   cellBg: WebGLTexture;
   cellEquipped: WebGLTexture;
   cellHover: WebGLTexture;
+  cellSelected: WebGLTexture;
   divider: WebGLTexture;
   barFill: WebGLTexture;
   barBg: WebGLTexture;
@@ -127,6 +141,7 @@ function getSolids(gl: WebGL2RenderingContext): Solids {
     cellBg: mk('#3a3f4c'),
     cellEquipped: mk('#6e5416'),
     cellHover: mk('#4a5468'),
+    cellSelected: mk('#a97a1c'),
     divider: mk('#2a2e38'),
     barFill: mk('#7ec850'),
     barBg: mk('#2a2e38'),
@@ -189,6 +204,18 @@ export function containerCellRect(slotIndex: number): ContainerCellRect {
   return {
     x: RIGHT_X + col * (CELL_SIZE + CELL_GAP),
     y: GRID_Y + row * (CELL_SIZE + CELL_GAP),
+    w: CELL_SIZE,
+    h: CELL_SIZE,
+    slotIndex,
+  };
+}
+
+export interface QuickslotCellRect { x: number; y: number; w: number; h: number; slotIndex: number }
+
+export function quickslotCellRect(slotIndex: number): QuickslotCellRect {
+  return {
+    x: QUICKBAR_X + slotIndex * (CELL_SIZE + CELL_GAP),
+    y: QUICKBAR_Y,
     w: CELL_SIZE,
     h: CELL_SIZE,
     slotIndex,
@@ -394,8 +421,13 @@ function drawGridSection(
     drawSolid(gl, sprites, solids.cellBg, r.x, r.y, r.w, r.h);
   }
 
+  // Items bound to the quickbar are NOT drawn in the grid.
+  const inQuickbar = new Set<number>();
+  for (const id of scene.quickSlots) if (id !== null) inQuickbar.add(id);
+
   // Items in their gridOrder-assigned slots.
   for (const item of scene.inventory) {
+    if (inQuickbar.has(item.itemId)) continue;
     const slot = scene.gridOrder.get(item.itemId);
     if (slot === undefined || slot < 0 || slot >= GRID_SLOT_COUNT) continue;
     const r = gridCellRect(slot);
@@ -409,6 +441,105 @@ function drawGridSection(
       drawQuantityBadge(gl, sprites, factory, shownQty, r.x, r.y, r.w, r.h);
     }
   }
+}
+
+function drawQuickbarSection(
+  gl: WebGL2RenderingContext,
+  sprites: SpriteRenderer,
+  factory: TextSurfaceFactory,
+  scene: Scene,
+  solids: Solids,
+): void {
+  // Section label sits just above the row.
+  drawText(gl, sprites, text(factory, 'title:quickbar', {
+    text: 'QUICKSLOTS', fillColor: '#e8d48a', fontPx: 13, bold: true,
+  }), QUICKBAR_X, QUICKBAR_Y - 18);
+
+  drawQuickbarCells(gl, sprites, factory, scene, solids, {
+    x: QUICKBAR_X,
+    y: QUICKBAR_Y,
+    cellSize: CELL_SIZE,
+    cellGap: CELL_GAP,
+  });
+}
+
+export interface QuickbarCellsOpts {
+  x: number;
+  y: number;
+  cellSize: number;
+  cellGap: number;
+}
+
+/** Shared quickbar cell-draw helper. Renders 9 cells in a row starting at
+ *  `(x, y)`, each of size `cellSize × cellSize` separated by `cellGap`.
+ *  The selected slot uses `solids.cellSelected`. Items are drawn as icons
+ *  with quantity badges; empty slots show only the numeric label. Used by
+ *  both the in-panel quickbar row and the always-visible HUD quickbar. */
+export function drawQuickbarCells(
+  gl: WebGL2RenderingContext,
+  sprites: SpriteRenderer,
+  factory: TextSurfaceFactory,
+  scene: Scene,
+  solids: Solids,
+  opts: QuickbarCellsOpts,
+): void {
+  const { x: baseX, y: baseY, cellSize, cellGap } = opts;
+  const stride = cellSize + cellGap;
+  for (let i = 0; i < QUICKSLOT_COUNT; i++) {
+    const cx = baseX + i * stride;
+    const cy = baseY;
+    const bg = scene.selectedQuickSlot === i ? solids.cellSelected : solids.cellBg;
+    drawSolid(gl, sprites, bg, cx, cy, cellSize, cellSize);
+
+    // Slot number label in the top-left of the cell.
+    drawText(gl, sprites, text(factory, `qsnum:${i + 1}`, {
+      text: String(i + 1), fillColor: '#d8dde5', outlineColor: '#000', fontPx: 10, bold: true,
+    }), cx + 3, cy + 2);
+
+    const itemId = scene.quickSlots[i];
+    if (itemId === null) continue;
+    const item = scene.inventory.find(it => it.itemId === itemId);
+    if (!item) continue;
+    const heldQty = scene.heldStack && scene.heldStack.itemId === item.itemId
+      ? scene.heldStack.quantity : 0;
+    const pendingQty = pendingDecrement(scene, item.itemId);
+    const shownQty = item.quantity - heldQty - pendingQty;
+    if (shownQty <= 0) continue;
+    drawItemIcon(gl, sprites, scene.spriteRegistry, item.blueprintId, cx, cy, cellSize);
+    if (shownQty > 1) {
+      drawQuantityBadge(gl, sprites, factory, shownQty, cx, cy, cellSize, cellSize);
+    }
+  }
+}
+
+// --- Always-visible HUD quickbar ---
+
+/** Compact HUD quickbar geometry — 9 cells pinned to the bottom of the
+ *  game viewport. Smaller than the in-panel version so it doesn't crowd
+ *  the play area. */
+const HUD_QUICKBAR_CELL = 44;
+const HUD_QUICKBAR_GAP = 4;
+const HUD_QUICKBAR_W = QUICKSLOT_COUNT * HUD_QUICKBAR_CELL + (QUICKSLOT_COUNT - 1) * HUD_QUICKBAR_GAP;
+const HUD_QUICKBAR_X = GAME_X + (GAME_W - HUD_QUICKBAR_W) / 2;
+const HUD_QUICKBAR_Y = GAME_Y + GAME_H - HUD_QUICKBAR_CELL - 8;
+
+/** Draw the always-visible quickbar at the bottom of the game viewport.
+ *  Caller must have `sprites.begin(resolution)` active for the HUD pass.
+ *  Gated elsewhere to only fire when `scene.inventoryOpen === false` so
+ *  it doesn't render underneath the inventory panel's own quickbar row. */
+export function drawQuickbarHud(
+  gl: WebGL2RenderingContext,
+  scene: Scene,
+  sprites: SpriteRenderer,
+  factory: TextSurfaceFactory,
+): void {
+  const solids = getSolids(gl);
+  drawQuickbarCells(gl, sprites, factory, scene, solids, {
+    x: HUD_QUICKBAR_X,
+    y: HUD_QUICKBAR_Y,
+    cellSize: HUD_QUICKBAR_CELL,
+    cellGap: HUD_QUICKBAR_GAP,
+  });
 }
 
 function drawRecipesSection(
@@ -488,6 +619,7 @@ export function drawInventoryPanel(
 
   drawPlayerSection(gl, sprites, factory, scene, solids);
   drawGridSection(gl, sprites, factory, scene, solids);
+  drawQuickbarSection(gl, sprites, factory, scene, solids);
   if (scene.containerEntityId !== null) {
     drawContainerSection(gl, sprites, factory, scene, solids);
   } else {
@@ -560,6 +692,7 @@ export function drawHeldCursor(
 export type PanelHit =
   | { kind: 'grid'; slotIndex: number }
   | { kind: 'equip'; slot: EquipSlot }
+  | { kind: 'quickslot'; slotIndex: number }
   | { kind: 'recipe'; recipeId: number }
   | { kind: 'container'; slotIndex: number }
   | { kind: 'inside' }
@@ -577,6 +710,14 @@ export function hitTestInventoryPanel(x: number, y: number, scene: Scene): Panel
     const r = gridCellRect(i);
     if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
       return { kind: 'grid', slotIndex: i };
+    }
+  }
+
+  // Quickbar cells
+  for (let i = 0; i < QUICKSLOT_COUNT; i++) {
+    const r = quickslotCellRect(i);
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+      return { kind: 'quickslot', slotIndex: i };
     }
   }
 
@@ -664,9 +805,76 @@ export function handleInventoryPanelClick(
     return;
   }
 
+  if (hit.kind === 'quickslot') {
+    handleQuickslotClick(scene, hit.slotIndex, mods);
+    return;
+  }
+
   if (hit.kind === 'container') {
     handleContainerClick(scene, connection, hit.slotIndex, mods);
   }
+}
+
+/** Drag dispatch for a quickbar cell. Pure client-side: no wire actions
+ *  — the binding just records "this itemId lives in that slot". The
+ *  grid/quickbar mutual exclusion is maintained here so the item never
+ *  double-renders. */
+function handleQuickslotClick(
+  scene: Scene,
+  slotIndex: number,
+  mods: ClickModifiers,
+): void {
+  if (mods.button !== 'left') return; // no split/pickup-half on quickbar
+
+  const occupantId = scene.quickSlots[slotIndex];
+
+  // --- No held stack ---
+  if (!scene.heldStack) {
+    if (occupantId === null) return;
+    const item = scene.inventory.find(i => i.itemId === occupantId);
+    if (!item) {
+      // Stale binding (should have been pruned on sync). Drop it now.
+      scene.quickSlots[slotIndex] = null;
+      return;
+    }
+    // Pick up whole stack. The binding remains — when the user drops
+    // the held stack into another location, that location becomes the
+    // new home (and the old quickslot is cleared below in the held-drop
+    // path, or in this branch if they re-click the same slot).
+    scene.heldStack = {
+      itemId: item.itemId,
+      blueprintId: item.blueprintId,
+      quantity: item.quantity,
+      source: 'inventory',
+    };
+    scene.quickSlots[slotIndex] = null;
+    if (scene.selectedQuickSlot === slotIndex) scene.selectedQuickSlot = null;
+    return;
+  }
+
+  // --- Have held stack ---
+  // Only allow whole-stack drops into the quickbar (partial held = no-op,
+  // matches cross-item partial-drop behavior elsewhere).
+  const sourceItem = scene.inventory.find(i => i.itemId === scene.heldStack!.itemId);
+  if (!sourceItem) { scene.heldStack = null; return; }
+  if (scene.heldStack.quantity < sourceItem.quantity) return;
+
+  // Clear any previous quickslot binding for this itemId (an item lives
+  // in at most one quickslot).
+  for (let i = 0; i < scene.quickSlots.length; i++) {
+    if (scene.quickSlots[i] === scene.heldStack.itemId) scene.quickSlots[i] = null;
+  }
+  // Swap in; displaced item returns to the grid with a fresh auto-slot.
+  const displacedId = scene.quickSlots[slotIndex];
+  scene.quickSlots[slotIndex] = scene.heldStack.itemId;
+  scene.gridOrder.delete(scene.heldStack.itemId);
+  if (displacedId !== null) {
+    const taken = new Set(scene.gridOrder.values());
+    let free = 0;
+    while (taken.has(free)) free++;
+    scene.gridOrder.set(displacedId, free);
+  }
+  scene.heldStack = null;
 }
 
 function handleGridClick(

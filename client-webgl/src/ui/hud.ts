@@ -10,7 +10,7 @@ import type { TextSurface, TextSurfaceFactory } from '../effects/text-surface.js
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
-import { drawInventoryPanel, drawHeldCursor } from './inventory-panel.js';
+import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
@@ -66,8 +66,11 @@ export function drawHud(
   debugLabel: string | null,
 ): void {
   const factory = scene.textSurfaceFactory;
+  // The HUD quickbar is always shown when the inventory panel is closed,
+  // so force a sprites.begin() pass even if chat + debug are quiet.
+  const showHudQuickbar = !scene.inventoryOpen;
   const needSprites =
-    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || scene.inventoryOpen;
+    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || scene.inventoryOpen || showHudQuickbar;
 
   if (!needSprites) return;
 
@@ -138,6 +141,11 @@ export function drawHud(
       cachedDebug.surface.width, cachedDebug.surface.height,
       0, 0, 1, 1,
     );
+  }
+
+  // --- HUD quickbar (visible when inventory panel is closed) ---
+  if (showHudQuickbar) {
+    drawQuickbarHud(gl, scene, sprites, factory);
   }
 
   // --- Inventory panel (overlays everything else when open) ---

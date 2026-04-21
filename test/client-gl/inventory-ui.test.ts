@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { BlueprintType } from '@shared/blueprints.js';
 import { ClientAction } from '@shared/actions.js';
-import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
+import { EQUIP_SLOT_HAND, EQUIP_SLOT_HEAD } from '@shared/inventory.js';
 import {
   hitTestInventoryPanel,
   handleInventoryPanelClick,
   gridCellRect,
   equipSlotRect,
   recipeRowRectAt,
+  quickslotCellRect,
+  GRID_SLOT_COUNT,
+  QUICKSLOT_COUNT,
   PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
 } from '@client-webgl/ui/inventory-panel.js';
 import { createTestScene } from './harness.js';
@@ -26,9 +29,11 @@ describe('inventory panel hit-test', () => {
 
   it('identifies equipment slots', async () => {
     const { scene } = await createTestScene();
-    const r = equipSlotRect('hand');
+    // Hand no longer has a left-column widget — drives via quickbar. Use
+    // head as a representative armor slot.
+    const r = equipSlotRect('head');
     const { x, y } = centerOf(r);
-    expect(hitTestInventoryPanel(x, y, scene)).toEqual({ kind: 'equip', slot: 'hand' });
+    expect(hitTestInventoryPanel(x, y, scene)).toEqual({ kind: 'equip', slot: 'head' });
   });
 
   it('identifies recipe rows when player has inputs', async () => {
@@ -52,6 +57,43 @@ describe('inventory panel hit-test', () => {
     const r = recipeRowRectAt(0, 0);
     const { x, y } = centerOf(r);
     expect(hitTestInventoryPanel(x, y, scene).kind).toBe('inside');
+  });
+
+  it('grid has 9×3 cells', () => {
+    expect(GRID_SLOT_COUNT).toBe(27);
+  });
+
+  it('identifies quickbar cells by position', async () => {
+    const { scene } = await createTestScene();
+    const r = quickslotCellRect(4); // middle slot
+    const { x, y } = centerOf(r);
+    expect(hitTestInventoryPanel(x, y, scene)).toEqual({ kind: 'quickslot', slotIndex: 4 });
+  });
+
+  it('identifies the extreme corner grid cells', async () => {
+    const { scene } = await createTestScene();
+    const first = centerOf(gridCellRect(0));
+    const last = centerOf(gridCellRect(GRID_SLOT_COUNT - 1));
+    expect(hitTestInventoryPanel(first.x, first.y, scene))
+      .toEqual({ kind: 'grid', slotIndex: 0 });
+    expect(hitTestInventoryPanel(last.x, last.y, scene))
+      .toEqual({ kind: 'grid', slotIndex: GRID_SLOT_COUNT - 1 });
+  });
+
+  it('has 9 quickbar slots; all hittable', async () => {
+    const { scene } = await createTestScene();
+    expect(QUICKSLOT_COUNT).toBe(9);
+    for (let i = 0; i < QUICKSLOT_COUNT; i++) {
+      const { x, y } = centerOf(quickslotCellRect(i));
+      expect(hitTestInventoryPanel(x, y, scene)).toEqual({ kind: 'quickslot', slotIndex: i });
+    }
+  });
+
+  it('identifies boot equipment slot', async () => {
+    const { scene } = await createTestScene();
+    const r = equipSlotRect('boot');
+    const { x, y } = centerOf(r);
+    expect(hitTestInventoryPanel(x, y, scene)).toEqual({ kind: 'equip', slot: 'boot' });
   });
 
   it('returns outside for coords outside the panel', async () => {
@@ -110,23 +152,23 @@ describe('inventory panel click dispatch', () => {
     conn.deliver({
       type: 'inventorySync',
       items: [
-        { itemId: 1, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: EQUIP_SLOT_HAND },
+        { itemId: 1, blueprintId: BlueprintType.HideCap, quantity: 1, equippedSlot: EQUIP_SLOT_HEAD },
       ],
     });
-    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'hand' },
+    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'head' },
       { button: 'left', shift: false });
     expect(conn.sent).toHaveLength(1);
-    expect(conn.sent[0]).toEqual({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
+    expect(conn.sent[0]).toEqual({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HEAD });
   });
 
   it('drop held stack on matching equipment slot sends Equip with quantity', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
-      items: [{ itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: 0 }],
+      items: [{ itemId: 7, blueprintId: BlueprintType.HideCap, quantity: 1, equippedSlot: 0 }],
     });
-    scene.heldStack = { itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, source: 'inventory' };
-    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'hand' },
+    scene.heldStack = { itemId: 7, blueprintId: BlueprintType.HideCap, quantity: 1, source: 'inventory' };
+    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'head' },
       { button: 'left', shift: false });
     expect(scene.heldStack).toBeNull();
     expect(conn.sent).toHaveLength(1);
@@ -142,7 +184,7 @@ describe('inventory panel click dispatch', () => {
       items: [{ itemId: 1, blueprintId: BlueprintType.Wood, quantity: 3, equippedSlot: 0 }],
     });
     scene.heldStack = { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 3, source: 'inventory' };
-    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'hand' },
+    handleInventoryPanelClick(scene, conn, { kind: 'equip', slot: 'head' },
       { button: 'left', shift: false });
     expect(scene.heldStack).not.toBeNull();
     expect(conn.sent).toHaveLength(0);
@@ -230,6 +272,70 @@ describe('inventory panel click dispatch', () => {
     expect(scene.heldStack?.itemId).toBe(1);
     expect(scene.gridOrder.get(1)).toBe(0); // unchanged
     expect(scene.gridOrder.get(2)).toBe(1); // unchanged
+  });
+});
+
+describe('quickbar drag + drop', () => {
+  async function setupWithItems() {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [
+        { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 5, equippedSlot: 0 },
+        { itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: 0 },
+      ],
+    });
+    return { scene, conn };
+  }
+
+  it('left-click on occupied quickslot picks up the bound item and clears the binding', async () => {
+    const { scene, conn } = await setupWithItems();
+    scene.quickSlots[3] = 7;
+    handleInventoryPanelClick(scene, conn, { kind: 'quickslot', slotIndex: 3 },
+      { button: 'left', shift: false });
+    expect(scene.heldStack).toEqual({
+      itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, source: 'inventory',
+    });
+    expect(scene.quickSlots[3]).toBeNull();
+    expect(conn.sent).toHaveLength(0);
+  });
+
+  it('held-stack drop on empty quickslot binds and removes from grid', async () => {
+    const { scene, conn } = await setupWithItems();
+    // Pick up axe from grid.
+    handleInventoryPanelClick(scene, conn, { kind: 'grid', slotIndex: 1 },
+      { button: 'left', shift: false });
+    expect(scene.heldStack?.itemId).toBe(7);
+    // Drop onto quickslot 5.
+    handleInventoryPanelClick(scene, conn, { kind: 'quickslot', slotIndex: 5 },
+      { button: 'left', shift: false });
+    expect(scene.heldStack).toBeNull();
+    expect(scene.quickSlots[5]).toBe(7);
+    expect(scene.gridOrder.has(7)).toBe(false);
+  });
+
+  it('held-stack drop on occupied quickslot swaps; displaced returns to grid', async () => {
+    const { scene, conn } = await setupWithItems();
+    scene.quickSlots[2] = 1;              // wood bound in slot 2
+    scene.gridOrder.delete(1);            // mutual-exclusion: not in grid anymore
+    // Pick up axe from grid.
+    handleInventoryPanelClick(scene, conn, { kind: 'grid', slotIndex: 1 },
+      { button: 'left', shift: false });
+    // Drop onto quickslot 2 (currently holds wood).
+    handleInventoryPanelClick(scene, conn, { kind: 'quickslot', slotIndex: 2 },
+      { button: 'left', shift: false });
+    expect(scene.heldStack).toBeNull();
+    expect(scene.quickSlots[2]).toBe(7);
+    expect(scene.gridOrder.has(1)).toBe(true);  // wood displaced back to grid
+  });
+
+  it('right-click on quickslot is a no-op', async () => {
+    const { scene, conn } = await setupWithItems();
+    scene.quickSlots[0] = 7;
+    handleInventoryPanelClick(scene, conn, { kind: 'quickslot', slotIndex: 0 },
+      { button: 'right', shift: false });
+    expect(scene.heldStack).toBeNull();
+    expect(scene.quickSlots[0]).toBe(7);
   });
 });
 

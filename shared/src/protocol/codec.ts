@@ -606,6 +606,12 @@ export function encodeGameEvents(tick: number, events: WireEvent[]): ArrayBuffer
         w.writeU16(ev.tileX);
         w.writeU16(ev.tileY);
         break;
+      case WireEventType.PlayerHealed:
+        w.writeU16(ev.entityId);
+        w.writeU16(ev.tileX);
+        w.writeU16(ev.tileY);
+        w.writeU16(ev.healAmount);
+        break;
     }
   }
   return w.getBuffer();
@@ -651,6 +657,15 @@ function decodeGameEvents(r: BufferReader): { tick: number; events: WireEvent[] 
           killerId: r.readU16(),
           tileX: r.readU16(),
           tileY: r.readU16(),
+        });
+        break;
+      case WireEventType.PlayerHealed:
+        events.push({
+          type,
+          entityId: r.readU16(),
+          tileX: r.readU16(),
+          tileY: r.readU16(),
+          healAmount: r.readU16(),
         });
         break;
       default:
@@ -710,6 +725,13 @@ export type WireEvent =
       killerId: number;
       tileX: number;
       tileY: number;
+    }
+  | {
+      type: WireEventType.PlayerHealed;
+      entityId: number;
+      tileX: number;
+      tileY: number;
+      healAmount: number;
     };
 
 export type DecodedClientMessage =

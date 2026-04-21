@@ -36,7 +36,11 @@ void main() {
 }
 `;
 
-/** Sprite fragment shader — textured sample, alpha cutoff, lightmap multiply. */
+/** Sprite fragment shader — textured sample, alpha cutoff, lightmap multiply,
+ *  optional RGB tint. `u_tint` is `(r, g, b, mix)` where `mix` is the blend
+ *  weight between the sampled RGB and `u_tint.rgb` (0 = no tint, 1 = full
+ *  solid color). Tint applies AFTER the lightmap multiply so a bright red
+ *  highlight stays red even in low ambient light. */
 export const SPRITE_FS = /* glsl */ `#version 300 es
 precision highp float;
 
@@ -48,6 +52,7 @@ uniform vec2 u_lightmapOrigin;  // world-tile coords of lightmap texel (0,0)
 uniform vec2 u_lightmapSize;    // lightmap dimensions in tiles
 uniform vec2 u_spriteTileXY;    // world-tile position of this sprite's foot
 uniform int  u_lit;             // 1 = apply lightmap, 0 = pass-through (UI/effects)
+uniform vec4 u_tint;            // rgb = tint color, a = mix weight (0 = off)
 out vec4 outColor;
 
 void main() {
@@ -58,6 +63,9 @@ void main() {
     vec2 luv = (u_spriteTileXY - u_lightmapOrigin + 0.5) / u_lightmapSize;
     vec3 light = texture(u_lightmap, luv).rgb;
     rgb *= light;
+  }
+  if (u_tint.a > 0.0) {
+    rgb = mix(rgb, u_tint.rgb, u_tint.a);
   }
   outColor = vec4(rgb, c.a * u_alpha);
 }

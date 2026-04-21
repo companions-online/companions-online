@@ -32,7 +32,8 @@ export type GameEventType =
   // Medium
   | 'creature_fleeing'
   | 'creature_died'
-  | 'entity_meta_changed';
+  | 'entity_meta_changed'
+  | 'player_healed';
 
 // --- Detail interfaces ---
 
@@ -171,6 +172,15 @@ export interface EntityMetaChangedDetails {
   newValue: string;
 }
 
+export interface PlayerHealedDetails {
+  entityId: number;
+  tileX: number;
+  tileY: number;
+  healAmount: number;
+  currentHp: number;
+  maxHp: number;
+}
+
 // --- Discriminated union ---
 
 export type GameEventDetails =
@@ -192,7 +202,8 @@ export type GameEventDetails =
   | { type: 'building_placed';      details: BuildingPlacedDetails }
   | { type: 'creature_fleeing';     details: CreatureFleeingDetails }
   | { type: 'creature_died';        details: CreatureDiedDetails }
-  | { type: 'entity_meta_changed';  details: EntityMetaChangedDetails };
+  | { type: 'entity_meta_changed';  details: EntityMetaChangedDetails }
+  | { type: 'player_healed';        details: PlayerHealedDetails };
 
 export type GameEvent = GameEventDetails & {
   priority: EventPriority;
@@ -222,6 +233,7 @@ export const EVENT_PRIORITY: Record<GameEventType, EventPriority> = {
   creature_fleeing:    EventPriority.Medium,
   creature_died:       EventPriority.Medium,
   entity_meta_changed: EventPriority.Medium,
+  player_healed:       EventPriority.Medium,
 };
 
 // --- EventBuffer ---

@@ -7,7 +7,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 describe('E2E: Consumable', () => {
   it('bandage heals player over 10 ticks', () => {
     const world = createTestWorld();
-    const { entityId: player } = addTestPlayer(world, 10, 10);
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
 
     // Reduce HP to 50
     world.entities.health.set(player, { currentHp: 50, maxHp: 100 });
@@ -30,6 +30,43 @@ describe('E2E: Consumable', () => {
     const invAfter = world.inventoryMgr.get(player)!;
     const bandageAfter = invAfter.items.find(i => i.blueprintId === BlueprintType.Bandage);
     expect(bandageAfter).toBeUndefined();
+
+    // Broadcast: a player_healed event fires on completion so nearby
+    // clients can play the heal animation. Same channel WS uses; MCP
+    // ignores broadcasts so its first-person consume_complete is unaffected.
+    const healEvents = connection.broadcastEvents.filter(e => e.type === 'player_healed');
+    expect(healEvents).toHaveLength(1);
+    expect(healEvents[0].details).toMatchObject({
+      entityId: player,
+      tileX: 10,
+      tileY: 10,
+      healAmount: 30,
+      currentHp: 80,
+      maxHp: 100,
+    });
+  });
+
+  it('player_healed broadcast respects interest range', () => {
+    const world = createTestWorld();
+    const { entityId: healer } = addTestPlayer(world, 10, 10);
+    const { connection: nearConn } = addTestPlayer(world, 14, 10);  // within INTEREST_RANGE
+    const { connection: farConn } = addTestPlayer(world, 100, 100); // outside
+
+    world.entities.health.set(healer, { currentHp: 70, maxHp: 100 });
+    world.inventoryMgr.addItem(healer, BlueprintType.CookedFish, 1);
+    const inv = world.inventoryMgr.get(healer)!;
+    const fish = inv.items.find(i => i.blueprintId === BlueprintType.CookedFish)!;
+    world.entities.clearDirty();
+    nearConn.broadcastEvents.length = 0;
+    farConn.broadcastEvents.length = 0;
+
+    world.setAction(healer, { action: ClientAction.UseConsumable, itemId: fish.itemId });
+    world.runTicks(3);
+
+    const nearHeals = nearConn.broadcastEvents.filter(e => e.type === 'player_healed');
+    const farHeals = farConn.broadcastEvents.filter(e => e.type === 'player_healed');
+    expect(nearHeals).toHaveLength(1);
+    expect(farHeals).toHaveLength(0);
   });
 
   it('consuming interrupted by movement cancels heal', () => {

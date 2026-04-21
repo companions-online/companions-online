@@ -542,6 +542,20 @@ describe('GameEvents', () => {
     }
   });
 
+  it('round-trips PlayerHealed', () => {
+    const buf = encodeGameEvents(321, [{
+      type: WireEventType.PlayerHealed,
+      entityId: 55, tileX: 40, tileY: 50, healAmount: 30,
+    }]);
+    const msg = decodeServerMessage(buf);
+    if (msg.type === 'gameEvents') {
+      expect(msg.events[0]).toEqual({
+        type: WireEventType.PlayerHealed,
+        entityId: 55, tileX: 40, tileY: 50, healAmount: 30,
+      });
+    }
+  });
+
   it('round-trips a mixed batch preserving order', () => {
     const buf = encodeGameEvents(500, [
       { type: WireEventType.CombatHitDealt, attackerId: 1, targetId: 2, damage: 3, targetHp: 4, targetMaxHp: 5 },

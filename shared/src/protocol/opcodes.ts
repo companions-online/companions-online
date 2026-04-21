@@ -28,6 +28,7 @@ export const enum WireEventType {
   HarvestYield   = 0x02,
   CraftComplete  = 0x03,
   EntityDied     = 0x04,
+  PlayerHealed   = 0x05,
 }
 
 /** Section tags within a WorldDelta message */

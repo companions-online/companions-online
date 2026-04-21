@@ -157,6 +157,32 @@ describe('scene network wiring', () => {
     expect(scene.effects.active[0].kind).toBe('sprite-anim');
   });
 
+  it('PlayerHealed event spawns a healing sprite-anim at the target', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 9,
+        components: {
+          position: { tileX: 3, tileY: 3 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+          health: { currentHp: 50, maxHp: 100 },
+        },
+      },
+    });
+    expect(scene.effects.active).toHaveLength(0);
+    conn.deliver({
+      type: 'gameEvents',
+      tick: 11,
+      events: [{
+        type: WireEventType.PlayerHealed,
+        entityId: 9, tileX: 3, tileY: 3, healAmount: 20,
+      }],
+    });
+    expect(scene.effects.active).toHaveLength(1);
+    expect(scene.effects.active[0].kind).toBe('sprite-anim');
+  });
+
   it('Dead → non-Dead position delta snaps instead of lerping', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({

@@ -25,6 +25,7 @@ import type { ClientEntity } from './client-entity.js';
 import type { SpriteRenderer } from './sprite-renderer.js';
 import type { SpriteSheetRef } from './sprite-registry.js';
 import type { Scene } from '../scene.js';
+import { shouldTintCampfire } from '../ui/cooking-highlight.js';
 
 export function createStaticEntity(
   id: number,
@@ -141,7 +142,13 @@ function drawAnimatedStatic(
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
   sprites.setSpriteTile(e.visualX, e.visualY);
+  // Cooking highlight: tint the campfire red when the player is adjacent
+  // and has raw food selected. Single draw, no halo — the uniform is
+  // reset right after so later sprites aren't affected.
+  const tint = shouldTintCampfire(scene, e);
+  if (tint) sprites.setTint(1.0, 0.25, 0.25, 0.55);
   sprites.drawSprite(dstX, dstY, s.renderW, s.renderH, col * uvW, row * uvH, uvW, uvH);
+  if (tint) sprites.setTint(0, 0, 0, 0);
 }
 
 /** Facing row in the 2×2 door sheet: 0 = NE (wall runs horizontally),

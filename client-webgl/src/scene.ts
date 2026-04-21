@@ -19,6 +19,7 @@ import type { MetaKey } from '@shared/entity-meta.js';
 import { WireEventType } from '@shared/protocol/opcodes.js';
 import type { TextSurface } from './effects/text-surface.js';
 import { Camera } from './platform/camera.js';
+import { TILE_H } from './platform/config.js';
 import { SpriteRenderer } from './entities/sprite-renderer.js';
 import { loadSpriteRegistry, type SpriteRegistry } from './entities/sprite-registry.js';
 import { EffectManager } from './effects/effect.js';
@@ -86,6 +87,10 @@ const SMOKE_FRAME_SEQUENCE = [3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 const SMOKE_DURATION_MS = 660;
 const ATTACK_DURATION_MS = 280;
 const HARVEST_CRAFT_DURATION_MS = 420;
+/** Healing puff plays through all 9 frames in order. Follows the healed
+ *  entity so it tracks if the player moves during / after the channel. */
+const HEALING_FRAME_SEQUENCE = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const HEALING_DURATION_MS = 720;
 
 function createSmokePuff(effectSprites: EffectSprites, tileX: number, tileY: number, startTime: number) {
   return createSpriteAnim({
@@ -176,9 +181,20 @@ export interface Scene {
   pendingItemDecrements: Map<number, { quantity: number; timestamp: number }>;
   /** World tile under the cursor while placement mode is active, or null
    *  when placement mode is off. Placement is active iff inventory is
-   *  closed AND the hand-equipped item's blueprint has
-   *  category === 'placeable'. */
+   *  closed AND the selected quickslot holds a placeable. */
   placementHoverTile: { tileX: number; tileY: number } | null;
+
+  /** Quickbar: fixed-length array of 9 slots. Each entry is the itemId
+   *  bound to that slot, or null if empty. Items bound here are hidden
+   *  from the main grid (gridOrder ignores them) — a quickbar slot and
+   *  a grid cell are mutually exclusive placements for the same itemId.
+   *  Pruned on InventorySync when the referenced itemId disappears. */
+  quickSlots: (number | null)[];
+  /** Index (0..8) of the currently selected quickslot, or null if none.
+   *  Driven by the `1`..`9` keys. Selection controls: the hand equip
+   *  (sent to server when an equippable is selected) and the context-
+   *  sensitive right-click mode (placement / cook / consumable). */
+  selectedQuickSlot: number | null;
 
   // --- Network mutators ---
   onWelcome(entityId: number, seed: number): void;
@@ -415,6 +431,8 @@ export async function createScene(
     gridOrder: new Map(),
     pendingItemDecrements: new Map(),
     placementHoverTile: null,
+    quickSlots: Array<number | null>(9).fill(null),
+    selectedQuickSlot: null,
 
     onWelcome(entityId, seed) {
       this.myEntityId = entityId;
@@ -449,15 +467,34 @@ export async function createScene(
       }
       this.inventory = items;
 
-      // Reconcile UI-local grid layout + held stack against the new
-      // server-authoritative inventory.
+      // Reconcile UI-local grid layout + held stack + quickbar bindings
+      // against the new server-authoritative inventory.
       const presentIds = new Set(items.map(i => i.itemId));
-      for (const itemId of this.gridOrder.keys()) {
-        if (!presentIds.has(itemId)) this.gridOrder.delete(itemId);
+
+      // Drop any quickslot binding whose itemId no longer exists.
+      for (let i = 0; i < this.quickSlots.length; i++) {
+        const id = this.quickSlots[i];
+        if (id !== null && !presentIds.has(id)) this.quickSlots[i] = null;
+      }
+      // Clear selection if the selected slot is empty.
+      if (this.selectedQuickSlot !== null
+        && this.quickSlots[this.selectedQuickSlot] === null) {
+        this.selectedQuickSlot = null;
+      }
+
+      // Items bound to the quickbar are NOT laid out in the grid.
+      const inQuickbar = new Set<number>();
+      for (const id of this.quickSlots) if (id !== null) inQuickbar.add(id);
+
+      for (const itemId of [...this.gridOrder.keys()]) {
+        if (!presentIds.has(itemId) || inQuickbar.has(itemId)) {
+          this.gridOrder.delete(itemId);
+        }
       }
       const takenSlots = new Set(this.gridOrder.values());
       let nextSlot = 0;
       for (const item of items) {
+        if (inQuickbar.has(item.itemId)) continue;
         if (this.gridOrder.has(item.itemId)) continue;
         while (takenSlots.has(nextSlot)) nextSlot++;
         this.gridOrder.set(item.itemId, nextSlot);
@@ -633,6 +670,31 @@ export async function createScene(
         case WireEventType.EntityDied:
           effects.spawn(createSmokePuff(effectSprites, event.tileX, event.tileY, this.time));
           break;
+        case WireEventType.PlayerHealed: {
+          // Anchor on the live entity when possible so the puff follows a
+          // moving target; fall back to the event tile if the entity row
+          // hasn't arrived yet (race across channels). The sprite-anim is
+          // lifted by `footY/2 - TILE_H/2` (render-pixel space) so it
+          // centers on the middle of the sprite body rather than the tile
+          // — tall sprites like the 92-px player get the puff on their
+          // torso, short creatures get it just above tile center.
+          const target = entities.get(event.entityId);
+          const ax = target?.visualX ?? event.tileX;
+          const ay = target?.visualY ?? event.tileY;
+          const footY = target?.spriteSheet?.footY ?? 0;
+          const screenOffsetY = footY > 0 ? footY / 2 - TILE_H / 2 : 0;
+          effects.spawn(createSpriteAnim({
+            sheet: effectSprites.healing,
+            anchorX: ax,
+            anchorY: ay,
+            startTime: this.time,
+            totalDurationMs: HEALING_DURATION_MS,
+            frameSequence: HEALING_FRAME_SEQUENCE,
+            followEntityId: target ? event.entityId : undefined,
+            screenOffsetY,
+          }));
+          break;
+        }
       }
     },
 
