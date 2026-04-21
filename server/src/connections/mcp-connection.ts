@@ -3,6 +3,7 @@ import type { MetaKey } from '@shared/entity-meta.js';
 import type { PlayerConnection, GameWorldView } from '../player-connection.js';
 import type { GameEvent } from '../events.js';
 import { EventBuffer } from '../events.js';
+import type { RejectionReason } from '../action-rejection.js';
 
 export type DialogueData = {
   greeting: string;
@@ -15,9 +16,9 @@ export type DialogueData = {
   }[];
 };
 
-export interface ActionResult {
-  status: 'complete' | 'died' | 'timeout';
-}
+export type ActionResult =
+  | { status: 'complete' | 'died' | 'timeout' }
+  | { status: 'rejected'; reason: RejectionReason };
 
 export class McpConnection implements PlayerConnection {
   entityId = 0;
@@ -49,7 +50,7 @@ export class McpConnection implements PlayerConnection {
     });
   }
 
-  private resolveAction(status: ActionResult['status']): void {
+  private resolveAction(status: 'complete' | 'died' | 'timeout'): void {
     if (this.pendingAction) {
       this.pendingAction.resolve({ status });
       this.pendingAction = null;
@@ -108,5 +109,16 @@ export class McpConnection implements PlayerConnection {
 
   onEntityMeta(_entityId: number, _targetEntityId: number, _key: MetaKey, _value: string): void {
     // MCP formatters read live from world.entityMeta; no buffering needed.
+  }
+
+  onActionRejected(_entityId: number, reason: RejectionReason): void {
+    // Handlers run synchronously during the 'actions' phase while the MCP
+    // tool is already awaiting; resolve immediately so the tool returns on
+    // this tick instead of waiting for an Idle flip.
+    if (this.pendingAction) {
+      this.pendingAction.resolve({ status: 'rejected', reason });
+      this.pendingAction = null;
+      this.ticksWaited = 0;
+    }
   }
 }

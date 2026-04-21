@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { EntityManager } from '../server/src/ecs/entity-manager.js';
-import { initCritterAI, runCritterAI } from '../server/src/systems/critter-ai.js';
+import { initCritterAI, initCritterForEntity, notifyCritterAttacked, runCritterAI } from '../server/src/systems/critter-ai.js';
 import { hasMoveTarget, runMovement } from '../server/src/systems/movement.js';
 import { OccupancyGrid } from '../server/src/occupancy.js';
 import { InventoryManager } from '../server/src/inventory-manager.js';
@@ -133,6 +133,38 @@ describe('Critter AI', () => {
 
     expect(hasMoveTarget(tree, w)).toBe(false);
     expect(hasMoveTarget(player, w)).toBe(false);
+  });
+
+  it('notifyCritterAttacked emits aggro once per transition', () => {
+    const skeleton = createCritter(w, BlueprintType.Skeleton, 40, 40, 2.5);
+    const attacker1 = w.entities.create();
+    const attacker2 = w.entities.create();
+    initCritterForEntity(skeleton, w);
+
+    const first = notifyCritterAttacked(skeleton, attacker1, w);
+    expect(first).toEqual({ type: 'aggro', creatureEntityId: skeleton, targetPlayerEntityId: attacker1 });
+
+    // Repeated hits from the same attacker while already aggro => no event
+    for (let i = 0; i < 5; i++) {
+      expect(notifyCritterAttacked(skeleton, attacker1, w)).toBeUndefined();
+    }
+
+    // Retargeting to a different attacker => event fires again
+    const retarget = notifyCritterAttacked(skeleton, attacker2, w);
+    expect(retarget).toEqual({ type: 'aggro', creatureEntityId: skeleton, targetPlayerEntityId: attacker2 });
+  });
+
+  it('notifyCritterAttacked emits flee once per transition', () => {
+    const rabbit = createCritter(w, BlueprintType.Rabbit, 40, 40, 4);
+    const attacker = w.entities.create();
+    initCritterForEntity(rabbit, w);
+
+    const first = notifyCritterAttacked(rabbit, attacker, w);
+    expect(first).toEqual({ type: 'flee', creatureEntityId: rabbit, targetPlayerEntityId: attacker });
+
+    for (let i = 0; i < 5; i++) {
+      expect(notifyCritterAttacked(rabbit, attacker, w)).toBeUndefined();
+    }
   });
 
   it('multiple critter types coexist', () => {

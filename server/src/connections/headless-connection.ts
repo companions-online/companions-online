@@ -1,6 +1,7 @@
 import type { PlayerConnection, TickDelta, GameWorldView } from '../player-connection.js';
 import type { MetaKey } from '@shared/entity-meta.js';
 import type { GameEvent } from '../events.js';
+import type { RejectionReason } from '../action-rejection.js';
 
 export interface ConnectionEvent {
   type: 'init' | 'inventory' | 'tick' | 'containerOpen' | 'dialogueOpen' | 'chatMessage' | 'entityMeta';
@@ -20,6 +21,7 @@ export class HeadlessConnection implements PlayerConnection {
   readonly events: ConnectionEvent[] = [];
   readonly gameEvents: GameEvent[] = [];
   readonly broadcastEvents: GameEvent[] = [];
+  readonly rejections: RejectionReason[] = [];
 
   onInitialState(entityId: number, _world: GameWorldView): void {
     this.events.push({ type: 'init', entityId });
@@ -61,5 +63,9 @@ export class HeadlessConnection implements PlayerConnection {
 
   onEntityMeta(entityId: number, targetEntityId: number, key: MetaKey, value: string): void {
     this.events.push({ type: 'entityMeta', entityId, targetEntityId, metaKey: key, metaValue: value });
+  }
+
+  onActionRejected(_entityId: number, reason: RejectionReason): void {
+    this.rejections.push(reason);
   }
 }

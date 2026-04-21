@@ -12,6 +12,7 @@ import {
   formatEnvelope, ResponseShape,
   formatInventory, formatRecipes, formatContainer, formatEvents,
 } from './mcp-formatters.js';
+import { formatRejection } from './action-rejection.js';
 
 function text(t: string, opts?: { isError?: boolean }) {
   const result: { content: { type: 'text'; text: string }[]; isError?: boolean } = {
@@ -47,6 +48,12 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
   async function doAction(action: Record<string, unknown>, summary: string, shape: ResponseShape) {
     world.setAction(conn.entityId, action as any);
     const result = await conn.awaitAction();
+    if (result.status === 'rejected') {
+      return text(
+        formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] ${summary}`, shape),
+        { isError: true },
+      );
+    }
     const statusPrefix = result.status === 'complete' ? '' : `[${result.status}] `;
     return text(formatEnvelope(conn, `${statusPrefix}${summary}`, shape));
   }
@@ -97,8 +104,15 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       const result = await conn.awaitAction();
       const post = world.entities.position.get(conn.entityId);
       const moved = !pre || !post || pre.tileX !== post.tileX || pre.tileY !== post.tileY;
+      const shape = moved ? ResponseShape.FullInv : ResponseShape.SelfInv;
+      if (result.status === 'rejected') {
+        return text(
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Harvest at (${x},${y})`, shape),
+          { isError: true },
+        );
+      }
       const prefix = result.status === 'complete' ? '' : `[${result.status}] `;
-      return text(formatEnvelope(conn, `${prefix}Harvest at (${x},${y})`, moved ? ResponseShape.FullInv : ResponseShape.SelfInv));
+      return text(formatEnvelope(conn, `${prefix}Harvest at (${x},${y})`, shape));
     },
   );
 
@@ -110,8 +124,15 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       const result = await conn.awaitAction();
       const post = world.entities.position.get(conn.entityId);
       const moved = !pre || !post || pre.tileX !== post.tileX || pre.tileY !== post.tileY;
+      const shape = moved ? ResponseShape.FullInv : ResponseShape.SelfInv;
+      if (result.status === 'rejected') {
+        return text(
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Pickup #${entity_id}`, shape),
+          { isError: true },
+        );
+      }
       const prefix = result.status === 'complete' ? '' : `[${result.status}] `;
-      return text(formatEnvelope(conn, `${prefix}Pickup #${entity_id}`, moved ? ResponseShape.FullInv : ResponseShape.SelfInv));
+      return text(formatEnvelope(conn, `${prefix}Pickup #${entity_id}`, shape));
     },
   );
 
@@ -122,11 +143,17 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       const preContainer = conn.containerEntityId;
       world.setAction(conn.entityId, { action: ClientAction.Interact, entityId: entity_id });
       const result = await conn.awaitAction();
-      const prefix = result.status === 'complete' ? '' : `[${result.status}] `;
       let shape: ResponseShape;
       if (conn.dialogueState && conn.dialogueState !== preDialogue) shape = ResponseShape.Dialogue;
       else if (conn.containerEntityId !== null && conn.containerEntityId !== preContainer) shape = ResponseShape.Container;
       else shape = ResponseShape.Full;
+      if (result.status === 'rejected') {
+        return text(
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Interact #${entity_id}`, shape),
+          { isError: true },
+        );
+      }
+      const prefix = result.status === 'complete' ? '' : `[${result.status}] `;
       return text(formatEnvelope(conn, `${prefix}Interact #${entity_id}`, shape));
     },
   );

@@ -67,19 +67,19 @@ export function notifyCritterAttacked(entityId: number, attackerEntityId: number
   if (!config) return;
 
   if (config.fleeRange) {
-    // Flee from attacker
+    const wasFleeing = state.behavior === 'flee' && state.targetEntityId === attackerEntityId;
     state.behavior = 'flee';
     state.targetEntityId = attackerEntityId;
     clearMoveTarget(entityId, world);
-    return { type: 'flee', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
+    return wasFleeing ? undefined : { type: 'flee', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
   } else if (config.aggroRange) {
-    // Fight back
+    const wasAggro = state.behavior === 'aggro' && state.targetEntityId === attackerEntityId;
     state.behavior = 'aggro';
     state.targetEntityId = attackerEntityId;
     if (!isInCombat(entityId, world)) {
       startAttack(entityId, attackerEntityId, world);
     }
-    return { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
+    return wasAggro ? undefined : { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
   }
   // Deer: passive — no behavior change
   return undefined;

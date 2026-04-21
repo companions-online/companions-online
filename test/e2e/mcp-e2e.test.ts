@@ -329,6 +329,114 @@ describe('MCP E2E', () => {
     await client.close();
   });
 
+  it('move_to unwalkable tile rejects with reason', async () => {
+    const client = await createIdentifiedMcpClient();
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+    const pos = world.entities.position.get(playerId)!;
+
+    // Force a wall east of the player so the reason is deterministic.
+    const wallX = pos.tileX + 1;
+    const wallY = pos.tileY;
+    const existing = world.occupancy.get(wallX, wallY);
+    if (existing) { world.occupancy.clear(wallX, wallY); world.entities.destroy(existing); }
+    world.map.setBuilding(wallX, wallY, 1 /* Building.Wall */);
+
+    const result = await client.callTool({ name: 'move_to', arguments: { x: wallX, y: wallY } });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[rejected:');
+    expect(text).toContain(`tile (${wallX},${wallY})`);
+    expect(text).toContain('blocked by wall');
+    // Envelope still shows current state so the LLM can recover.
+    expect(text).toContain('<self>');
+    expect(text).toContain('<map>');
+
+    world.map.setBuilding(wallX, wallY, 0 /* Building.None */);
+    await client.close();
+  });
+
+  it('move_to out-of-bounds rejects', async () => {
+    const client = await createIdentifiedMcpClient();
+    const result = await client.callTool({ name: 'move_to', arguments: { x: -5, y: 50 } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('out of bounds');
+    await client.close();
+  });
+
+  it('pickup of non-item entity rejects with wrong_target_kind', async () => {
+    const client = await createIdentifiedMcpClient();
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+
+    // Target an NPC — Hermit/Trader are npcs so pickup must reject.
+    let npcEid: number | undefined;
+    for (const eid of world.entities.getAllEntities()) {
+      if (eid === playerId) continue;
+      const bp = world.entities.blueprint.get(eid);
+      if (bp?.blueprintId === BlueprintType.Hermit || bp?.blueprintId === BlueprintType.Trader) {
+        npcEid = eid; break;
+      }
+    }
+    expect(npcEid).toBeDefined();
+
+    const result = await client.callTool({ name: 'pickup', arguments: { entity_id: npcEid! } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('expected ground item');
+    await client.close();
+  });
+
+  it('craft with unknown recipe rejects', async () => {
+    const client = await createIdentifiedMcpClient();
+    const result = await client.callTool({ name: 'craft', arguments: { recipe_id: 9999 } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('unknown recipe 9999');
+    await client.close();
+  });
+
+  it('transfer without a chest rejects with target_missing', async () => {
+    const client = await createIdentifiedMcpClient();
+    const result = await client.callTool({
+      name: 'transfer',
+      arguments: { item_id: 1, container_id: 999999, direction: 'to' },
+    });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('no longer exists');
+    await client.close();
+  });
+
+  it('dialogue_select with invalid option rejects', async () => {
+    const client = await createIdentifiedMcpClient();
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+    const pos = world.entities.position.get(playerId)!;
+
+    // Place a Hermit adjacent so not_adjacent doesn't fire first.
+    const npcX = pos.tileX + 1;
+    const npcY = pos.tileY;
+    const existing = world.occupancy.get(npcX, npcY);
+    if (existing) { world.occupancy.clear(npcX, npcY); world.entities.destroy(existing); }
+    const npcEid = world.entities.create();
+    world.entities.position.set(npcEid, { tileX: npcX, tileY: npcY });
+    world.entities.blueprint.set(npcEid, { blueprintId: BlueprintType.Hermit, variant: 0 });
+
+    const result = await client.callTool({
+      name: 'dialogue_select',
+      arguments: { npc_entity_id: npcEid, option_id: 9999 },
+    });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('dialogue option 9999');
+
+    world.entities.destroy(npcEid);
+    await client.close();
+  });
+
   it('identify broadcasts nametag to nearby players', async () => {
     // Two MCP clients; the second identifies after the first is already there.
     // The first should see an entity_meta_changed event for the second.

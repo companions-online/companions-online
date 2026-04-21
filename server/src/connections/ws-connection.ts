@@ -185,4 +185,8 @@ export class WebSocketConnection implements PlayerConnection {
   onEntityMeta(_entityId: number, targetEntityId: number, key: MetaKey, value: string): void {
     this.send(encodeEntityMeta(targetEntityId, key, value));
   }
+
+  onActionRejected(): void {
+    // WS clients render their own collision feedback; no wire plumbing yet.
+  }
 }

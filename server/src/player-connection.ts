@@ -5,6 +5,7 @@ import type { EntityManager } from './ecs/entity-manager.js';
 import type { InventoryManager } from './inventory-manager.js';
 import type { OccupancyGrid } from './occupancy.js';
 import type { GameEvent } from './events.js';
+import type { RejectionReason } from './action-rejection.js';
 
 export interface TickDelta {
   tick: number;
@@ -44,4 +45,8 @@ export interface PlayerConnection {
    *  narration uses point-to-point events only). */
   onBroadcastEvent(entityId: number, event: GameEvent): void;
   onEntityMeta(entityId: number, targetEntityId: number, key: MetaKey, value: string): void;
+  /** Action the player just requested was rejected before it took effect (e.g.
+   *  move to an unwalkable tile, craft without materials). Structured reason —
+   *  rendered to LLM-readable text at the MCP boundary via formatRejection. */
+  onActionRejected(entityId: number, reason: RejectionReason): void;
 }
