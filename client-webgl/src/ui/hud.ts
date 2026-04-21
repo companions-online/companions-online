@@ -1,11 +1,11 @@
-// HUD chrome: chat log, chat input, and debug overlay.
-// Drawn after the game scissor pass is disabled, so it covers the
-// HUD regions (bottom bar, top bar). Uses TextSurfaceFactory for
-// text rendering + SpriteRenderer for blitting.
+// HUD overlay — chat log, chat input, debug label, quickbar, inventory panel.
+// Drawn in-game at canvas resolution (after the game scissor pass is disabled)
+// so it sits on top of the play area. Uses TextSurfaceFactory for text
+// rendering + SpriteRenderer for blitting.
 
 import { getBlueprint } from '@shared/blueprints.js';
 import { MetaKey } from '@shared/entity-meta.js';
-import { CANVAS_W, CANVAS_H, HUD_BOTTOM_H } from '../platform/config.js';
+import { GAME_X, GAME_Y, GAME_W, GAME_H } from '../platform/config.js';
 import type { TextSurface, TextSurfaceFactory } from '../effects/text-surface.js';
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
@@ -14,10 +14,23 @@ import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
-const CHAT_MAX_LINES = 5;
+const CHAT_MAX_VISIBLE = 8;
 const CHAT_PAD_X = 10;
 const CHAT_PAD_Y = 8;
+/** A chat line stays full opacity for CHAT_FULL_MS then fades over CHAT_FADE_MS. */
+const CHAT_FULL_MS = 30_000;
+const CHAT_FADE_MS = 5_000;
+const CHAT_LIFETIME_MS = CHAT_FULL_MS + CHAT_FADE_MS;
 const DEBUG_FONT_PX = 14;
+const DEBUG_PAD = 6;
+
+/** Per-line opacity for chat-log overlay. Full opacity until `CHAT_FULL_MS`,
+ *  linear fade to zero over the next `CHAT_FADE_MS`. Exported for tests. */
+export function chatLineAlpha(ageMs: number): number {
+  if (ageMs <= CHAT_FULL_MS) return 1;
+  if (ageMs >= CHAT_LIFETIME_MS) return 0;
+  return 1 - (ageMs - CHAT_FULL_MS) / CHAT_FADE_MS;
+}
 
 // Cached surfaces — released and re-created when text changes.
 let cachedChatLines: { key: string; surface: TextSurface }[] = [];
@@ -76,9 +89,18 @@ export function drawHud(
 
   sprites.begin(resolution);
 
-  // --- Chat log (bottom-left, above the input line) ---
-  const chatBaseY = CANVAS_H - HUD_BOTTOM_H + CHAT_PAD_Y;
-  const visibleLog = scene.chatLog.slice(-CHAT_MAX_LINES);
+  // --- Chat input (pinned to bottom-left of play area) + chat log above it ---
+  const inputY = GAME_Y + GAME_H - CHAT_PAD_Y - CHAT_FONT_PX;
+  const inputX = GAME_X + CHAT_PAD_X;
+  const chatBottomY = inputY - CHAT_LINE_H; // y of the newest chat line
+
+  // Age-filter + cap. Oldest retained entry sits highest; newest sits at chatBottomY.
+  const now = Date.now();
+  const live: typeof scene.chatLog = [];
+  for (const entry of scene.chatLog) {
+    if (now - entry.receivedAt < CHAT_LIFETIME_MS) live.push(entry);
+  }
+  const visibleLog = live.slice(-CHAT_MAX_VISIBLE);
 
   // Build chat line keys and sync cache.
   const newCachedLines: { key: string; surface: TextSurface }[] = [];
@@ -107,37 +129,44 @@ export function drawHud(
   }
   cachedChatLines = newCachedLines;
 
-  // Draw chat lines.
+  // Draw chat lines: newest (index visibleLog.length-1) at chatBottomY,
+  // older stacked upward.
   for (let i = 0; i < cachedChatLines.length; i++) {
     const { surface } = cachedChatLines[i];
-    const y = chatBaseY + i * CHAT_LINE_H;
+    const age = now - visibleLog[i].receivedAt;
+    const alpha = chatLineAlpha(age);
+    if (alpha <= 0) continue;
+    const stackFromBottom = cachedChatLines.length - 1 - i;
+    const y = chatBottomY - stackFromBottom * CHAT_LINE_H;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, surface.texture);
-    sprites.drawSprite(CHAT_PAD_X, y, surface.width, surface.height, 0, 0, 1, 1);
+    sprites.setAlpha(alpha);
+    sprites.drawSprite(inputX, y, surface.width, surface.height, 0, 0, 1, 1);
   }
+  sprites.setAlpha(1);
 
-  // --- Chat input ---
+  // --- Chat input (drawn below the chat log, pinned to bottom) ---
   if (keyboard.chatActive) {
-    const inputY = chatBaseY + cachedChatLines.length * CHAT_LINE_H + 4;
     const inputText = `> ${keyboard.chatBuffer}_`;
-    const inputKey = inputText;
-    cachedInput = getOrCreate(factory, inputKey, cachedInput, '#ff0', CHAT_FONT_PX, '#000');
+    cachedInput = getOrCreate(factory, inputText, cachedInput, '#ff0', CHAT_FONT_PX, '#000');
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, cachedInput.surface.texture);
     sprites.drawSprite(
-      CHAT_PAD_X, inputY,
+      inputX, inputY,
       cachedInput.surface.width, cachedInput.surface.height,
       0, 0, 1, 1,
     );
   }
 
-  // --- Debug overlay (top bar) ---
+  // --- Debug overlay (top-left of play area) ---
   if (keyboard.debugMode && debugLabel) {
-    cachedDebug = getOrCreate(factory, debugLabel, cachedDebug, '#0f0', DEBUG_FONT_PX, '#000');
+    cachedDebug = getOrCreate(factory, debugLabel, cachedDebug, '#ff0', DEBUG_FONT_PX, '#000');
+    const dstX = GAME_X + DEBUG_PAD;
+    const dstY = GAME_Y + DEBUG_PAD;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, cachedDebug.surface.texture);
     sprites.drawSprite(
-      CHAT_PAD_X, CHAT_PAD_Y,
+      dstX, dstY,
       cachedDebug.surface.width, cachedDebug.surface.height,
       0, 0, 1, 1,
     );

@@ -10,7 +10,7 @@ import { WAYPOINT_NONE } from '@shared/components.js';
 import type { SystemState } from '../system-state.js';
 import { initCritterForEntity } from './critter-ai.js';
 
-export const SKELETON_NIGHT_SPAWN_PER_HOUR = 1;
+export const SKELETON_NIGHT_SPAWN_PER_HOUR = 0;
 export const SKELETON_MIN_PLAYER_DISTANCE = 10;
 export const SKELETON_MAX_PLAYER_DISTANCE = 20;
 export const SKELETON_SUN_DAMAGE = 4;

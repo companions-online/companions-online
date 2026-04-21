@@ -2,20 +2,20 @@
 export const TILE_W = 64;
 export const TILE_H = 32;
 
-/** Fixed canvas dimensions */
-export const CANVAS_W = 1600;
-export const CANVAS_H = 900;
+/** Uniform margin around the game viewport — the only chrome. */
+export const MARGIN = 15;
 
-/** HUD region sizes (reserved canvas chrome around the game area) */
-export const HUD_RIGHT_W = 300;
-export const HUD_TOP_H = 40;
-export const HUD_BOTTOM_H = 140;
+/** Game viewport — the playable area. Canvas is sized to fit this plus margins. */
+export const GAME_W = 1300;
+export const GAME_H = 720;
 
-/** Game viewport within the canvas */
-export const GAME_X = 0;
-export const GAME_Y = HUD_TOP_H;
-export const GAME_W = CANVAS_W - HUD_RIGHT_W;
-export const GAME_H = CANVAS_H - HUD_TOP_H - HUD_BOTTOM_H;
+/** Fixed canvas dimensions — game viewport + uniform margin on all sides. */
+export const CANVAS_W = GAME_W + 2 * MARGIN;
+export const CANVAS_H = GAME_H + 2 * MARGIN;
+
+/** Game viewport position within the canvas. */
+export const GAME_X = MARGIN;
+export const GAME_Y = MARGIN;
 
 /** Number of terrain types (matches shared Terrain enum, including rendering-only floors) */
 export const TERRAIN_COUNT = 8;
