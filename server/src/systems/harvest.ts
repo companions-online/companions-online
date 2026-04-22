@@ -7,6 +7,7 @@ import { dirFromTo } from '@shared/direction.js';
 import type { SystemState, HarvestContext } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 import { depleteTree } from './resources.js';
+import { Ok, Err, type ActionResult } from '../action-rejection.js';
 
 function faceHarvestTarget(eid: number, state: { targetX: number; targetY: number }, world: SystemState): void {
   const pos = world.entities.position.get(eid);
@@ -54,18 +55,24 @@ function isAdjacent(ax: number, ay: number, bx: number, by: number): boolean {
   return Math.abs(ax - bx) <= 1 && Math.abs(ay - by) <= 1 && !(ax === bx && ay === by);
 }
 
-export function startHarvest(eid: number, tileX: number, tileY: number, world: SystemState): boolean {
+export function startHarvest(eid: number, tileX: number, tileY: number, world: SystemState): ActionResult {
+  if (tileX < 0 || tileX >= world.map.width || tileY < 0 || tileY >= world.map.height) {
+    return Err({ code: 'tile_out_of_bounds', tileX, tileY });
+  }
+
   const inv = world.inventoryMgr.get(eid);
   const handItem = inv?.items.find(i => i.equippedSlot === 'hand');
   const equippedBpId = handItem?.blueprintId;
 
   const result = resolveHarvestContext(tileX, tileY, world, equippedBpId);
-  if (!result) return false;
-
-  clearMoveTarget(eid, world);
+  if (!result) {
+    return Err({ code: 'not_harvestable', tileX, tileY });
+  }
 
   const pos = world.entities.position.get(eid);
-  if (!pos) return false;
+  if (!pos) return Err({ code: 'target_missing', targetEntityId: eid });
+
+  clearMoveTarget(eid, world);
 
   const adjacent = isAdjacent(pos.tileX, pos.tileY, tileX, tileY);
 
@@ -95,16 +102,20 @@ export function startHarvest(eid: number, tileX: number, tileY: number, world: S
     }
     candidates.sort((a, b) => a.dist - b.dist);
     if (candidates.length > 0) {
-      setMoveTarget(eid, candidates[0].ax, candidates[0].ay, world);
-      return true;
+      const moveResult = setMoveTarget(eid, candidates[0].ax, candidates[0].ay, world);
+      if (!moveResult.ok) {
+        world.harvestStates.delete(eid);
+        return moveResult;
+      }
+      return Ok;
     }
     world.harvestStates.delete(eid);
-    return false;
+    return Err({ code: 'no_path', tileX, tileY });
   }
 
   world.entities.currentAction.set(eid, { actionType: ActionType.Harvesting });
   faceHarvestTarget(eid, { targetX: tileX, targetY: tileY }, world);
-  return true;
+  return Ok;
 }
 
 export function cancelHarvest(eid: number, world: SystemState): void {

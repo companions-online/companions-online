@@ -32,7 +32,10 @@ world/index.ts           Barrel re-export
 ```
 main.ts                  Entry: createDefaultWorld + Hono server + GameLoop (~40 lines)
 app.ts                   Hono app factory: MCP routes + WS upgrade + static serving
-game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission (emitEvent point-to-point + broadcastEvent to nearby for visuals), clearAiTargetsOn(deadEntityId) for player/creature death AI cleanup; weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings
+game-world.ts            GameWorld class — state container + runTick orchestration + player lifecycle + event emission (public emitEvent point-to-point + broadcastEvent to nearby + makeEvent + bpName). processEntityDeath + handlePlayerDeath + clearAiTargetsOn + spawnCreatureEntity/spawnGroundItem live here; action dispatch moved to world-actions.ts. Weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings.
+world-actions.ts         Player action dispatch layer — processAction (switch), cancelConflictingStates, rejectAction, all 17 handle* (MoveTo..ServerCommand), executeInteract, toggleDoor. Free functions taking world: GameWorld (same shape as systems/*). Handlers are thin shims over ActionResult-returning helpers.
+action-rejection.ts      RejectionReason discriminated union + formatRejection renderer + ActionResult / ActionResultOf<T> types with Ok/OkValue/Err constructors.
+action-helpers.ts        requireAdjacentTarget(actorId, targetId, world, opts?) — shared target_missing | wrong_target_kind | not_adjacent preamble used by Transfer / DialogueSelect / Trade.
 system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
 player-connection.ts     PlayerConnection interface (10 methods incl onGameEvent point-to-point + onBroadcastEvent spectator-range) + TickDelta + GameWorldView
 events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out. Details for combat_hit_dealt / harvest_yield / craft_complete carry actor id (attackerEntityId / harvesterEntityId / crafterEntityId) so broadcast wire events can identify the actor.
@@ -49,7 +52,7 @@ mcp-formatters.ts        Text formatters: self, map, entities, terrain, events, 
 ecs/component-store.ts   ComponentStore<T> — generic Map with auto-dirty
 ecs/entity-manager.ts    EntityManager — entity lifecycle, 7 component stores, dirty/destroyed tracking
 ecs/game-loop.ts         GameLoop — setTimeout with drift compensation
-systems/movement.ts      A* path-following, occupancy collision, wait-and-repath
+systems/movement.ts      A* path-following, occupancy collision, wait-and-repath. setMoveTarget returns ActionResult; takes mode: 'exact' | 'near' ('exact' rejects blocked goal; 'near' routes to adjacent walkable via findPath fallback)
 systems/harvest.ts       Channeled gathering, auto-pathfind to adjacent, tree depletion → returns HarvestEvent[]
 systems/consumable.ts    Channeled healing, single-use, interruptible → returns ConsumeEvent[]
 systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }. startAttack + per-swing sets attacker direction via dirFromTo so swing animation faces target.
@@ -116,4 +119,5 @@ persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight 
 client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
 client-gl/scene.test.ts       Scene mutators + factory dispatch + capacity + onGameEvent dispatch + smoke-puff spawn (via EntityDied + Dead-transition paths) + Dead→Idle snap
 client-gl/effects.test.ts     Damage number + pickup text + chat bubble lifecycle
+movement-edge-cases.test.ts   Regression + spec file for 5 reported movement/combat bugs: move_to rejection plumbing (wall / door-entity / no_path); critter-stuck-animation + aggro-give-up; combat clip-through-closed-door (still failing); 1-wide vs 2-wide river crossing (2-wide still failing — River missing from isWalkable).
 ```

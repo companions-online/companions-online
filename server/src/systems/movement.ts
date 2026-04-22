@@ -3,23 +3,67 @@ import { Direction, DX, DY, isDiagonal } from '@shared/direction.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { TICK_RATE } from '@shared/constants.js';
 import { findPath } from '@shared/pathfinding.js';
+import { Terrain, Building } from '@shared/terrain.js';
+import { BlueprintType } from '@shared/blueprints.js';
 import type { SystemState, MovementState } from '../system-state.js';
+import { Ok, Err, type ActionResult } from '../action-rejection.js';
 
 const WAIT_PATIENCE = 10;
 
+/** Classify why a tile cannot be entered. Walls/terrain dominate over
+ *  occupancy so the LLM hears the most actionable reason first. */
+function classifyBlock(
+  world: SystemState, x: number, y: number, eid: number,
+): 'wall' | 'water' | 'rock' | 'door' | 'entity' {
+  const building = world.map.getBuilding(x, y);
+  if (building !== Building.None) return 'wall';
+  const terrain = world.map.getTerrain(x, y);
+  if (terrain === Terrain.Water || terrain === Terrain.River) return 'water';
+  if (terrain === Terrain.Rock) return 'rock';
+  const occ = world.occupancy.get(x, y);
+  if (occ && occ !== eid) {
+    const bp = world.entities.blueprint.get(occ);
+    if (bp?.blueprintId === BlueprintType.WoodenDoor) return 'door';
+  }
+  return 'entity';
+}
+
+/** Mode controls how a blocked destination is treated.
+ *
+ *  - 'exact' (player MoveTo intent): reject if the goal tile itself is blocked.
+ *    The user clicked *that tile*, not "near it" — surface tile_blocked so the
+ *    LLM/client gets actionable feedback.
+ *  - 'near' (chase intent — pickup, interact, attack chase, harvest approach):
+ *    fall back to a walkable adjacent tile so the actor can stand next to a
+ *    door/item/target. findPath handles the adjacent-fallback internally.
+ */
 export function setMoveTarget(
   entityId: number, x: number, y: number, world: SystemState,
-): void {
+  mode: 'exact' | 'near' = 'near',
+): ActionResult {
   const pos = world.entities.position.get(entityId);
-  if (!pos) return;
+  if (!pos) return Err({ code: 'target_missing', targetEntityId: entityId });
 
-  const result = findPath(
-    pos.tileX, pos.tileY, x, y,
-    (px, py) => !world.map.isWalkable(px, py) || (world.occupancy.isOccupied(px, py) && world.occupancy.get(px, py) !== entityId),
-    world.map.width, world.map.height,
-  );
+  if (x < 0 || x >= world.map.width || y < 0 || y >= world.map.height) {
+    return Err({ code: 'tile_out_of_bounds', tileX: x, tileY: y });
+  }
 
-  if (!result.found || result.path.length === 0) return;
+  const isBlocked = (px: number, py: number): boolean =>
+    !world.map.isWalkable(px, py) ||
+    (world.occupancy.isOccupied(px, py) && world.occupancy.get(px, py) !== entityId);
+
+  if (mode === 'exact' && isBlocked(x, y)) {
+    return Err({ code: 'tile_blocked', tileX: x, tileY: y, by: classifyBlock(world, x, y, entityId) });
+  }
+
+  const result = findPath(pos.tileX, pos.tileY, x, y, isBlocked, world.map.width, world.map.height);
+
+  if (!result.found || result.path.length === 0) {
+    if (isBlocked(x, y)) {
+      return Err({ code: 'tile_blocked', tileX: x, tileY: y, by: classifyBlock(world, x, y, entityId) });
+    }
+    return Err({ code: 'no_path', tileX: x, tileY: y });
+  }
 
   world.moveStates.set(entityId, {
     targetX: x, targetY: y,
@@ -37,6 +81,8 @@ export function setMoveTarget(
   const dy = next.y - pos.tileY;
   const dir = directionFromDelta(dx, dy);
   if (dir !== undefined) world.entities.direction.set(entityId, { dir });
+
+  return Ok;
 }
 
 export function clearMoveTarget(entityId: number, world: SystemState): void {

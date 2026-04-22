@@ -70,12 +70,12 @@ describe('InventoryManager', () => {
   it('equip / unequip', () => {
     mgr.create(1);
     const { itemId } = mgr.addItem(1, BlueprintType.Axe, 1);
-    expect(mgr.equip(1, itemId!)).toBe(true);
+    expect(mgr.equip(1, itemId!).ok).toBe(true);
     const inv = mgr.get(1)!;
     expect(inv.items[0].equippedSlot).toBe('hand');
 
     // Equip again toggles off
-    expect(mgr.equip(1, itemId!)).toBe(true);
+    expect(mgr.equip(1, itemId!).ok).toBe(true);
     expect(inv.items[0].equippedSlot).toBeUndefined();
   });
 
@@ -96,7 +96,7 @@ describe('InventoryManager', () => {
     mgr.create(1);
     const { itemId } = mgr.addItem(1, BlueprintType.Iron, 3);
     const dropped = mgr.drop(1, itemId!);
-    expect(dropped).toEqual({ blueprintId: BlueprintType.Iron, quantity: 3 });
+    expect(dropped).toEqual({ ok: true, value: { blueprintId: BlueprintType.Iron, quantity: 3 } });
     expect(mgr.get(1)!.items).toHaveLength(0);
   });
 
@@ -107,7 +107,7 @@ describe('InventoryManager', () => {
 
     // Craft an Axe (2 Wood + 1 Rock)
     const axeRecipe = getAllRecipes().find(r => r.output.blueprintId === BlueprintType.Axe)!;
-    expect(mgr.craft(1, axeRecipe.id)).toBe(true);
+    expect(mgr.craft(1, axeRecipe.id).ok).toBe(true);
 
     const inv = mgr.get(1)!;
     const wood = inv.items.find(i => i.blueprintId === BlueprintType.Wood);
@@ -122,7 +122,7 @@ describe('InventoryManager', () => {
     mgr.create(1);
     mgr.addItem(1, BlueprintType.Wood, 1); // need 2 for axe
     const axeRecipe = getAllRecipes().find(r => r.output.blueprintId === BlueprintType.Axe)!;
-    expect(mgr.craft(1, axeRecipe.id)).toBe(false);
+    expect(mgr.craft(1, axeRecipe.id).ok).toBe(false);
   });
 
   it('craft: fails without required tool', () => {
@@ -131,11 +131,11 @@ describe('InventoryManager', () => {
     mgr.addItem(1, BlueprintType.Iron, 3);
     // Iron Sword requires Hammer
     const swordRecipe = getAllRecipes().find(r => r.output.blueprintId === BlueprintType.IronSword)!;
-    expect(mgr.craft(1, swordRecipe.id)).toBe(false);
+    expect(mgr.craft(1, swordRecipe.id).ok).toBe(false);
 
     // Add hammer, try again
     mgr.addItem(1, BlueprintType.Hammer, 1);
-    expect(mgr.craft(1, swordRecipe.id)).toBe(true);
+    expect(mgr.craft(1, swordRecipe.id).ok).toBe(true);
   });
 
   it('getSyncData returns correct structure', () => {

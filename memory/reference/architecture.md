@@ -47,7 +47,7 @@ GameWorld implements SystemState {
 
   addPlayer(connection: PlayerConnection): entityId
   removePlayer(entityId)
-  setAction(entityId, action)  // → processAction switch dispatch
+  setAction(entityId, action)  // queues pendingAction; runTick's action phase calls processAction(this, ...) from world-actions.ts
   runTick() / runTicks(n)
 }
 ```
@@ -107,7 +107,11 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 **Identify + keepalive contract.** New MCP sessions stay entity-less until the client calls `identify(name)`. Pre-identify tool calls return an `isError` text block steering to identify. Node HTTP timeouts (`requestTimeout`, `headersTimeout`) are disabled in `main.ts` to keep long-lived SSE streams alive; a 15s MCP-native `ping()` interval per session produces real bytes on the standalone SSE stream so upstream proxies / harness liveness checks don't tear the stream down either. Background in `docs/plans/mcp-server-keepalive.md`.
 
-**Action rejection channel.** Invalid actions (walk into wall, pickup non-item, craft without materials, etc.) route through `GameWorld.rejectAction(eid, reason)` → `PlayerConnection.onActionRejected` rather than silently returning. `reason` is a discriminated union defined in `server/src/action-rejection.ts` (`RejectionReason`); `formatRejection(r)` renders it to LLM-readable text at the MCP boundary, same pattern as `GameEvent` / `formatEventText`. `McpConnection` resolves `awaitAction` immediately with `{ status: 'rejected', reason }`, and `mcp-tools.ts::doAction` returns `text(formatEnvelope(...), { isError: true })` with a `[rejected: ...]` prefix — envelope still renders so the LLM sees current state. `WebSocketConnection` no-ops (WS renders its own collision feedback); `HeadlessConnection` captures into `rejections[]` for tests. Add new variants to the union when new rejection sites appear — no catch-all variant.
+**Action rejection channel.** Invalid actions (walk into wall, pickup non-item, craft without materials, etc.) route through `rejectAction(world, eid, reason)` (exported from `server/src/world-actions.ts`) → `PlayerConnection.onActionRejected` rather than silently returning. `reason` is a discriminated union defined in `server/src/action-rejection.ts` (`RejectionReason`); `formatRejection(r)` renders it to LLM-readable text at the MCP boundary, same pattern as `GameEvent` / `formatEventText`. `McpConnection` resolves `awaitAction` immediately with `{ status: 'rejected', reason }`, and `mcp-tools.ts::doAction` returns `text(formatEnvelope(...), { isError: true })` with a `[rejected: ...]` prefix — envelope still renders so the LLM sees current state. `WebSocketConnection` no-ops (WS renders its own collision feedback); `HeadlessConnection` captures into `rejections[]` for tests. Add new variants to the union when new rejection sites appear — no catch-all variant.
+
+**ActionResult: helpers fail with structured reasons, handlers are shims.** Every mutating system helper that can reject (`setMoveTarget`, `startAttack`, `startHarvest`, `startConsume`, and the six `inventoryMgr.{equip,unequip,drop,craft,transferToContainer,transferFromContainer}`) returns `ActionResult = { ok: true } | { ok: false; reason: RejectionReason }` — defined alongside the union in `action-rejection.ts` with `Ok`, `OkValue<T>`, `Err(reason)` constructors (and `ActionResultOf<T>` for the `drop` case that carries the dropped item data). Validation (bounds, walkable, occupancy, target-exists, distance, weight, material, no-path) lives inside the helper; handlers pattern-match on the result and forward the reason via `rejectAction`. This kills the earlier "pre-validate in handler, re-validate in helper" duplication and eliminates the silent-failure class where a `void`/`false`-returning helper disagreed with a pre-check. The shared `requireAdjacentTarget(actorId, targetId, world, opts?)` helper in `server/src/action-helpers.ts` absorbs the `target_missing | wrong_target_kind | not_adjacent` preamble used by Transfer / DialogueSelect / Trade.
+
+**`setMoveTarget` mode: `'exact'` vs `'near'`.** Two call intents must coexist: player `move_to(x,y)` means "go exactly to that tile — if it's blocked, tell me", while pickup / interact / attack-chase mean "go near that tile — route to an adjacent walkable cell if the goal itself is blocked". `setMoveTarget(eid, x, y, world, mode)` takes `'exact'` (rejects a blocked goal tile with `tile_blocked`) or `'near'` (default; relies on `findPath`'s internal blocked-goal → adjacent-walkable fallback). `handleMoveTo` uses `'exact'`; every other caller uses the default.
 
 ## SystemState Interface
 
@@ -145,7 +149,9 @@ awaiting. Pickups and interacts already lived here for the same reason.
 
 ## Action System (17 actions)
 
-`processAction` uses a switch/dispatch to handler methods:
+Action dispatch lives in `server/src/world-actions.ts` — a flat sibling file to `game-world.ts`. `processAction(world, eid, slot, action)` is the switch/dispatch; individual `handle*` functions are module-private; `rejectAction` and `executeInteract` are the only other exports. Every handler is a free function taking `world: GameWorld` (matching `systems/*`). `game-world.ts` holds the state + tick orchestration; the action layer calls back into it via the now-public `emitEvent` / `broadcastEvent` / `makeEvent` / `bpName` methods.
+
+`processAction` uses a switch/dispatch to handlers:
 - **World**: MoveTo, Cancel, Attack, Harvest, Pickup, UseItemAt, Interact, Say
 - **Inventory**: Equip, Unequip, Drop, UseConsumable, Craft, Transfer
 - **NPC**: DialogueSelect, Trade
