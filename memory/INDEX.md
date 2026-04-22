@@ -29,6 +29,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [File Map](reference/file-map.md) — where every module lives
 - [Docs Status](reference/docs-status.md) — where `docs/` has drifted from code
 - [Server Commands + Entity Meta](reference/server-commands.md) — `/nick` dispatcher, `MetaKey` sync channel, nameplates
+- [Occupancy + Logger](reference/occupancy-and-logger.md) — occupancy = single-blocker invariant; per-world WorldLogger (file/memory) + assertions
 
 ### User — who I work with
 - [Collaboration](user/collaboration.md) — steered build, plan→approve→implement, code prefs, corrections

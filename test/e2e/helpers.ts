@@ -35,7 +35,7 @@ export function addTestPlayer(world: GameWorld, x: number, y: number): {
   // Override position to exact coordinates
   const pos = world.entities.position.get(entityId);
   if (pos) {
-    world.occupancy.clear(pos.tileX, pos.tileY);
+    world.occupancy.clear(pos.tileX, pos.tileY, entityId);
   }
   world.entities.position.set(entityId, { tileX: x, tileY: y });
   world.occupancy.set(x, y, entityId);
@@ -63,6 +63,19 @@ export function placeTree(world: GameWorld, x: number, y: number): number {
   world.occupancy.set(x, y, eid);
   initTreeResource(eid, world);
   return eid;
+}
+
+/** Assert the world's logger has no warnings or errors. Dumps all entries on
+ *  failure so the first offending assert is immediately visible. */
+export function expectCleanLog(world: GameWorld): void {
+  if (world.log.errorCount === 0 && world.log.warnCount === 0) return;
+  const dump = world.log.entries
+    .filter(e => e.level !== 'info')
+    .map(e => `  [${e.level}] ${e.msg}${e.data !== undefined ? ' ' + JSON.stringify(e.data) : ''}`)
+    .join('\n');
+  throw new Error(
+    `world log has ${world.log.warnCount} warn(s) + ${world.log.errorCount} error(s):\n${dump}`,
+  );
 }
 
 export function placeGroundItem(world: GameWorld, blueprintId: number, x: number, y: number): number {

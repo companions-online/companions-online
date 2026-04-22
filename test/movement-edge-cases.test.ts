@@ -28,6 +28,7 @@ import { Terrain, Building } from '@shared/terrain.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
+import { StatusEffect } from '@shared/status-effects.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import { findPath } from '@shared/pathfinding.js';
@@ -63,7 +64,7 @@ function placePlayerAt(w: GameWorld, conn: HeadlessConnection, x: number, y: num
   const eid = w.addPlayer(conn);
   // Force the spawn to the tile we want.
   const old = w.entities.position.get(eid)!;
-  w.occupancy.clear(old.tileX, old.tileY);
+  w.occupancy.clear(old.tileX, old.tileY, eid);
   w.entities.position.set(eid, { tileX: x, tileY: y });
   w.occupancy.set(x, y, eid);
   return eid;
@@ -246,6 +247,102 @@ describe('Movement edge cases — attack across closed door (clip-through)', () 
   });
 });
 
+describe('Movement edge cases — door close guard (occupancy phasing)', () => {
+  let w: GameWorld;
+  let playerConn: HeadlessConnection;
+  let player: number;
+  let door: number;
+
+  beforeEach(() => {
+    w = makeGameWorld();
+    playerConn = new HeadlessConnection();
+    player = placePlayerAt(w, playerConn, 10, 10);
+    // Door at (11,10), open from the start (Placed + Open, occupancy clear).
+    door = w.entities.create();
+    w.entities.position.set(door, { tileX: 11, tileY: 10 });
+    w.entities.direction.set(door, { dir: Direction.S });
+    w.entities.nextWaypoint.set(door, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
+    w.entities.currentAction.set(door, { actionType: ActionType.Idle });
+    w.entities.health.set(door, { currentHp: 30, maxHp: 30 });
+    w.entities.blueprint.set(door, { blueprintId: BlueprintType.WoodenDoor, variant: 0 });
+    w.entities.statusEffects.set(door, { effects: StatusEffect.Placed | StatusEffect.Open });
+    playerConn.rejections.length = 0;
+  });
+
+  it('close succeeds + sets occupancy when door tile is empty', () => {
+    w.setAction(player, { action: ClientAction.Interact, entityId: door } as any);
+    w.runTick();
+
+    const eff = w.entities.statusEffects.get(door)!;
+    expect(eff.effects & StatusEffect.Open).toBe(0);
+    expect(w.occupancy.get(11, 10)).toBe(door);
+    expect(w.log.errorCount).toBe(0);
+    expect(playerConn.rejections).toHaveLength(0);
+  });
+
+  it('close rejects with tile_blocked/entity when another entity stands on the door tile', () => {
+    // Park a second player on the door tile (as if walking through).
+    const walkerConn = new HeadlessConnection();
+    const walker = placePlayerAt(w, walkerConn, 11, 10);
+    playerConn.rejections.length = 0;
+
+    w.setAction(player, { action: ClientAction.Interact, entityId: door } as any);
+    w.runTick();
+
+    // Door stays Open. Occupancy still belongs to the walker, not the door.
+    const eff = w.entities.statusEffects.get(door)!;
+    expect(eff.effects & StatusEffect.Open).toBe(StatusEffect.Open);
+    expect(w.occupancy.get(11, 10)).toBe(walker);
+
+    // Closer got a structured rejection.
+    expect(playerConn.rejections).toHaveLength(1);
+    expect(playerConn.rejections[0]).toMatchObject({
+      code: 'tile_blocked', tileX: 11, tileY: 10, by: 'entity',
+    });
+
+    // No occupancy violations fired.
+    expect(w.log.errorCount).toBe(0);
+  });
+
+  it('open → walker enters door tile → close refused → walker exits → tile stays closed', () => {
+    // Close a path where the previous bug surfaced: walker traverses the open
+    // door tile; if close-guard were missing, occupancy would get overwritten
+    // and the walker's next step would zero the door slot. With the guard, the
+    // close is rejected and state stays coherent.
+    const walkerConn = new HeadlessConnection();
+    const walker = placePlayerAt(w, walkerConn, 11, 10); // on door tile
+    playerConn.rejections.length = 0;
+
+    // Player tries to close while walker is on the tile — rejected.
+    w.setAction(player, { action: ClientAction.Interact, entityId: door } as any);
+    w.runTick();
+    expect(playerConn.rejections).toHaveLength(1);
+
+    // Walker steps east off the door tile.
+    w.setAction(walker, { action: ClientAction.MoveTo, tileX: 12, tileY: 10 } as any);
+    for (let i = 0; i < 10; i++) w.runTick();
+    expect(w.entities.position.get(walker)).toMatchObject({ tileX: 12, tileY: 10 });
+
+    // Now the tile is empty — door is still Open (we never successfully closed).
+    const effMid = w.entities.statusEffects.get(door)!;
+    expect(effMid.effects & StatusEffect.Open).toBe(StatusEffect.Open);
+    expect(w.occupancy.get(11, 10)).toBe(0);
+
+    // Second close attempt now succeeds.
+    playerConn.rejections.length = 0;
+    w.setAction(player, { action: ClientAction.Interact, entityId: door } as any);
+    w.runTick();
+
+    const effFinal = w.entities.statusEffects.get(door)!;
+    expect(effFinal.effects & StatusEffect.Open).toBe(0);
+    expect(w.occupancy.get(11, 10)).toBe(door);
+    expect(playerConn.rejections).toHaveLength(0);
+
+    // Entire flow: zero occupancy invariant violations.
+    expect(w.log.errorCount).toBe(0);
+  });
+});
+
 describe('Movement edge cases — river crossing', () => {
   it('refuses to cross a 2-tile-wide river (BUG: River walkable today)', () => {
     const map = new WorldMap(40, 40);
@@ -267,7 +364,7 @@ describe('Movement edge cases — river crossing', () => {
     }
   });
 
-  it('allows crossing a 1-tile-wide river', () => {
+  it('refuses to cross a 1-tile-wide river (rivers are non-walkable)', () => {
     const map = new WorldMap(40, 40);
     for (let y = 0; y < 40; y++) {
       map.setTerrain(10, y, Terrain.River);
@@ -275,8 +372,7 @@ describe('Movement edge cases — river crossing', () => {
     const isBlocked = (x: number, y: number) => !map.isWalkable(x, y);
     const result = findPath(5, 20, 20, 20, isBlocked, 40, 40);
 
-    expect(result.found).toBe(true);
-    const crossed = result.path.filter(p => map.getTerrain(p.x, p.y) === Terrain.River).length;
-    expect(crossed).toBeLessThanOrEqual(1);
+    // River tiles span the full map height with no gap; no path should exist.
+    expect(result.found).toBe(false);
   });
 });

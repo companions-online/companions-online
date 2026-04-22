@@ -189,7 +189,7 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
       if (remaining !== undefined && remaining <= 0) {
         depleted = true;
         const tpos = world.entities.position.get(state.targetEntityId);
-        if (tpos) world.occupancy.clear(tpos.tileX, tpos.tileY);
+        if (tpos) world.occupancy.clear(tpos.tileX, tpos.tileY, state.targetEntityId);
         world.entities.destroy(state.targetEntityId);
       }
     }

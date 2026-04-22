@@ -279,7 +279,7 @@ describe('MCP E2E', () => {
     // If something's there, clear it so the chest has a clean tile.
     const existing = world.occupancy.get(chestX, chestY);
     if (existing) {
-      world.occupancy.clear(chestX, chestY);
+      world.occupancy.clear(chestX, chestY, existing);
       world.entities.destroy(existing);
     }
     const chestEid = world.entities.create();
@@ -340,7 +340,7 @@ describe('MCP E2E', () => {
     const wallX = pos.tileX + 1;
     const wallY = pos.tileY;
     const existing = world.occupancy.get(wallX, wallY);
-    if (existing) { world.occupancy.clear(wallX, wallY); world.entities.destroy(existing); }
+    if (existing) { world.occupancy.clear(wallX, wallY, existing); world.entities.destroy(existing); }
     world.map.setBuilding(wallX, wallY, 1 /* Building.Wall */);
 
     const result = await client.callTool({ name: 'move_to', arguments: { x: wallX, y: wallY } });
@@ -421,7 +421,7 @@ describe('MCP E2E', () => {
     const npcX = pos.tileX + 1;
     const npcY = pos.tileY;
     const existing = world.occupancy.get(npcX, npcY);
-    if (existing) { world.occupancy.clear(npcX, npcY); world.entities.destroy(existing); }
+    if (existing) { world.occupancy.clear(npcX, npcY, existing); world.entities.destroy(existing); }
     const npcEid = world.entities.create();
     world.entities.position.set(npcEid, { tileX: npcX, tileY: npcY });
     world.entities.blueprint.set(npcEid, { blueprintId: BlueprintType.Hermit, variant: 0 });

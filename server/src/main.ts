@@ -132,6 +132,7 @@ async function main() {
         console.log('\n[server] saving and shutting down...');
         loop.stop();
         await doSave();
+        await world.log.close();
         process.exit(0);
       }
       if (key === 's') {
@@ -148,6 +149,7 @@ async function main() {
     console.log('\n[server] shutting down...');
     loop.stop();
     await doSave();
+    await world.log.close();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

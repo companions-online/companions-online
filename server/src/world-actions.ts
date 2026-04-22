@@ -28,7 +28,7 @@ import type {
 } from '@shared/protocol/codec.js';
 
 import type { GameWorld, PlayerSlot } from './game-world.js';
-import type { RejectionReason } from './action-rejection.js';
+import { Ok, Err, type RejectionReason, type ActionResult } from './action-rejection.js';
 import { requireAdjacentTarget } from './action-helpers.js';
 import { dispatchServerCommand } from './server-commands.js';
 import { getDialogue } from './npc-dialogues.js';
@@ -171,7 +171,7 @@ function handlePickup(world: GameWorld, eid: number, slot: PlayerSlot, action: D
       });
       return;
     }
-    world.occupancy.clear(targetPos.tileX, targetPos.tileY);
+    // No occupancy.clear — ground items are not tracked by the occupancy grid.
     world.entities.destroy(a.entityId);
     slot.connection.onInventoryChanged(eid, world);
     world.emitEvent(eid, world.makeEvent('item_picked_up', {
@@ -290,7 +290,8 @@ function handleInteractAction(world: GameWorld, eid: number, slot: PlayerSlot, a
   const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
                         Math.abs(targetPos.tileY - playerPos.tileY));
   if (dist <= 1) {
-    executeInteract(world, eid, slot, a.entityId);
+    const r = executeInteract(world, eid, slot, a.entityId);
+    if (!r.ok) rejectAction(world, eid, r.reason);
   } else {
     world.pendingInteracts.set(eid, { targetEntityId: a.entityId });
     setMoveTarget(eid, targetPos.tileX, targetPos.tileY, world);
@@ -540,16 +541,15 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
 /** Apply an interaction once the actor is adjacent to the target.
  *  Called from handleInteractAction (immediate case) and from the tick loop's
  *  pending-interact arrival path (deferred case). */
-export function executeInteract(world: GameWorld, eid: number, slot: PlayerSlot, targetEntityId: number): void {
+export function executeInteract(world: GameWorld, eid: number, slot: PlayerSlot, targetEntityId: number): ActionResult {
   const bp = world.entities.blueprint.get(targetEntityId);
-  if (!bp) return;
+  if (!bp) return Ok;
   switch (bp.blueprintId) {
     case BlueprintType.WoodenDoor:
-      toggleDoor(world, targetEntityId);
-      break;
+      return toggleDoor(world, targetEntityId);
     case BlueprintType.StorageChest:
       slot.connection.onContainerOpen(eid, targetEntityId, world);
-      break;
+      return Ok;
     case BlueprintType.Hermit:
     case BlueprintType.Trader:
     case BlueprintType.Wanderer: {
@@ -558,22 +558,36 @@ export function executeInteract(world: GameWorld, eid: number, slot: PlayerSlot,
         const dialogue = getDialogue(npcBp.blueprintId);
         if (dialogue) slot.connection.onDialogueOpen(eid, targetEntityId, dialogue);
       }
-      break;
+      return Ok;
     }
   }
+  return Ok;
 }
 
-function toggleDoor(world: GameWorld, doorEntityId: number): void {
+function toggleDoor(world: GameWorld, doorEntityId: number): ActionResult {
   const pos = world.entities.position.get(doorEntityId);
   const effects = world.entities.statusEffects.get(doorEntityId);
-  if (!pos || !effects) return;
+  if (!pos || !effects) return Ok;
 
   const isOpen = (effects.effects & StatusEffect.Open) !== 0;
   if (isOpen) {
+    // Closing: refuse if a non-door entity is standing on the tile. Slamming
+    // the door shut would otherwise overwrite that entity's occupancy slot,
+    // which cascades into a phantom-walkable-door state once the walker
+    // steps off. Surface as a standard tile_blocked rejection.
+    const occupant = world.occupancy.get(pos.tileX, pos.tileY);
+    if (occupant !== 0 && occupant !== doorEntityId) {
+      return Err({
+        code: 'tile_blocked',
+        tileX: pos.tileX, tileY: pos.tileY,
+        by: 'entity',
+      });
+    }
     world.occupancy.set(pos.tileX, pos.tileY, doorEntityId);
     world.entities.statusEffects.set(doorEntityId, { effects: effects.effects & ~StatusEffect.Open });
   } else {
-    world.occupancy.clear(pos.tileX, pos.tileY);
+    world.occupancy.clear(pos.tileX, pos.tileY, doorEntityId);
     world.entities.statusEffects.set(doorEntityId, { effects: effects.effects | StatusEffect.Open });
   }
+  return Ok;
 }

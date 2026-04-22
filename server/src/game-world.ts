@@ -24,7 +24,8 @@ import { initTreeResource, runResourceRespawns } from './systems/resources.js';
 import { runCreatureRespawns, runCreatureLifecycle } from './systems/creature-lifecycle.js';
 import { Telemetry } from './telemetry.js';
 import { EVENT_PRIORITY, type GameEvent } from './events.js';
-import { processAction, executeInteract } from './world-actions.js';
+import { processAction, executeInteract, rejectAction } from './world-actions.js';
+import { createMemoryLogger, type WorldLogger } from './world-logger.js';
 
 const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
 
@@ -92,8 +93,13 @@ export class GameWorld implements SystemState {
   /** Last weather value we broadcast an Environment section for. */
   private _lastEnvEmitWeather = 0;
 
-  constructor(readonly map: WorldMap, readonly seed = 0) {
-    this.occupancy = new OccupancyGrid(map.width, map.height);
+  readonly log: WorldLogger;
+
+  constructor(readonly map: WorldMap, readonly seed = 0, logger?: WorldLogger) {
+    this.log = logger ?? createMemoryLogger();
+    this.occupancy = new OccupancyGrid(map.width, map.height, (msg, data) =>
+      this.log.error(msg, data),
+    );
     this.spawnRng = seed;
     this.respawnRng = seed + 12345;
   }
@@ -239,12 +245,19 @@ export class GameWorld implements SystemState {
     // "entered" detection on the next tick — that path triggers the full-state
     // + sendMetaFor emission. No pre-seeding of knownEntities.
 
+    this.log.info('player joined', {
+      entityId: eid,
+      connectionType: connection.constructor.name,
+      tileX: sx,
+      tileY: sy,
+    });
+
     return eid;
   }
 
   removePlayer(entityId: number): void {
     const pos = this.entities.position.get(entityId);
-    if (pos) this.occupancy.clear(pos.tileX, pos.tileY);
+    if (pos) this.occupancy.clear(pos.tileX, pos.tileY, entityId);
     this.entities.destroy(entityId);
     clearMoveTarget(entityId, this);
     this.pendingPickups.delete(entityId);
@@ -252,6 +265,7 @@ export class GameWorld implements SystemState {
     this.inventoryMgr.destroy(entityId);
     this.entityMeta.delete(entityId);
     this.players.delete(entityId);
+    this.log.info('player disconnected', { entityId });
   }
 
   setAction(entityId: number, action: DecodedAction): void {
@@ -339,7 +353,8 @@ export class GameWorld implements SystemState {
         if (bp) {
           const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
           if (result.success) {
-            this.occupancy.clear(targetPos.tileX, targetPos.tileY);
+            // No occupancy.clear — ground items are not tracked by the
+            // occupancy grid. See OccupancyGrid comment.
             this.entities.destroy(pending.targetEntityId);
             const slot = this.players.get(eid);
             if (slot) {
@@ -366,7 +381,10 @@ export class GameWorld implements SystemState {
       const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
       if (dist <= 1) {
         const slot = this.players.get(eid);
-        if (slot) executeInteract(this, eid, slot, pending.targetEntityId);
+        if (slot) {
+          const r = executeInteract(this, eid, slot, pending.targetEntityId);
+          if (!r.ok) rejectAction(this, eid, r.reason);
+        }
       }
       this.pendingInteracts.delete(eid);
     }
@@ -571,7 +589,7 @@ export class GameWorld implements SystemState {
     }
 
     // Cleanup
-    this.occupancy.clear(pos.tileX, pos.tileY);
+    this.occupancy.clear(pos.tileX, pos.tileY, entityId);
     this.critterStates.delete(entityId);
     this.combatStates.delete(entityId);
     this.clearAiTargetsOn(entityId);
@@ -605,7 +623,7 @@ export class GameWorld implements SystemState {
     }
 
     // Clear occupancy — corpse is walk-through
-    this.occupancy.clear(pos.tileX, pos.tileY);
+    this.occupancy.clear(pos.tileX, pos.tileY, entityId);
 
     // Cancel all active states
     clearMoveTarget(entityId, this);

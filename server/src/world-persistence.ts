@@ -10,6 +10,7 @@ import { generateWorld } from '@shared/world/world-gen.js';
 import { WorldMap } from '@shared/world/world-map.js';
 import { MORNING_TICK_OFFSET, TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
 import { GameWorld } from './game-world.js';
+import { createFileLogger } from './world-logger.js';
 import { initTreeResource } from './systems/resources.js';
 import { initCritterAI } from './systems/critter-ai.js';
 import type { MovementState, HarvestState, CombatState, CritterState } from './system-state.js';
@@ -143,6 +144,7 @@ export async function saveWorld(
   };
 
   await writeFile(join(worldDir, 'entities.json'), JSON.stringify(data, null, 2));
+  world.log.info('world saved', { worldId: meta.worldId, tick: meta.tick });
 }
 
 // --- Load ---
@@ -159,9 +161,10 @@ export async function loadWorld(worldDir: string): Promise<{ world: GameWorld; m
   const buildingMeta = new Uint8Array(mapBuf.buffer, mapBuf.byteOffset + mapSize * 2, mapSize);
   const map = WorldMap.fromBuffers(meta.mapWidth, meta.mapHeight, terrain, buildings, buildingMeta);
 
-  // Reconstruct GameWorld
-  const world = new GameWorld(map, meta.seed);
+  // Reconstruct GameWorld with a file logger rooted in the world's dir.
+  const world = new GameWorld(map, meta.seed, createFileLogger(join(worldDir, 'server.log')));
   world.tickOffset = meta.tickOffset ?? 0;
+  world.log.info('world loaded', { worldId: meta.worldId, tick: meta.tick, seed: meta.seed });
 
   const entRaw = await readFile(join(worldDir, 'entities.json'), 'utf-8');
   const data: SavedEntities = JSON.parse(entRaw);
@@ -231,8 +234,9 @@ export async function createNewWorld(
 
   // Generate world (same logic as createDefaultWorld)
   const { map, entitySpawns } = generateWorld(seed);
-  const world = new GameWorld(map, seed);
+  const world = new GameWorld(map, seed, createFileLogger(join(worldDir, 'server.log')));
   world.tickOffset = TWILIGHT_TICK_OFFSET;
+  world.log.info('world created', { worldId, seed });
 
   for (const spawn of entitySpawns) {
     const bp = getBlueprint(spawn.blueprint);
