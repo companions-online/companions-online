@@ -124,7 +124,7 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
 3. World pulse — resource respawns (trees) + creature respawns (night skeleton spawner) + creature lifecycle (skeleton sun damage, returns deaths → processEntityDeath(killerEntityId=0))
-4. Movement (A* pathfinding, occupancy collision, wait-and-repath; arriveIdle fires Idle)
+4. Movement (A* pathfinding, occupancy collision, wait-and-repath; clearMoveTarget fires Idle on path end / unreachable)
 5. Arrival-triggered resolvers (walk-to-then-do):
    5a. Pending pickups — dist check, pick up if adjacent
    5b. Pending interacts — dist check, execute interact if adjacent
@@ -141,7 +141,7 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 (pickups, interacts, harvest's pathfinding→channel flip) check `hasMoveTarget`
 to see whether the player has actually finished walking. Before this order,
 harvest ran *before* movement, so on the arrival tick it saw a still-pending
-move target, skipped the transition, and let `arriveIdle` flip the player to
+move target, skipped the transition, and let `clearMoveTarget` flip the player to
 `Idle`. The MCP tool then saw `Idle` on broadcast and resolved as complete —
 with no yield. Placing harvest after movement lets the flip happen atomically
 in the same tick as arrival, so the MCP player sees `Harvesting` and keeps

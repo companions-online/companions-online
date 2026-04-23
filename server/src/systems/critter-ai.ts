@@ -5,6 +5,11 @@ import type { SystemState, CritterState } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
 import { startAttack, isInCombat, cancelCombat } from './combat.js';
 
+/** Ticks a critter waits before re-probing an unreachable aggro target.
+ *  Without this, every wandering critter in aggroRange of a walled-in
+ *  player would re-pathfind every tick. 20 ticks = 1s at TICK_RATE=20. */
+const DEFAULT_AGGRO_PROBE_COOLDOWN = 20;
+
 interface BehaviorConfig {
   wanderRadius: number;
   idleMin: number;
@@ -74,12 +79,24 @@ export function notifyCritterAttacked(entityId: number, attackerEntityId: number
     return wasFleeing ? undefined : { type: 'flee', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
   } else if (config.aggroRange) {
     const wasAggro = state.behavior === 'aggro' && state.targetEntityId === attackerEntityId;
-    state.behavior = 'aggro';
-    state.targetEntityId = attackerEntityId;
-    if (!isInCombat(entityId, world)) {
-      startAttack(entityId, attackerEntityId, world);
+    // Try to commit combat first — if the attacker is unreachable, stay in
+    // wander so we don't lock the critter into an aggro state it can never
+    // execute. startAttack is side-effect-free on Err.
+    if (isInCombat(entityId, world)) {
+      state.behavior = 'aggro';
+      state.targetEntityId = attackerEntityId;
+      return wasAggro ? undefined : { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
     }
-    return wasAggro ? undefined : { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
+    const r = startAttack(entityId, attackerEntityId, world);
+    if (r.ok) {
+      state.behavior = 'aggro';
+      state.targetEntityId = attackerEntityId;
+      return wasAggro ? undefined : { type: 'aggro', creatureEntityId: entityId, targetPlayerEntityId: attackerEntityId };
+    }
+    // Unreachable — cooldown the next proactive probe so we don't pathfind
+    // every tick through runCritterAI either.
+    state.aggroProbeCooldown = DEFAULT_AGGRO_PROBE_COOLDOWN;
+    return undefined;
   }
   // Deer: passive — no behavior change
   return undefined;
@@ -116,6 +133,12 @@ export function runCritterAI(world: SystemState): CritterBehaviorChange[] {
       }
     }
 
+    // Aggro probe cooldown — decremented every tick the critter is in
+    // wander, gates the reachability probe below.
+    if (state.aggroProbeCooldown !== undefined && state.aggroProbeCooldown > 0) {
+      state.aggroProbeCooldown--;
+    }
+
     // Behavior decision (unless already reacting to being attacked)
     if (state.behavior === 'wander') {
       if (config.fleeRange && nearestPlayerId !== undefined && nearestDist <= config.fleeRange) {
@@ -124,9 +147,23 @@ export function runCritterAI(world: SystemState): CritterBehaviorChange[] {
         clearMoveTarget(eid, world);
         changes.push({ type: 'flee', creatureEntityId: eid, targetPlayerEntityId: nearestPlayerId });
       } else if (config.aggroRange && nearestPlayerId !== undefined && nearestDist <= config.aggroRange) {
-        state.behavior = 'aggro';
-        state.targetEntityId = nearestPlayerId;
-        changes.push({ type: 'aggro', creatureEntityId: eid, targetPlayerEntityId: nearestPlayerId });
+        // Only commit to aggro if we can actually reach the target. A player
+        // standing inside a walled-off base would otherwise lock the critter
+        // into perpetual failed chase attempts. startAttack is side-effect-
+        // free on Err, so this probe is safe to run from wander.
+        if ((state.aggroProbeCooldown ?? 0) === 0) {
+          const r = startAttack(eid, nearestPlayerId, world);
+          if (r.ok) {
+            state.behavior = 'aggro';
+            state.targetEntityId = nearestPlayerId;
+            changes.push({ type: 'aggro', creatureEntityId: eid, targetPlayerEntityId: nearestPlayerId });
+          } else {
+            // Unreachable for now — cool off before re-probing so we don't
+            // pathfind every tick for every wandering critter near the
+            // player.
+            state.aggroProbeCooldown = DEFAULT_AGGRO_PROBE_COOLDOWN;
+          }
+        }
       }
     }
 
@@ -208,8 +245,16 @@ function executeFlee(eid: number, state: CritterState, world: SystemState): void
 
 function executeAggro(eid: number, state: CritterState, world: SystemState): void {
   if (state.targetEntityId === undefined) return;
-  if (!isInCombat(eid, world)) {
-    startAttack(eid, state.targetEntityId, world);
+  if (isInCombat(eid, world)) return;
+  // Combat may have been cancelled by runCombat's chase-unreachable branch
+  // (door closed behind target, etc.). Try to re-engage; if the target has
+  // become unreachable, drop back to wander so the critter doesn't idle in
+  // an aggro state it can never act on.
+  const r = startAttack(eid, state.targetEntityId, world);
+  if (!r.ok) {
+    state.behavior = 'wander';
+    state.targetEntityId = undefined;
+    state.aggroProbeCooldown = DEFAULT_AGGRO_PROBE_COOLDOWN;
   }
 }
 

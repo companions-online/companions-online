@@ -85,8 +85,16 @@ export function setMoveTarget(
   return Ok;
 }
 
+/** Cancel an entity's current move. Mirrors `arriveIdle` — when a moveState
+ *  actually existed, reset `currentAction` to Idle and clear the waypoint so
+ *  clients don't keep rendering a stale Walking animation toward a target no
+ *  system owns anymore. No-op (no action/waypoint change) if the entity had
+ *  no pending move to begin with — otherwise this would clobber ongoing
+ *  Harvesting/Attacking/Consuming states on entities that never moved. */
 export function clearMoveTarget(entityId: number, world: SystemState): void {
-  world.moveStates.delete(entityId);
+  if (!world.moveStates.delete(entityId)) return;
+  world.entities.currentAction.set(entityId, { actionType: ActionType.Idle });
+  world.entities.nextWaypoint.set(entityId, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
 }
 
 export function hasMoveTarget(entityId: number, world: SystemState): boolean {
@@ -109,8 +117,7 @@ export function runMovement(world: SystemState): void {
     }
 
     if (state.pathIndex >= state.path.length) {
-      arriveIdle(eid, world);
-      world.moveStates.delete(eid);
+      clearMoveTarget(eid, world);
       continue;
     }
 
@@ -129,8 +136,7 @@ export function runMovement(world: SystemState): void {
           state.pathIndex = 0;
           state.waitTicks = 0;
         } else {
-          arriveIdle(eid, world);
-          world.moveStates.delete(eid);
+          clearMoveTarget(eid, world);
         }
       }
       continue;
@@ -147,8 +153,7 @@ export function runMovement(world: SystemState): void {
         state.pathIndex = 0;
         state.waitTicks = 0;
       } else {
-        arriveIdle(eid, world);
-        world.moveStates.delete(eid);
+        clearMoveTarget(eid, world);
       }
       continue;
     }
@@ -174,15 +179,9 @@ export function runMovement(world: SystemState): void {
     world.entities.nextWaypoint.set(eid, { tileX: state.targetX, tileY: state.targetY });
 
     if (state.pathIndex >= state.path.length) {
-      arriveIdle(eid, world);
-      world.moveStates.delete(eid);
+      clearMoveTarget(eid, world);
     }
   }
-}
-
-function arriveIdle(eid: number, world: SystemState): void {
-  world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-  world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
 }
 
 function directionFromDelta(dx: number, dy: number): Direction | undefined {

@@ -7,6 +7,7 @@ import { renderDashboard, type DashboardState } from './dashboard.js';
 import { createApp } from './app.js';
 import { getSessionCount } from './mcp-session.js';
 import { saveWorld, loadWorld, createNewWorld } from './world-persistence.js';
+import { dumpWorld } from './world-dump.js';
 import type { GameWorld } from './game-world.js';
 
 const PORT = parseInt(process.env.PORT ?? '', 10) || 3001;
@@ -122,6 +123,10 @@ async function main() {
   process.stdout.write('\x1b[2J\x1b[H');
 
   // --- Keyboard handler ---
+  if (!process.stdin.isTTY) {
+    console.log('[server] stdin is not a TTY — dashboard keys (s/p/q/d) disabled. ' +
+      'Run the server standalone (`npm run dev:server`) to enable keys.');
+  }
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
@@ -140,6 +145,19 @@ async function main() {
       }
       if (key === 'p') {
         dashState.paused = !dashState.paused;
+      }
+      if (key === 'd') {
+        try {
+          const filepath = await dumpWorld(world, worldDir);
+          const name = filepath.split('/').pop() ?? filepath;
+          dashState.saveStatus = `dumped ${name}`;
+          world.log.info('world dumped', { filepath });
+          if (saveFlashTimer) clearTimeout(saveFlashTimer);
+          saveFlashTimer = setTimeout(() => { dashState.saveStatus = ''; }, 3000);
+        } catch (err) {
+          console.error('[server] dump failed:', err);
+          world.log.error('world dump failed', { error: String(err) });
+        }
       }
     });
   }

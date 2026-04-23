@@ -49,14 +49,22 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
     return Err({ code: 'target_missing', targetEntityId: targetId });
   }
 
-  clearMoveTarget(attackerId, world);
-
   // If not adjacent, validate that we can actually reach the target before
   // committing to combat state. setMoveTarget('near') routes to an adjacent
   // walkable tile; if it fails, the target is sealed off — no combat.
+  //
+  // We deliberately do NOT clearMoveTarget before the probe. setMoveTarget
+  // overwrites moveStates atomically on success and leaves all state
+  // untouched on Err, so a failing probe has zero side effects. That
+  // property is load-bearing for runCritterAI, which calls startAttack
+  // once per tick as a reachability gate from the wander behavior.
   if (!isAdjacent(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY)) {
     const r = setMoveTarget(attackerId, targetPos.tileX, targetPos.tileY, world);
     if (!r.ok) return r;
+  } else {
+    // Adjacent — kill any stale wander move so the attacker doesn't drift
+    // off the tile between swings.
+    clearMoveTarget(attackerId, world);
   }
 
   world.combatStates.set(attackerId, {

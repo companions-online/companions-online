@@ -30,6 +30,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [Docs Status](reference/docs-status.md) — where `docs/` has drifted from code
 - [Server Commands + Entity Meta](reference/server-commands.md) — `/nick` dispatcher, `MetaKey` sync channel, nameplates
 - [Occupancy + Logger](reference/occupancy-and-logger.md) — occupancy = single-blocker invariant; per-world WorldLogger (file/memory) + assertions
+- [Debug Tools](reference/debug-tools.md) — `d`-key world dumps + `scripts/world-dump-view.ts` forensic CLI (stuck-state scan, near/entity/find queries) + server.log grep
 
 ### User — who I work with
 - [Collaboration](user/collaboration.md) — steered build, plan→approve→implement, code prefs, corrections
@@ -42,6 +43,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [LLM Teleportation](feedback/llm-teleportation.md) — LLM players see snapshots; only emit events not inferrable from them
 - [Use Existing Systems](feedback/use-existing-systems.md) — client-webgl: use sprite registry/manifest, not parallel loaders
 - [Prefer Generic Layers](feedback/prefer-generic-layers.md) — new per-entity strings → MetaKey; new `/commands` → registry; skip bespoke plumbing
+- [Err-side-effects](feedback/err-side-effects.md) — state-changing helpers must be no-op on Err; enables callers to use them as predicates with free rollback
 
 ### Project — current initiatives
 - [State](project/state.md) — no active initiatives tracked yet

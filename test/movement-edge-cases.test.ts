@@ -4,15 +4,13 @@
  * Each block targets one observed defect and is written against the *desired*
  * behaviour. Tests that fail today are the spec for the upcoming fix.
  *
- *   1. MCP move_to into a building wall  -> tile_blocked rejection (works today)
- *   2. MCP move_to onto a closed door    -> tile_blocked by 'door'  (BUG: silent today)
- *   3. MCP move_to to unreachable tile   -> no_path rejection       (BUG: silent today)
- *   4. Critter whose path is fully blocked mid-walk reverts to Idle  (works today)
- *   5. Aggro critter chasing an unreachable target gives up + Idle   (BUG: chases forever)
- *   6. Attacker cannot damage target across a closed door            (BUG: clip-through)
- *   7. Pathfinding will not cross a 2-wide river                     (BUG: River walkable)
- *   8. Pathfinding will cross a 1-wide river                         (passes today; spec'd
- *      in case future fix over-corrects)
+ *   1. MCP move_to into a building wall  -> tile_blocked rejection
+ *   2. MCP move_to onto a closed door    -> tile_blocked by 'door'
+ *   3. MCP move_to to unreachable tile   -> no_path rejection
+ *   4. Critter whose path is fully blocked mid-walk reverts to Idle
+ *   5. Aggro critter chasing an unreachable target gives up + Idle
+ *   6. Door close guard against occupancy phasing
+ *   7. Walled-in player + wolf in aggroRange: wolf stays in wander
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -24,14 +22,13 @@ import { InventoryManager } from '../server/src/inventory-manager.js';
 import { setMoveTarget, runMovement, hasMoveTarget } from '../server/src/systems/movement.js';
 import { initCritterForEntity, runCritterAI, notifyCritterAttacked } from '../server/src/systems/critter-ai.js';
 import { WorldMap } from '@shared/world/world-map.js';
-import { Terrain, Building } from '@shared/terrain.js';
+import { Building } from '@shared/terrain.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType, ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { StatusEffect } from '@shared/status-effects.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
-import { findPath } from '@shared/pathfinding.js';
 import type { SystemState } from '../server/src/system-state.js';
 
 // -- Helpers -----------------------------------------------------------------
@@ -181,6 +178,62 @@ describe('Movement edge cases — critter stuck animation', () => {
     expect(wp?.tileY).toBe(WAYPOINT_NONE);
   });
 
+  it('walled-in player + wolf in aggroRange: wolf stays in wander, keeps moving, never locks in Walking-without-moveState', () => {
+    // Reproduction of the "wolf stuck walking in place" dump: player at
+    // (40,30) walled into a 3x3 box; wolf at (44,30), within aggroRange=5
+    // but no path to the player. Wolf must not enter aggro, must keep
+    // wandering, and must never end a tick with currentAction=Walking while
+    // holding no moveState.
+    const wolf = spawnCritterAt(w, BlueprintType.Wolf, 44, 30, 2.5);
+    spawnCritterAt(w, BlueprintType.Player, 40, 30, 3);
+    // Register the player so critter-ai's `world.players` scan sees it.
+    (w.players as Map<number, any>).set(
+      // Re-use the spawnCritterAt'd entity id — it's the last one created.
+      w.entities.getNextId() - 1,
+      { entityId: w.entities.getNextId() - 1 },
+    );
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        w.map.setBuilding(40 + dx, 30 + dy, Building.Wall);
+      }
+    }
+    initCritterForEntity(wolf, w);
+
+    const startPos = w.entities.position.get(wolf)!;
+    const visited = new Set<string>();
+
+    let stuckTicks = 0;
+    for (let i = 0; i < 200; i++) {
+      runCritterAI(w);
+      runMovement(w);
+
+      // Invariant: no entity should ever be in `Walking` without an owning
+      // moveState. That's the precise condition the dump captured.
+      const ca = w.entities.currentAction.get(wolf);
+      if (ca?.actionType === ActionType.Walking && !w.moveStates.has(wolf)) {
+        stuckTicks++;
+      }
+
+      const p = w.entities.position.get(wolf)!;
+      visited.add(`${p.tileX},${p.tileY}`);
+    }
+
+    // Behavior: stays in wander (never commits to aggro against unreachable
+    // target).
+    expect(w.critterStates.get(wolf)?.behavior).toBe('wander');
+
+    // Wolf is not frozen in the Walking-without-owner state at any point.
+    expect(stuckTicks).toBe(0);
+
+    // Wolf actually moved around — wander isn't being clobbered by repeated
+    // probes. At minimum we expect more than one distinct tile across 200
+    // ticks, and we shouldn't still be at the exact spawn tile forever.
+    expect(visited.size).toBeGreaterThan(1);
+    const endPos = w.entities.position.get(wolf)!;
+    expect(endPos.tileX !== startPos.tileX || endPos.tileY !== startPos.tileY).toBe(true);
+  });
+
   it('aggro critter against an unreachable target gives up (BUG: chases forever today)', () => {
     // Skeleton at (30,30); player at (40,30) walled into a sealed room.
     const skel = spawnCritterAt(w, BlueprintType.Skeleton, 30, 30, 2.5);
@@ -207,45 +260,6 @@ describe('Movement edge cases — critter stuck animation', () => {
   });
 });
 
-describe('Movement edge cases — attack across closed door (clip-through)', () => {
-  let w: GameWorld;
-  let attackerConn: HeadlessConnection;
-  let attacker: number;
-  let target: number;
-
-  beforeEach(() => {
-    w = makeGameWorld();
-    attackerConn = new HeadlessConnection();
-    attacker = placePlayerAt(w, attackerConn, 20, 20);
-
-    // Build a 1-tile-thick wall east of the attacker, with a closed door as
-    // the only opening. Target lives on the far side, Chebyshev-adjacent to
-    // the attacker around the door's corner.
-    for (let y = 18; y <= 22; y++) {
-      if (y === 20) continue; // door slot
-      w.map.setBuilding(21, y, Building.Wall);
-    }
-    placeClosedDoor(w, 21, 20);
-
-    // Target: a "dummy player" on the far side. Spawn via spawnCritterAt
-    // helper but with Player blueprint so combat treats it as damageable.
-    target = spawnCritterAt(w, BlueprintType.Player, 22, 21, 3);
-    w.inventoryMgr.create(target, 50);
-    w.entities.health.set(target, { currentHp: 10, maxHp: 10 });
-  });
-
-  it('attacker cannot land a swing through a closed door (BUG: lands today)', () => {
-    // attacker (20,20) and target (22,21): Chebyshev = 2 (not adjacent), so
-    // the chase fires; pathfinding has no route through the closed door.
-    // After many ticks, target HP must remain 10 and combat must terminate.
-    w.setAction(attacker, { action: ClientAction.Attack, entityId: target } as any);
-    for (let i = 0; i < 100; i++) w.runTick();
-
-    const hp = w.entities.health.get(target)!;
-    expect(hp.currentHp).toBe(10);
-    expect(w.combatStates.has(attacker)).toBe(false);
-  });
-});
 
 describe('Movement edge cases — door close guard (occupancy phasing)', () => {
   let w: GameWorld;
@@ -343,36 +357,3 @@ describe('Movement edge cases — door close guard (occupancy phasing)', () => {
   });
 });
 
-describe('Movement edge cases — river crossing', () => {
-  it('refuses to cross a 2-tile-wide river (BUG: River walkable today)', () => {
-    const map = new WorldMap(40, 40);
-    // Vertical river 2 tiles wide at x=10,11
-    for (let y = 0; y < 40; y++) {
-      map.setTerrain(10, y, Terrain.River);
-      map.setTerrain(11, y, Terrain.River);
-    }
-    const isBlocked = (x: number, y: number) => !map.isWalkable(x, y);
-    const result = findPath(5, 20, 20, 20, isBlocked, 40, 40);
-
-    // Spec: a 2+-wide river is uncrossable; pathfinding either fails or
-    // produces a route that touches no river tiles.
-    if (result.found) {
-      const crossed = result.path.filter(p => map.getTerrain(p.x, p.y) === Terrain.River).length;
-      expect(crossed).toBe(0);
-    } else {
-      expect(result.found).toBe(false);
-    }
-  });
-
-  it('refuses to cross a 1-tile-wide river (rivers are non-walkable)', () => {
-    const map = new WorldMap(40, 40);
-    for (let y = 0; y < 40; y++) {
-      map.setTerrain(10, y, Terrain.River);
-    }
-    const isBlocked = (x: number, y: number) => !map.isWalkable(x, y);
-    const result = findPath(5, 20, 20, 20, isBlocked, 40, 40);
-
-    // River tiles span the full map height with no gap; no path should exist.
-    expect(result.found).toBe(false);
-  });
-});

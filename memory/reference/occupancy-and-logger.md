@@ -58,3 +58,12 @@ ownership) — only when something is provably wrong.
 
 `main.ts` awaits `world.log.close()` before `process.exit` on both TTY
 (`q`/Ctrl-C) and signal (SIGINT/SIGTERM) paths, so the file stream flushes.
+
+## Companion debug tool: `d` key → world dump
+
+Pressing `d` in the server dashboard invokes `dumpWorld(world, worldDir)`
+from `server/src/world-dump.ts`, which writes a pretty-printed JSON of
+the entire server-side state tree to
+`data/worlds/<id>/<ISO-timestamp>-dump.json`. Use alongside `server.log`
+for debugging — logs show *when*, dumps show *what state existed at that
+moment*. See `file-map.md` for the dumper's coverage and skiplist.

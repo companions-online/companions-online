@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client-gl\"",
+    "dev": "tsx server/src/main.ts",
     "dev:server": "tsx server/src/main.ts",
     "dev:client-gl": "tsx client-webgl/dev.ts",
     "build:client-gl": "tsx client-webgl/build.ts",
@@ -30,8 +30,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "@types/ws": "^8.5.13",
-    "concurrently": "^9.1.0",
     "esbuild": "^0.24.0",
     "puppeteer": "^24.40.0",
     "tsx": "^4.19.0",
