@@ -4,8 +4,10 @@ import {
   TILE_BASE_FS,
   TILE_OVERLAY_VS,
   TILE_OVERLAY_FS,
+  TILE_SIDE_VS,
+  TILE_SIDE_FS,
 } from './shaders.js';
-import { BASE_INSTANCE_STRIDE, OVERLAY_INSTANCE_STRIDE } from './terrain-instances.js';
+import { BASE_INSTANCE_STRIDE, OVERLAY_INSTANCE_STRIDE, SIDE_INSTANCE_STRIDE, TOP_INSTANCE_STRIDE } from './terrain-instances.js';
 import { WATER_ANIM_FRAMES, WATER_FRAME_MS } from '../platform/config.js';
 
 // Corner-id sequence covering the tile diamond as two triangles.
@@ -32,6 +34,15 @@ interface BaseUniforms {
 
 interface OverlayUniforms extends BaseUniforms {
   masks: WebGLUniformLocation;
+}
+
+interface SideUniforms {
+  resolution: WebGLUniformLocation;
+  cameraPx: WebGLUniformLocation;
+  terrain: WebGLUniformLocation;
+  lightmap: WebGLUniformLocation;
+  lightmapOrigin: WebGLUniformLocation;
+  lightmapSize: WebGLUniformLocation;
 }
 
 export interface LightmapBinding {
@@ -80,22 +91,31 @@ export class TerrainRenderer {
 
   private readonly baseProgram: WebGLProgram;
   private readonly overlayProgram: WebGLProgram;
+  private readonly sideProgram: WebGLProgram;
   private readonly baseVao: WebGLVertexArrayObject;
   private readonly overlayVao: WebGLVertexArrayObject;
+  private readonly sideVao: WebGLVertexArrayObject;
+  private readonly topVao: WebGLVertexArrayObject;
   private readonly baseBuffer: WebGLBuffer;
   private readonly overlayBuffer: WebGLBuffer;
+  private readonly sideBuffer: WebGLBuffer;
+  private readonly topBuffer: WebGLBuffer;
   private readonly cornerIdBuffer: WebGLBuffer;
   private readonly baseUniforms: BaseUniforms;
   private readonly overlayUniforms: OverlayUniforms;
+  private readonly sideUniforms: SideUniforms;
 
   private baseCount = 0;
   private overlayCount = 0;
+  private sideCount = 0;
+  private topCount = 0;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
 
     this.baseProgram = linkProgram(gl, TILE_BASE_VS, TILE_BASE_FS);
     this.overlayProgram = linkProgram(gl, TILE_OVERLAY_VS, TILE_OVERLAY_FS);
+    this.sideProgram = linkProgram(gl, TILE_SIDE_VS, TILE_SIDE_FS);
 
     this.cornerIdBuffer = createBuffer(gl, gl.ARRAY_BUFFER, CORNER_ID_SEQUENCE, gl.STATIC_DRAW);
 
@@ -112,6 +132,18 @@ export class TerrainRenderer {
     if (!emptyOverlay) throw new Error('createBuffer returned null');
     this.overlayBuffer = emptyOverlay;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.overlayBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+
+    const emptySide = gl.createBuffer();
+    if (!emptySide) throw new Error('createBuffer returned null');
+    this.sideBuffer = emptySide;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sideBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+
+    const emptyTop = gl.createBuffer();
+    if (!emptyTop) throw new Error('createBuffer returned null');
+    this.topBuffer = emptyTop;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.topBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
 
     // --- Base VAO ---------------------------------------------------------
@@ -153,6 +185,43 @@ export class TerrainRenderer {
     gl.vertexAttribPointer(LOC_TILE_XY, 2, gl.FLOAT, false, OVERLAY_INSTANCE_STRIDE, 44);
     gl.vertexAttribDivisor(LOC_TILE_XY, 1);
 
+    // --- Side VAO ---------------------------------------------------------
+    // Sides reuse the base's corner + Y layout + srcLayer + tileXY, without
+    // animStride or maskLayer. Same corner-id triangle sequence.
+    const sideVao = gl.createVertexArray();
+    if (!sideVao) throw new Error('createVertexArray returned null');
+    this.sideVao = sideVao;
+    gl.bindVertexArray(sideVao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerIdBuffer);
+    setupCornerIdAttrib(gl);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sideBuffer);
+    setupBaseInstanceAttribs(gl, SIDE_INSTANCE_STRIDE);
+    gl.enableVertexAttribArray(LOC_TILE_XY);
+    gl.vertexAttribPointer(LOC_TILE_XY, 2, gl.FLOAT, false, SIDE_INSTANCE_STRIDE, 36);
+    gl.vertexAttribDivisor(LOC_TILE_XY, 1);
+
+    // --- Top VAO ----------------------------------------------------------
+    // Floor top redraw — same layout as the base VAO so the base program
+    // can draw it. Populated from a separate buffer per floor tile.
+    const topVao = gl.createVertexArray();
+    if (!topVao) throw new Error('createVertexArray returned null');
+    this.topVao = topVao;
+    gl.bindVertexArray(topVao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerIdBuffer);
+    setupCornerIdAttrib(gl);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.topBuffer);
+    setupBaseInstanceAttribs(gl, TOP_INSTANCE_STRIDE);
+    gl.enableVertexAttribArray(LOC_ANIM_STRIDE);
+    gl.vertexAttribIPointer(LOC_ANIM_STRIDE, 1, gl.INT, TOP_INSTANCE_STRIDE, 36);
+    gl.vertexAttribDivisor(LOC_ANIM_STRIDE, 1);
+    gl.enableVertexAttribArray(LOC_TILE_XY);
+    gl.vertexAttribPointer(LOC_TILE_XY, 2, gl.FLOAT, false, TOP_INSTANCE_STRIDE, 40);
+    gl.vertexAttribDivisor(LOC_TILE_XY, 1);
+
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -175,6 +244,14 @@ export class TerrainRenderer {
       lightmapOrigin: getUniformOrThrow(gl, this.overlayProgram, 'u_lightmapOrigin'),
       lightmapSize: getUniformOrThrow(gl, this.overlayProgram, 'u_lightmapSize'),
     };
+    this.sideUniforms = {
+      resolution: getUniformOrThrow(gl, this.sideProgram, 'u_resolution'),
+      cameraPx: getUniformOrThrow(gl, this.sideProgram, 'u_cameraPx'),
+      terrain: getUniformOrThrow(gl, this.sideProgram, 'u_terrain'),
+      lightmap: getUniformOrThrow(gl, this.sideProgram, 'u_lightmap'),
+      lightmapOrigin: getUniformOrThrow(gl, this.sideProgram, 'u_lightmapOrigin'),
+      lightmapSize: getUniformOrThrow(gl, this.sideProgram, 'u_lightmapSize'),
+    };
   }
 
   /**
@@ -189,15 +266,25 @@ export class TerrainRenderer {
     baseCount: number,
     overlayData: ArrayBuffer,
     overlayCount: number,
+    sideData: ArrayBuffer,
+    sideCount: number,
+    topData: ArrayBuffer,
+    topCount: number,
   ): void {
     const gl = this.gl;
     this.baseCount = baseCount;
     this.overlayCount = overlayCount;
+    this.sideCount = sideCount;
+    this.topCount = topCount;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.baseBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, baseData, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.overlayBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, overlayData, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sideBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, sideData, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.topBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, topData, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
@@ -252,6 +339,45 @@ export class TerrainRenderer {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       gl.bindVertexArray(this.overlayVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.overlayCount);
+    }
+
+    // --- Floor top redraw pass -------------------------------------------
+    // Floor tops draw in the base pass at lifted corners, but neighbor
+    // overlays (drawn after base) can paint over them when the neighbor's
+    // elevation-tilted diamond extends into the floor's lifted-top area
+    // (e.g. water overlay on a grass tile with a corner pulled to shore
+    // level). Redraw the floor tops here with the base program to restore.
+    if (this.topCount > 0) {
+      gl.useProgram(this.baseProgram);
+      gl.uniform2f(this.baseUniforms.resolution, resolution[0], resolution[1]);
+      gl.uniform2f(this.baseUniforms.cameraPx, cameraPx[0], cameraPx[1]);
+      gl.uniform1i(this.baseUniforms.terrain, 0);
+      gl.uniform1f(this.baseUniforms.frame, frame);
+      gl.uniform1i(this.baseUniforms.lightmap, 2);
+      gl.uniform2f(this.baseUniforms.lightmapOrigin, lightmap.originX, lightmap.originY);
+      gl.uniform2f(this.baseUniforms.lightmapSize, lightmap.size, lightmap.size);
+
+      gl.disable(gl.BLEND);
+      gl.bindVertexArray(this.topVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.topCount);
+    }
+
+    // --- Side pass -------------------------------------------------------
+    // Floor slab side faces. Opaque, no mask, no animation. Drawn last so
+    // they paint over any neighboring tile top whose screen-Y band the raised
+    // slab profile extends into.
+    if (this.sideCount > 0) {
+      gl.useProgram(this.sideProgram);
+      gl.uniform2f(this.sideUniforms.resolution, resolution[0], resolution[1]);
+      gl.uniform2f(this.sideUniforms.cameraPx, cameraPx[0], cameraPx[1]);
+      gl.uniform1i(this.sideUniforms.terrain, 0);
+      gl.uniform1i(this.sideUniforms.lightmap, 2);
+      gl.uniform2f(this.sideUniforms.lightmapOrigin, lightmap.originX, lightmap.originY);
+      gl.uniform2f(this.sideUniforms.lightmapSize, lightmap.size, lightmap.size);
+
+      gl.disable(gl.BLEND);
+      gl.bindVertexArray(this.sideVao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.sideCount);
     }
 
     gl.bindVertexArray(null);

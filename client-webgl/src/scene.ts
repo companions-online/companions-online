@@ -49,6 +49,8 @@ import {
   buildChunkTerrainData,
   BASE_INSTANCE_STRIDE,
   OVERLAY_INSTANCE_STRIDE,
+  SIDE_INSTANCE_STRIDE,
+  TOP_INSTANCE_STRIDE,
   type ChunkTerrainData,
 } from './terrain/terrain-instances.js';
 import { generateWallTextures } from './buildings/wall-texture.js';
@@ -356,7 +358,12 @@ export async function createScene(
       );
     }
     if (count === 0) {
-      terrainRenderer.uploadInstances(new ArrayBuffer(0), 0, new ArrayBuffer(0), 0);
+      terrainRenderer.uploadInstances(
+        new ArrayBuffer(0), 0,
+        new ArrayBuffer(0), 0,
+        new ArrayBuffer(0), 0,
+        new ArrayBuffer(0), 0,
+      );
       return;
     }
 
@@ -366,19 +373,40 @@ export async function createScene(
     let baseOff = 0;
 
     let totalOverlays = 0;
-    for (const cd of chunkTerrainData.values()) totalOverlays += cd.overlayCount;
+    let totalSides = 0;
+    let totalTops = 0;
+    for (const cd of chunkTerrainData.values()) {
+      totalOverlays += cd.overlayCount;
+      totalSides += cd.sideCount;
+      totalTops += cd.topCount;
+    }
     const overlayBuf = new ArrayBuffer(totalOverlays * OVERLAY_INSTANCE_STRIDE);
     const overlayBytes = new Uint8Array(overlayBuf);
     let overlayOff = 0;
+    const sideBuf = new ArrayBuffer(totalSides * SIDE_INSTANCE_STRIDE);
+    const sideBytes = new Uint8Array(sideBuf);
+    let sideOff = 0;
+    const topBuf = new ArrayBuffer(totalTops * TOP_INSTANCE_STRIDE);
+    const topBytes = new Uint8Array(topBuf);
+    let topOff = 0;
 
     for (const cd of chunkTerrainData.values()) {
       baseBytes.set(new Uint8Array(cd.baseData), baseOff);
       baseOff += cd.baseData.byteLength;
       overlayBytes.set(new Uint8Array(cd.overlayData), overlayOff);
       overlayOff += cd.overlayData.byteLength;
+      sideBytes.set(new Uint8Array(cd.sideData), sideOff);
+      sideOff += cd.sideData.byteLength;
+      topBytes.set(new Uint8Array(cd.topData), topOff);
+      topOff += cd.topData.byteLength;
     }
 
-    terrainRenderer.uploadInstances(baseBuf, baseCount, overlayBuf, totalOverlays);
+    terrainRenderer.uploadInstances(
+      baseBuf, baseCount,
+      overlayBuf, totalOverlays,
+      sideBuf, totalSides,
+      topBuf, totalTops,
+    );
   }
 
   // Corner-grid sampler. Corner (cornerX, cornerY) is shared across the

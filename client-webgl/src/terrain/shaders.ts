@@ -146,6 +146,80 @@ void main() {
 `;
 
 /**
+ * Side-face vertex shader — draws the vertical side of a floor slab as a
+ * rectangular quad (not a diamond). Corners are ordered:
+ *   0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
+ * (the triangle index sequence [0,1,2,0,2,3] produces the quad.)
+ *
+ * UV sampling picks a horizontal slice of the top texture (v = 0.5) so the
+ * floor's horizontal pattern (plank gaps / stone mortar) appears as vertical
+ * stripes on the side face. u varies 0..1 across the edge.
+ */
+export const TILE_SIDE_VS = /* glsl */ `#version 300 es
+precision highp float;
+
+layout(location = 0) in int  a_cornerId;    // per-vertex: 0=TL 1=TR 2=BR 3=BL
+layout(location = 1) in vec4 a_cornerX;     // per-instance
+layout(location = 2) in vec4 a_cornerY;     // per-instance
+layout(location = 3) in int  a_srcLayer;    // per-instance
+layout(location = 6) in vec2 a_tileXY;      // per-instance world-tile coords
+
+uniform vec2  u_resolution;
+uniform vec2  u_cameraPx;
+
+out vec2 v_uv;
+flat out int v_srcLayer;
+out vec2 v_tileXY;
+
+const vec2 CORNER_UV[4] = vec2[4](
+  vec2(0.0, 0.5),  // TL
+  vec2(1.0, 0.5),  // TR
+  vec2(1.0, 0.5),  // BR
+  vec2(0.0, 0.5)   // BL
+);
+
+void main() {
+  float px = a_cornerX[a_cornerId] + u_cameraPx.x;
+  float py = a_cornerY[a_cornerId] + u_cameraPx.y;
+
+  float cx = (px / u_resolution.x) * 2.0 - 1.0;
+  float cy = 1.0 - (py / u_resolution.y) * 2.0;
+  gl_Position = vec4(cx, cy, 0.0, 1.0);
+
+  v_uv = CORNER_UV[a_cornerId];
+  v_srcLayer = a_srcLayer;
+  v_tileXY = a_tileXY;
+}
+`;
+
+/** Side fragment shader — opaque sample × darkening × lightmap. */
+export const TILE_SIDE_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp sampler2DArray;
+
+in vec2 v_uv;
+flat in int v_srcLayer;
+in vec2 v_tileXY;
+
+uniform sampler2DArray u_terrain;
+uniform sampler2D u_lightmap;
+uniform vec2 u_lightmapOrigin;
+uniform vec2 u_lightmapSize;
+
+const float SIDE_SHADE = 0.82;
+
+out vec4 outColor;
+
+void main() {
+  vec4 c = texture(u_terrain, vec3(v_uv, float(v_srcLayer)));
+  if (c.a < 0.5) discard;
+  vec2 luv = (v_tileXY - u_lightmapOrigin + 0.5) / u_lightmapSize;
+  vec3 light = texture(u_lightmap, luv).rgb;
+  outColor = vec4(c.rgb * SIDE_SHADE * light, 1.0);
+}
+`;
+
+/**
  * Overlay fragment shader — sample neighbor terrain × blend mask.
  *
  * The mask texture's RGB is meaningless (we wrote 255,255,255 always), only
