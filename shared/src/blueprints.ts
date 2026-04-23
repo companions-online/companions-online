@@ -80,6 +80,8 @@ export const enum BlueprintType {
   WoodenWall   = 71,
   WoodenDoor   = 72,
   StorageChest = 73,
+  WoodenFloor  = 74,
+  StoneFloor   = 75,
 
   // World objects 80-89
   Tree     = 80,
@@ -139,6 +141,8 @@ const BLUEPRINTS: Blueprint[] = [
   { id: BlueprintType.WoodenWall,   name: 'Wooden Wall',   category: 'placeable', sprite: 'wwall', stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.WoodenDoor,   name: 'Wooden Door',   category: 'placeable', sprite: 'wdoor', stackable: true, maxStack: 10, weight: 5, equipSlot: 'hand', collides: true, maxHp: 30 },
   { id: BlueprintType.StorageChest, name: 'Storage Chest', category: 'placeable', sprite: 'chest', stackable: true, maxStack: 10, weight: 6, equipSlot: 'hand', collides: true, maxHp: 50 },
+  { id: BlueprintType.WoodenFloor,  name: 'Wooden Floor',  category: 'placeable', sprite: 'wfloor', stackable: true, maxStack: 10, weight: 2, equipSlot: 'hand' },
+  { id: BlueprintType.StoneFloor,   name: 'Stone Floor',   category: 'placeable', sprite: 'sfloor', stackable: true, maxStack: 10, weight: 4, equipSlot: 'hand' },
 
   // --- World objects ---
   { id: BlueprintType.Tree,     name: 'Tree',      category: 'resource', sprite: 'tree', variantCount: 4, maxHp: 50, speed: 0, damage: 0, attackSpeed: 0, collides: true },
@@ -171,7 +175,9 @@ import { Building } from './terrain.js';
 
 export function blueprintToBuilding(bp: BlueprintType): Building | null {
   switch (bp) {
-    case BlueprintType.WoodenWall: return Building.Wall;
+    case BlueprintType.WoodenWall:  return Building.Wall;
+    case BlueprintType.WoodenFloor: return Building.WoodenFloor;
+    case BlueprintType.StoneFloor:  return Building.StoneFloor;
     default: return null;
   }
 }

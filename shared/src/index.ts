@@ -2,7 +2,7 @@ export { TICK_RATE, TICK_MS, MAP_SIZE, CHUNK_SIZE, VIEW_RANGE, INTEREST_RANGE, S
 export { gameMinuteFromTick, gameHourFromTick, ambientTint, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET } from './lighting.js';
 export type { RGB } from './lighting.js';
 export { Direction, DX, DY, isDiagonal, dirFromTo } from './direction.js';
-export { Terrain, Building, isWalkable } from './terrain.js';
+export { Terrain, Building, isWalkable, isPlaceable, isLightPassing } from './terrain.js';
 export { ActionType, ClientAction } from './actions.js';
 export { StatusEffect, isPlaced } from './status-effects.js';
 export { MetaKey, metaKeyLabel } from './entity-meta.js';

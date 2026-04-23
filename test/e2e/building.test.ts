@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createTestWorld, addTestPlayer } from './helpers.js';
 import { ClientAction } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
-import { Building } from '@shared/terrain.js';
+import { Building, Terrain } from '@shared/terrain.js';
 import { StatusEffect } from '@shared/status-effects.js';
 
 describe('E2E: Building placement', () => {
@@ -104,6 +104,96 @@ describe('E2E: Building placement', () => {
 
     // Ground entity should be destroyed
     expect(world.entities.exists(groundEid!)).toBe(false);
+  });
+});
+
+describe('E2E: Wooden floor placement + river bridging', () => {
+  function placeFloor(world: ReturnType<typeof createTestWorld>, player: number, tx: number, ty: number): void {
+    const item = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.WoodenFloor)!;
+    world.setAction(player, { action: ClientAction.UseItemAt, itemId: item.itemId, tileX: tx, tileY: ty });
+    world.runTicks(1);
+  }
+
+  it('places wooden floor on grass; tile remains walkable', () => {
+    const world = createTestWorld();
+    const { entityId: player } = addTestPlayer(world, 10, 10);
+    world.inventoryMgr.addItem(player, BlueprintType.WoodenFloor, 1);
+
+    placeFloor(world, player, 11, 10);
+
+    expect(world.map.getBuilding(11, 10)).toBe(Building.WoodenFloor);
+    expect(world.map.isWalkable(11, 10)).toBe(true);
+  });
+
+  it('rivers are non-walkable by default', () => {
+    const world = createTestWorld({
+      setupMap: (m) => m.setTerrain(11, 10, Terrain.River),
+    });
+    addTestPlayer(world, 10, 10);
+    expect(world.map.isWalkable(11, 10)).toBe(false);
+  });
+
+  it('wooden floor placed on river makes the tile walkable (bridge)', () => {
+    const world = createTestWorld({
+      setupMap: (m) => m.setTerrain(11, 10, Terrain.River),
+    });
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    world.inventoryMgr.addItem(player, BlueprintType.WoodenFloor, 1);
+
+    placeFloor(world, player, 11, 10);
+
+    expect(connection.rejections).toEqual([]);
+    expect(world.map.getBuilding(11, 10)).toBe(Building.WoodenFloor);
+    expect(world.map.isWalkable(11, 10)).toBe(true);
+  });
+
+  it('wooden floor placement rejected on water; stays fully impassable', () => {
+    const world = createTestWorld({
+      setupMap: (m) => m.setTerrain(11, 10, Terrain.Water),
+    });
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    world.inventoryMgr.addItem(player, BlueprintType.WoodenFloor, 1);
+
+    placeFloor(world, player, 11, 10);
+
+    expect(connection.rejections).toHaveLength(1);
+    const r = connection.rejections[0];
+    expect(r.code).toBe('tile_blocked');
+    expect((r as { by: string }).by).toBe('water');
+    expect(world.map.getBuilding(11, 10)).toBe(Building.None);
+    expect(world.map.isWalkable(11, 10)).toBe(false);
+  });
+
+  it('stone floor bridges river the same way wooden floor does', () => {
+    const world = createTestWorld({
+      setupMap: (m) => m.setTerrain(11, 10, Terrain.River),
+    });
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    world.inventoryMgr.addItem(player, BlueprintType.StoneFloor, 1);
+
+    const item = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.StoneFloor)!;
+    world.setAction(player, { action: ClientAction.UseItemAt, itemId: item.itemId, tileX: 11, tileY: 10 });
+    world.runTicks(1);
+
+    expect(connection.rejections).toEqual([]);
+    expect(world.map.getBuilding(11, 10)).toBe(Building.StoneFloor);
+    expect(world.map.isWalkable(11, 10)).toBe(true);
+  });
+
+  it('wall placement on river rejected (only floors bridge)', () => {
+    const world = createTestWorld({
+      setupMap: (m) => m.setTerrain(11, 10, Terrain.River),
+    });
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    world.inventoryMgr.addItem(player, BlueprintType.WoodenWall, 1);
+
+    const item = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.WoodenWall)!;
+    world.setAction(player, { action: ClientAction.UseItemAt, itemId: item.itemId, tileX: 11, tileY: 10 });
+    world.runTicks(1);
+
+    expect(connection.rejections).toHaveLength(1);
+    expect(connection.rejections[0].code).toBe('tile_blocked');
+    expect(world.map.getBuilding(11, 10)).toBe(Building.None);
   });
 });
 

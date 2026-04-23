@@ -480,24 +480,23 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
     rejectAction(world, eid, { code: 'not_adjacent', targetEntityId: 0, dist: Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) });
     return;
   }
-  if (!world.map.isWalkable(tileX, tileY) || world.occupancy.isOccupied(tileX, tileY)) {
+  const buildingType = blueprintToBuilding(item.blueprintId);
+  if (world.occupancy.isOccupied(tileX, tileY)) {
+    rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by: 'entity' });
+    return;
+  }
+  if (!world.map.isPlaceable(tileX, tileY, buildingType)) {
     const building = world.map.getBuilding(tileX, tileY);
     const terrain = world.map.getTerrain(tileX, tileY);
-    const by: 'wall' | 'water' | 'rock' | 'entity' =
-      world.occupancy.isOccupied(tileX, tileY) ? 'entity'
-      : building !== Building.None ? 'wall'
+    const by: 'wall' | 'water' | 'rock' =
+      building !== Building.None ? 'wall'
       : terrain === Terrain.Water || terrain === Terrain.River ? 'water'
       : 'rock';
     rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by });
     return;
   }
 
-  const buildingType = blueprintToBuilding(item.blueprintId);
   if (buildingType !== null) {
-    if (world.map.getBuilding(tileX, tileY) !== Building.None) {
-      rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-      return;
-    }
     world.inventoryMgr.removeItem(eid, itemId, 1);
     world.map.setBuilding(tileX, tileY, buildingType);
   } else {

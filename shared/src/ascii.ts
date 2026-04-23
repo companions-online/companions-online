@@ -67,6 +67,8 @@ export function blueprintChar(bp: BlueprintType, effects?: number): string {
     case BlueprintType.WoodenWall:   return '#';
     case BlueprintType.WoodenDoor:   return '+';
     case BlueprintType.StorageChest: return '$';
+    case BlueprintType.WoodenFloor:  return '_';
+    case BlueprintType.StoneFloor:   return '=';
     // World objects
     case BlueprintType.Tree:     return 'T';
     // HillRock removed — Terrain.Rock handles mining directly

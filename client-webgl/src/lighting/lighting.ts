@@ -118,7 +118,8 @@ export class LightingManager {
     }
 
     // Build blocker set: entities whose blueprint collides and that aren't
-    // open (doors). worldMap.isWalkable already covers terrain + buildings.
+    // open (doors). worldMap.isLightPassing covers terrain + buildings (walls
+    // and water/rock block; rivers and floors pass).
     const blockerEntities = new Set<number>();
     const emitters: { tx: number; ty: number; radius: number; color: readonly [number, number, number] }[] = [];
     for (const e of entities) {
@@ -140,7 +141,7 @@ export class LightingManager {
     }
 
     const blocks = (x: number, y: number): boolean => {
-      if (!worldMap.isWalkable(x, y)) return true;
+      if (!worldMap.isLightPassing(x, y)) return true;
       return blockerEntities.has(tileKey(x, y));
     };
 

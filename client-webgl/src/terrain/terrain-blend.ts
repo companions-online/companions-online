@@ -31,8 +31,23 @@ export const TERRAIN_BLEND_MODE: readonly BlendMode[] = [
   BlendMode.Smooth, // Sand
   BlendMode.Short,  // Water
   BlendMode.Short,  // River
-  BlendMode.Smooth, // WoodenFloor (clean man-made edges)
-  BlendMode.Smooth, // StoneFloor
+  BlendMode.Smooth, // WoodenFloor (unused — see TERRAIN_NO_OVERLAY below)
+  BlendMode.Smooth, // StoneFloor  (unused — see TERRAIN_NO_OVERLAY below)
+];
+
+/** When true, this terrain type never contributes an overlay onto lower-
+ *  priority neighbors — it renders strictly inside its own tile diamond with
+ *  a hard edge. Used for man-made floors so they look like laid flooring
+ *  instead of bleeding into the surrounding grass/dirt/river. */
+export const TERRAIN_NO_OVERLAY: readonly boolean[] = [
+  false, // Grass
+  false, // Dirt
+  false, // Rock
+  false, // Sand
+  false, // Water
+  false, // River
+  true,  // WoodenFloor
+  true,  // StoneFloor
 ];
 
 // ---------------------------------------------------------------------------
@@ -122,6 +137,7 @@ export function gatherInfluences(
 
     const nPriority = TERRAIN_PRIORITY[nTerrain];
     if (nPriority <= centerPriority) continue;
+    if (TERRAIN_NO_OVERLAY[nTerrain]) continue;
 
     getOrCreate(nTerrain, nPriority).bits |= 1 << i;
   }
@@ -138,6 +154,7 @@ export function gatherInfluences(
 
     const nPriority = TERRAIN_PRIORITY[nTerrain];
     if (nPriority <= centerPriority) continue;
+    if (TERRAIN_NO_OVERLAY[nTerrain]) continue;
 
     // Suppression: if either adjacent neighbor of this diagonal (i-1, i+1 mod 8)
     // already contributes the same terrain, skip — its edge mask already covers

@@ -1,4 +1,4 @@
-import { Terrain, Building, isWalkable } from '../terrain.js';
+import { Terrain, Building, isWalkable, isPlaceable, isLightPassing } from '../terrain.js';
 import { CHUNK_SIZE } from '../constants.js';
 
 export class WorldMap {
@@ -60,6 +60,16 @@ export class WorldMap {
   isWalkable(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     return isWalkable(this.getTerrain(x, y), this.getBuilding(x, y));
+  }
+
+  isPlaceable(x: number, y: number, newBuilding: Building | null): boolean {
+    if (!this.inBounds(x, y)) return false;
+    return isPlaceable(this.getTerrain(x, y), this.getBuilding(x, y), newBuilding);
+  }
+
+  isLightPassing(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    return isLightPassing(this.getTerrain(x, y), this.getBuilding(x, y));
   }
 
   getChunkTerrain(chunkX: number, chunkY: number): Uint8Array {
