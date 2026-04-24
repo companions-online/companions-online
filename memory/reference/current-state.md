@@ -157,11 +157,30 @@ Client-side effects wired onto the channel:
   player (not Dead). `drawEntityOverlays` in `renderer.ts` runs one
   unlit pass for bar + nameplate, positioned off `sheet.footY` so
   128px and 32px sprites get consistent overhead placement.
+- **WoodenFloor / StoneFloor placeables + floor-as-slab rendering.**
+  1-wood / 2-rock recipes; placement goes through the building tile
+  layer (like WoodenWall), not an entity. Rivers are non-walkable by
+  default; floors bridge them (but not water/rock). Floor tiles render
+  as a raised slab: top diamond lifted by `FLOOR_LIFT_Z = 0.25`, with
+  SE/SW side quads filling the profile (shared interior edges between
+  adjacent floors are suppressed). Floors opt out of blend overlays
+  (`TERRAIN_NO_OVERLAY`) so the edge is sharp. A post-overlay top-redraw
+  pass prevents neighbor water overlays from biting into the lifted top.
+- **Three terrain predicates (split from one).** `shared/src/terrain.ts`
+  exports `isWalkable`, `isPlaceable(curr, newBuilding|null)`, and
+  `isLightPassing` — decouples movement, placement surface, and
+  shadowcast transparency. Used to keep rivers non-walkable while still
+  passing light, and to allow floors-on-river without allowing
+  walls-on-river.
+- **Bridge-click fix.** `shared/src/action-resolver.ts` now checks
+  `isWalkable` for river/water tiles instead of returning null, so
+  clicking a bridged river tile emits `MoveTo`. Fishing-rod branch
+  still wins for rivers when the rod is equipped.
 
 ## Tests — all passing
 
 ## Known Issues
-- **Rivers: product decision pending.** `Terrain.River` is walkable in `shared/src/terrain.ts::isWalkable` today, so A* crosses any width. Narrow-only crossings would need a context-aware blocker (reject `river → river` transitions) or equivalent; the full non-walkable route is a one-line fix in `isWalkable`. No test or spec tracked in-repo right now.
+- **Entity anchoring on raised floors.** Floor tiles render as a lifted slab (`FLOOR_LIFT_Z = 0.25` via `client-webgl/src/terrain/terrain-instances.ts`) but entity sprites still anchor their foot at the natural ground elevation. A player standing on a floor appears ~4 px submerged in the slab. Fix: teach the entity-Y projection to pick up the lift when the standing tile is a floor.
 - **Corner-diagonal clip-through.** `systems/combat.ts::isAdjacent` is pure Chebyshev and doesn't check walkability of the step between attacker and target. An attacker at (x,y) can land a swing on a target at (x+1,y+1) when both (x+1,y) and (x,y+1) are blocked (wall or closed door corner) — pathfinding forbids that diagonal but combat doesn't. `startAttack`'s reachability check closes the start-time case; runtime per-swing adjacency is still pure Chebyshev. Fix sketch: `isAdjacent` (or a new `canStrike`) requires the step to be walkable under the same no-corner-cut rules `findPath` uses.
 - Rock terrain threshold (0.65) too high for MAP_SIZE=128 — zero rock tiles on most seeds. Fix: lower to ~0.50
 - Large maps (1024+) still crawl on broadcastTick — O(entities×clients) visibility diff

@@ -185,8 +185,18 @@ NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams wit
 
 ## Building Layer vs Entities
 
-Static structures (WoodenWall) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas.
+Static structures (WoodenWall, WoodenFloor, StoneFloor) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas. `blueprintToBuilding()` in `shared/src/blueprints.ts` is the single source of truth: a non-null return routes the placement through the building-tile branch in `handleUseItemAt`. Walls block movement; floors are walkable and can bridge rivers (see `isWalkable` / `isPlaceable` below).
 Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health). Placed vs ground-item is keyed on the `StatusEffect.Placed` bit — `isPlaced(se)` in `shared/src/status-effects.ts` is the canonical check used by the MCP formatter, WebGL cursor/click routing, and CLI render. `handleUseItemAt` sets the bit on placement; `spawnCreatureEntity` sets it at worldgen for `category === 'placeable'` entities and Trees; `handleDrop` + `spawnGroundItem` leave it off. Persistence round-trips the bit inside the existing statusEffects byte.
+
+## Terrain Predicates (walk / place / light)
+
+`shared/src/terrain.ts` exposes three predicates, each answering a different question about a tile:
+
+- **`isWalkable(terrain, building)`** — can an entity stand on and traverse this tile? Water and rock are never walkable; walls and fences block; river is only walkable when bridged by a WoodenFloor/StoneFloor; everything else walkable. Used by pathfinding, movement, AI, and every server-side reachability check.
+- **`isPlaceable(terrain, currentBuilding, newBuilding | null)`** — can `newBuilding` be placed on this tile (or an entity if `null`)? Requires no existing building; water/rock never placeable; river only placeable when the new building is a floor (bridging). Called from `handleUseItemAt`'s pre-check in place of the old `isWalkable`-based check, because walls-on-grass and floors-on-river are both valid but can't both be expressed as "currently walkable".
+- **`isLightPassing(terrain, building)`** — does the shadowcaster's ray pass through this tile? Walls/fences block; water/rock block (preserves pre-split behavior); river, floors, grass/dirt/sand pass. Used by `client-webgl/src/lighting/lighting.ts` shadowcast blocker. Split out so rivers can be non-walkable while still transmitting light.
+
+The three are thin pure functions over the same `(terrain, building)` pair; the WorldMap class exposes one-argument wrappers (`map.isWalkable(x, y)`, etc.).
 
 ## Player Death + Respawn
 

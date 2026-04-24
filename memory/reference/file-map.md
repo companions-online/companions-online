@@ -6,7 +6,7 @@ index.ts                 Barrel re-export of everything
 constants.ts             TICK_RATE=20, MAP_SIZE=128, CHUNK_SIZE=16, VIEW/INTEREST_RANGE, SPAWN, TICKS_PER_GAME_MINUTE/HOUR, GAME_MINUTES_PER_DAY, TICKS_PER_GAME_DAY
 lighting.ts              Day/night keyframes, ambientTint, gameMinuteFromTick/gameHourFromTick, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET
 actions.ts               ActionType enum (Idle..Consuming), ClientAction enum (Cancel..Say, 17 total)
-blueprints.ts            Blueprint interface + ~35 types, blueprintToBuilding() mapping (+ optional lightRadius, lightColor on Blueprint; Campfire sets both)
+blueprints.ts            Blueprint interface + ~37 types, blueprintToBuilding() maps WoodenWall→Wall, WoodenFloor→WoodenFloor, StoneFloor→StoneFloor (+ optional lightRadius, lightColor on Blueprint; Campfire sets both)
 recipes.ts               17 crafting recipes (tools, weapons, armor, placeables, bandage)
 inventory.ts             InventoryItem/Inventory types, pure helpers (getWeight, canCraft, equipSlot conversions)
 loot-tables.ts           Drop tables per creature (deer→hide+meat, skeleton→iron+rock, etc.)
@@ -16,7 +16,7 @@ ascii.ts                 terrainChar, buildingChar, blueprintChar (with door ope
 components.ts            ComponentBit enum (7 synced components), wire data interfaces
 coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
-terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
+terrain.ts               Terrain/Building enums (Wall, WoodenFloor, StoneFloor, Fence — no Door); isWalkable (river walkable only when bridged by floor); isPlaceable (terrain, current, newBuilding|null) for handleUseItemAt pre-check; isLightPassing for shadowcast
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open, Placed) + isPlaced(se) helper
 protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync, GameEvents=0x37; DeltaSectionTag.Environment; WireEventType enum (numeric subset of GameEventType for the wire)
 protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action, EntityMeta msg, GameEvents batch (encodeGameEvents/decodeGameEvents + WireEvent discriminated union), DecodedAction union

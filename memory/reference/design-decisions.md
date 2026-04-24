@@ -52,11 +52,21 @@
 
 ## Building Layer vs Entities
 
-**WoodenWall → building tile layer**. Static structures use `map.setBuilding()`. Synced via chunk streaming + tile deltas. No entity overhead.
+**WoodenWall, WoodenFloor, StoneFloor → building tile layer**. Static structures use `map.setBuilding()`. Synced via chunk streaming + tile deltas. No entity overhead. Classification comes from `blueprintToBuilding()` in `shared/src/blueprints.ts`: a non-null return → building-tile placement, null → entity placement. WoodenFloor / StoneFloor are the first walkable buildings — they can be placed on river terrain to bridge it (but not on water or rock; see `isPlaceable` below).
 
 **Door, Campfire, StorageChest → entities**. These have interactive behavior. Ground-item vs placed-structure is discriminated by the `StatusEffect.Placed` bit (set at spawn by `handleUseItemAt` and the worldgen `spawnCreatureEntity` path for `category === 'placeable'` + Tree). Use `isPlaced(statusEffects)` from `shared/src/status-effects.ts` — never rely on "has the statusEffects component at all" (that convention predated the bit and was quietly broken by worldgen + persistence).
 
 **Campfire has collides: true** — needed for cooking (server finds campfire via `occupancy.get(tileX, tileY)`).
+
+**Three terrain predicates instead of one overloaded `isWalkable`** — `shared/src/terrain.ts` exports `isWalkable`, `isPlaceable`, `isLightPassing`. Previously one function answered all three questions, which broke when we needed rivers to be non-walkable (movement) but still light-transmitting (shadowcast) and bridgeable by floors (placement). Splitting keeps each decision independent: movement callers never accidentally let rivers be placeable, shadowcast never accidentally blocks at rivers. `isPlaceable` takes `newBuilding: Building | null` rather than a `BlueprintType` to avoid pulling blueprints.ts into terrain.ts (circular import).
+
+**Floors render as a raised slab, not a flat tile** — a flat diamond under a floor read as sunken/painted-on. In `client-webgl/src/terrain/terrain-instances.ts`, floor tiles lift their top-diamond corners by `FLOOR_LIFT_Z = 0.25` (≈4 px at `PX_PER_Z = 16`). The shared per-chunk elevation grid is NOT modified — the lift applies only when the floor's own instance is written, so grass neighbors don't tilt. Up to two SE/SW side quads per floor fill the slab profile; interior edges shared with another floor are suppressed. Side faces sample a horizontal slice (`v = 0.5`) of the floor's top texture — horizontal plank/mortar pattern reads as vertical stripes on the side — times `SIDE_SHADE = 0.82` for depth AO. The back (NE/NW) faces are omitted because the top occludes them in iso projection.
+
+**Floor top redraws after the overlay pass** — grass tiles adjacent to a floor-on-water have their shared corners pulled to `SHORE_HEIGHT` by the elevation flatten pass, tilting the grass diamond upward in screen space. The water overlay painted on that tilted grass (pass order: base → overlay → …) extends into the screen-Y band where the floor's lifted top sits, biting into it. Fix: emit a top-redraw instance per floor tile (same data as the base instance, lifted corners) into a separate buffer, draw it with the base program AFTER the overlay pass. Overdraws any bite. Four-pass order: base → overlay → floor-top-redraw → side.
+
+**Floors opt out of terrain blending** — `TERRAIN_NO_OVERLAY` in `client-webgl/src/terrain/terrain-blend.ts` flags WoodenFloor / StoneFloor. `gatherInfluences()` skips these as influence sources, so the neighboring grass tile never gets a floor-overlay with a soft alpha mask. The floor's own tile diamond renders strictly inside its diamond outline — man-made flooring should meet the ground at a hard seam, not fade into it. Natural terrain transitions (grass↔rock etc.) keep their usual soft blend.
+
+**Bridge-click falls through to `isWalkable`** — `shared/src/action-resolver.ts`'s water/river branch used to `return null` unconditionally when no fishing rod was equipped, which made bridged-river tiles unclickable. It now returns `Harvest` only when the rod is equipped; otherwise the caller falls through to the `!isWalkable` check, which correctly admits bridged river tiles (walkable via the floor) and rejects raw river / water.
 
 ## Game Mechanics
 

@@ -56,8 +56,11 @@ runs once per frame before terrain and sprite passes:
 
 1. Advance local `gameMinute` via wall-clock.
 2. Fill the window `Uint8ClampedArray` with ambient RGB.
-3. Build blocker set: `!worldMap.isWalkable(x,y) ||
-   (entity with collides && !Open)`.
+3. Build blocker set: `!worldMap.isLightPassing(x,y) ||
+   (entity with collides && !Open)`. The light-specific predicate was
+   split out from `isWalkable` when rivers became non-walkable —
+   rivers should still transmit light, so shadowcast uses the
+   terrain-level "passes light?" answer instead of "can walk?".
 4. For each entity with `blueprint.lightRadius > 0` inside the window:
    run `shadowcast(origin, radius, blocks, visit)`; in `visit`, add
    `color * falloff (1 - distSq/r²)` to the pixel.

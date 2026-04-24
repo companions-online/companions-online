@@ -9,7 +9,7 @@
 | `entity-blueprints-draft.md` | Blueprint IDs | Renumbered into ranges: creatures 0-19, resources 20-29, tools 30-39, weapons 40-49, armor 50-59, consumables 60-69, placeables 70-79, world 80-89, NPCs 90-99, special 100+ |
 | `entity-blueprints-draft.md` | HillRock | Removed entirely. Terrain.Rock is mineable directly |
 | `entity-blueprints-draft.md` | Stats | Rebalanced. Check blueprints.ts for current values |
-| `entity-blueprints-draft.md` | Placeables | Added equipSlot:'hand' + stackable:true. WoodenWall goes to building tile layer |
+| `entity-blueprints-draft.md` | Placeables | Added equipSlot:'hand' + stackable:true. WoodenWall, WoodenFloor, StoneFloor all go to building tile layer (via `blueprintToBuilding()`). WoodenFloor / StoneFloor are walkable — first non-blocking building tiles — and bridge river terrain. |
 | `network-protocol-draft.md` | Opcodes | Added: Welcome, InventorySync, ContainerOpen, DialogueOpen. Client-side prediction removed |
 | `network-protocol-draft.md` | Components | Removed Ownership/Appearance. Added BlueprintId |
 | `action-taxonomy.md` | Actions | All 17 implemented: MoveTo, Cancel, Pickup, Equip, Unequip, Drop, Craft, Harvest, UseItemAt, Attack, Interact, Transfer, DialogueSelect, Trade, UseConsumable, Say |
