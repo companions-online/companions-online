@@ -20,10 +20,6 @@ export function generateWorld(seed: number): WorldGenResult {
   const map = new WorldMap(MAP_SIZE, MAP_SIZE);
   const spawns: EntitySpawn[] = [];
 
-  // Auto-scale factor: all noise frequencies and distance-based zones
-  // scale relative to the reference map size of 128
-  const scale = MAP_SIZE / 128;
-
   const elevation = new PerlinNoise(seed);
   const river     = new PerlinNoise(seed + 1);
   const forest    = new PerlinNoise(seed + 2);
@@ -45,15 +41,18 @@ export function generateWorld(seed: number): WorldGenResult {
     return count > 1 ? Math.floor(rand() * count) : 0;
   }
 
-  // Scaled noise frequencies (inverse of scale — larger map = lower frequency)
-  const elevFreq = 0.03 / scale;
-  const riverFreq = 0.05 / scale;
-  const forestFreq = 0.08 / scale;
-  const critterFreq = 0.3 / scale;
+  // Scale-invariant noise frequencies — feature size in tiles stays
+  // constant regardless of MAP_SIZE, so larger maps contain proportionally
+  // more (not bigger) forests/rivers/mountains. Values tuned at MAP_SIZE=128.
+  const elevFreq = 0.03;
+  const riverFreq = 0.05;
+  const forestFreq = 0.08;
+  const critterFreq = 0.3;
 
-  // Scaled distance zones
-  const critterClearDist = Math.round(10 * scale) ** 2;
-  const skeletonClearDist = Math.round(20 * scale) ** 2;
+  // Absolute-tile spawn clear zones (squared distances). Sized for the
+  // MAP_SIZE=128 tuning; do not scale with map size.
+  const critterClearDist = 10 ** 2;
+  const skeletonClearDist = 20 ** 2;
 
   // --- Pass 1: Terrain ---
   for (let y = 0; y < MAP_SIZE; y++) {
@@ -228,13 +227,13 @@ export function generateWorld(seed: number): WorldGenResult {
     return null;
   }
 
-  const hermitPos = findNpcTile(8, 15 * scale);
+  const hermitPos = findNpcTile(8, 15);
   if (hermitPos) spawns.push({ ...hermitPos, blueprint: BlueprintType.Hermit, variant: pickVariant(BlueprintType.Hermit) });
 
-  const traderPos = findNpcTile(10, 20 * scale);
+  const traderPos = findNpcTile(10, 20);
   if (traderPos) spawns.push({ ...traderPos, blueprint: BlueprintType.Trader, variant: pickVariant(BlueprintType.Trader) });
 
-  const wandererPos = findNpcTile(30 * scale, 45 * scale);
+  const wandererPos = findNpcTile(30, 45);
   if (wandererPos) spawns.push({ ...wandererPos, blueprint: BlueprintType.Wanderer, variant: pickVariant(BlueprintType.Wanderer) });
 
   // --- Pass 8: Test building (6×6 near spawn) ---
