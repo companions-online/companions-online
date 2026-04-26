@@ -11,5 +11,3 @@ assets/import/
 *:Zone.Identifier
 .env
 harness/logs/
-harness/memory/
-harness/eval/runs/

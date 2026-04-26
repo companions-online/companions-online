@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { runPath, LOGS_DIR } from '../helpers/paths.js';
 import type { Server } from 'http';
 import { serve } from '@hono/node-server';
 import { GameWorld, createDefaultWorld } from '../../server/src/game-world.js';
@@ -8,14 +9,14 @@ import { GameLoop } from '../../server/src/ecs/game-loop.js';
 import { Telemetry } from '../../server/src/telemetry.js';
 import { createApp } from '../../server/src/app.js';
 import { TICK_RATE } from '../../shared/src/constants.js';
-import type { TokenUsage } from '../openrouter.js';
-import type { Decider } from '../decider.js';
-import type { Logger } from '../logger.js';
-import type { MemoryFile } from '../memory-file.js';
-import type { RunVariantOpts, VariantResult } from '../compact.js';
-import { runCompact } from '../compact.js';
-import { runBaseline } from '../baseline.js';
-import { runTruncated } from '../truncated.js';
+import type { TokenUsage } from '../helpers/openrouter.js';
+import type { Decider } from '../helpers/decider.js';
+import type { Logger } from '../helpers/logger.js';
+import type { Scratchpad } from '../helpers/scratchpad.js';
+import type { RunVariantOpts, VariantResult } from '../helpers/runner.js';
+import { runCompact } from '../variants/compact.js';
+import { runBaseline } from '../variants/baseline.js';
+import { runTruncated } from '../variants/truncated.js';
 import { Scoreboard } from './scoreboard.js';
 import type { Checkpoint } from './match.js';
 
@@ -64,8 +65,8 @@ export interface RunEvalOpts {
   /** Test injection — silent logger to skip disk writes. */
   logger?: Logger;
   /** Test injection — inject a temp-dir memory file. */
-  memory?: MemoryFile;
-  /** Where per-run JSON results land. Defaults to `harness/eval/runs`. */
+  memory?: Scratchpad;
+  /** Where per-run JSON results land. Defaults to `harness/logs/`. Tests override. */
   resultsDir?: string;
 }
 
@@ -77,6 +78,8 @@ const RUN_FNS: Record<HarnessVariant, (opts: RunVariantOpts) => Promise<VariantR
 
 export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
   const { llmConfigName, evalConfig } = opts;
+  // Single UUID for the whole run: the eval's runId IS the harness sessionId,
+  // so log/scratchpad/run-result artifacts share the same prefix on disk.
   const runId = randomUUID();
 
   const world = (opts.worldFactory ?? createDefaultWorld)(evalConfig.worldSeed);
@@ -115,6 +118,7 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
     const variantResult = await runFn({
       configName: llmConfigName,
       configDir: opts.llmConfigDir,
+      sessionId: runId,
       maxSteps: evalConfig.maxTurns,
       abortSignal: opts.abortSignal,
       decider: opts.decider,
@@ -152,9 +156,11 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
     aiEid: scoreboard.getAiEid(),
   };
 
-  const dir = opts.resultsDir ?? 'harness/eval/runs';
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${runId}.json`), JSON.stringify(result, null, 2), 'utf8');
+  const file = opts.resultsDir
+    ? join(opts.resultsDir, `${runId}.json`)
+    : runPath(runId);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(result, null, 2), 'utf8');
 
   return result;
 }

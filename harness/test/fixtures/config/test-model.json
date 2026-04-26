@@ -1,4 +1,5 @@
 {
+  "type": "model",
   "model": "test/mock",
   "temperature": 0,
   "reasoning": { "effort": "low" }

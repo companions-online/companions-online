@@ -1,4 +1,4 @@
-import type { Logger } from '../../logger.js';
+import type { Logger } from '../../helpers/logger.js';
 
 export function createNoopLogger(): Logger & { events: { kind: string; data: unknown }[]; stdoutLines: string[] } {
   const events: { kind: string; data: unknown }[] = [];

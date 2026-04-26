@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import type { ChatResponse } from '../../openrouter.js';
+import type { ChatResponse } from '../../helpers/openrouter.js';
 
 export interface CapturedRequest {
   body: Record<string, unknown>;

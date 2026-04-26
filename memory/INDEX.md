@@ -52,3 +52,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [client-webgl/](client-webgl/overview.md) — WebGL client; also see architecture, file-map, gotchas, testing
 - [client-webgl/lighting](client-webgl/lighting.md) — day/night cycle + tinted point lights + wall-aware shadowcast
 - [client-webgl/inventory-panel](client-webgl/inventory-panel.md) — drag-and-drop inventory UI + placement mode + optimistic-decrement flicker fix
+- [harness/overview](harness/overview.md) — what the harness is, the two CLI surfaces, the variants/helpers/cli/eval split
+- [harness/architecture](harness/architecture.md) — runner + VariantStrategy contract, two-tool-source dispatch, decider seam, scratchpad↔memory naming, single-sessionId convention
+- [harness/variants](harness/variants.md) — compact/baseline/truncated: state shapes, prompt-build differences, when to use each, why no `continue` after tool results
+- [harness/eval](harness/eval.md) — eval-runner, AI-eid snapshot-diff, stop-reason taxonomy, test injection seams
