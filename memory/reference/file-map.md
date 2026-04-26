@@ -116,4 +116,38 @@ persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight 
 client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
 client-gl/scene.test.ts       Scene mutators + factory dispatch + capacity + onGameEvent dispatch + smoke-puff spawn (via EntityDied + Dead-transition paths) + Dead→Idle snap
 client-gl/effects.test.ts     Damage number + pickup text + chat bubble lifecycle
+e2e/event-observer.test.ts    GameWorld.setEventObserver fires for emit + broadcast channels; observer-throws don't break runTicks
+```
+
+## harness/
+```
+bootstrap.ts             Shared setup: loadEnv + config + prompt + MCP connect + decider + memory + logger
+compact.ts               Rolling-window harness (system + assistant + tool, 3 messages/turn) + CLI; folds in old state/prompt-builder
+baseline.ts              Full-history harness, "continue" ping after each tool, no truncation + CLI
+truncated.ts             Full-history harness, but turns older than last 2 collapse to one user line + CLI; exports compactOldTurns/extractActionTag
+decider.ts               Decider interface + OpenRouterDecider (returns { message, usage })
+openrouter.ts            ChatResponse + TokenUsage types + thin fetch wrapper
+mcp-client.ts            ReconnectingMcpClient with backoff
+tools.ts                 createDispatcher (merges MCP + harness tools, OpenAI-format conversion)
+harness-tools.ts         Local harness tools (currently: memory_update)
+memory-file.ts           Per-session markdown file (one per sessionId)
+logger.ts                JSONL session log + stdout
+human-harness.ts         Human-driven decider (terminal UI) for debugging variants
+human-ui.ts              Terminal UI primitives for human-harness
+env.ts                   loadEnv (.env loading)
+config/<name>.json       LLM config (model + extra OpenRouter body fields + actionWindowSize)
+config/prompt.md         System / first-user prompt split on \n---\n
+```
+
+## harness/eval/
+```
+match.ts                 matches(checkpoint, event): shallow-eq on event.details
+scoreboard.ts            Scoreboard: setEventObserver attach + AI-eid resolution + checkpoint hits
+eval-runner.ts           runEval: spin up world+app+loop on ephemeral port + run variant + per-run JSON result
+cli.ts                   tsx harness/eval/cli.ts <llm-config> <eval-config-path>
+configs/<name>.json      Eval config (harness variant, worldSeed, maxTurns, maxTokens, checkpoints[])
+runs/<runId>.json        Per-run output (score, hits, turns, tokens, stopReason)
+test/match.test.ts       matches() unit tests
+test/scoreboard.test.ts  AI-eid resolution + emit/broadcast filtering on real harvest
+test/eval-runner.test.ts End-to-end: stub decider drives identify+harvest, plus max_turns/max_tokens stop
 ```

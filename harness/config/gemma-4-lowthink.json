@@ -1,0 +1,5 @@
+{
+  "model": "google/gemma-4-31b-it",
+  "temperature": 1,
+  "reasoning": { "effort": "low" }
+}

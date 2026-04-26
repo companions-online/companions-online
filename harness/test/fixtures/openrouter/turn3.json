@@ -1,0 +1,19 @@
+{
+  "id": "fixture-turn3",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": "Checking the map.",
+        "tool_calls": [
+          {
+            "id": "call_3",
+            "type": "function",
+            "function": { "name": "echo", "arguments": "{\"message\":\"<map>area\"}" }
+          }
+        ]
+      }
+    }
+  ]
+}

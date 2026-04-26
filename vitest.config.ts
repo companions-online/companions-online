@@ -9,7 +9,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'harness/test/**/*.test.ts', 'harness/eval/test/**/*.test.ts'],
     globalSetup: ['./scripts/vitest-global-setup.ts'],
   },
 });

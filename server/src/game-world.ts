@@ -98,6 +98,8 @@ export class GameWorld implements SystemState {
   /** Last weather value we broadcast an Environment section for. */
   private _lastEnvEmitWeather = 0;
 
+  private eventObserver: (entityId: number, event: GameEvent, channel: 'emit' | 'broadcast') => void = () => {};
+
   constructor(readonly map: WorldMap, readonly seed = 0) {
     this.occupancy = new OccupancyGrid(map.width, map.height);
     this.spawnRng = seed;
@@ -118,9 +120,18 @@ export class GameWorld implements SystemState {
     this._lastEnvEmitHour = -1;
   }
 
+  /** Register a single observer notified for every emitEvent / broadcastEvent.
+   *  Eval and test code use this to score behavioral checkpoints. Default is
+   *  a no-op; observer errors are swallowed so a misbehaving observer can't
+   *  break the tick. */
+  setEventObserver(fn: (entityId: number, event: GameEvent, channel: 'emit' | 'broadcast') => void): void {
+    this.eventObserver = fn;
+  }
+
   private emitEvent(entityId: number, event: GameEvent): void {
     const slot = this.players.get(entityId);
     if (slot) slot.connection.onGameEvent(entityId, event);
+    try { this.eventObserver(entityId, event, 'emit'); } catch { /* swallow */ }
   }
 
   /** Reject a pending action before it takes effect. Routes the structured
@@ -147,6 +158,7 @@ export class GameWorld implements SystemState {
       if (Math.abs(tileX - p.tileX) <= INTEREST_RANGE &&
           Math.abs(tileY - p.tileY) <= INTEREST_RANGE) {
         slot.connection.onBroadcastEvent(eid, event);
+        try { this.eventObserver(eid, event, 'broadcast'); } catch { /* swallow */ }
       }
     }
   }

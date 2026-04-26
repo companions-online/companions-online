@@ -15,6 +15,11 @@
     "cli:play": "tsx cli/client.ts",
     "cli:stats": "tsx scripts/map-stats.ts",
     "cli:mcp": "tsx scripts/mcp.ts",
+    "harness:compact": "tsx harness/compact.ts",
+    "harness:baseline": "tsx harness/baseline.ts",
+    "harness:truncated": "tsx harness/truncated.ts",
+    "harness:human": "tsx harness/human-harness.ts",
+    "eval": "tsx harness/eval/cli.ts",
     "import:sprite": "tsx scripts/import-sprite.ts",
     "render": "tsx scripts/render-frame.ts",
     "render:gl": "tsx scripts/render-gl-frame.ts"
