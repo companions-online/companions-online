@@ -1,11 +1,14 @@
+Specific issue:
+* when attempting to scale up the map (MAP_SIZE => eg 2048), world-gen makes everything larger as well -rivers larger, fields larger, forests larger, etc. We want to maintain the current density of stuff, but make it possible to run an infinitely large map -and entities / environment / trees etc to be generated at current density.
 
 
 
 
----
-pathfinding vs closed doors; pathfinding vs water
--water should not be walkable
--and no trees should be spawned in water
+* health+: when user heals, we currently have a short animation that plays -additionally, we want to show a green "+5" bubbling up -similar to damage, but no star background
+* and we want both health + damage displays to be smaller -about half of current size
+
+
+
 
 ---
 * piles for the ground
@@ -131,3 +134,10 @@ Review the relevant source code, and ask any questions that's useful for impleme
 ---
 -missing sprites for skeleton / etc
 -during night, spawn skeletons around player; when the sun comes up, they die
+
+---
+pathfinding vs closed doors; pathfinding vs water
+-and no trees should be spawned in water
+
+----
+-water should not be walkable [??]
