@@ -2,7 +2,7 @@ import { TICK_RATE } from '@shared/constants.js';
 import type { TelemetrySnapshot } from './telemetry.js';
 
 const TICK_BUDGET_MS = 1000 / TICK_RATE;
-const PHASE_ORDER = ['actions', 'critterAI', 'respawns', 'movement', 'pickups', 'harvest', 'combat', 'broadcast', 'cleanup'];
+const PHASE_ORDER = ['actions', 'critterAI', 'respawns', 'movement', 'pendingActions', 'harvest', 'combat', 'broadcast', 'cleanup'];
 const LINE = '\u2500'.repeat(53);
 
 let lastRenderTime = performance.now();

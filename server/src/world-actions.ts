@@ -29,9 +29,9 @@ import type {
 
 import type { GameWorld, PlayerSlot } from './game-world.js';
 import { Ok, Err, type RejectionReason, type ActionResult } from './action-rejection.js';
-import { requireAdjacentTarget } from './action-helpers.js';
 import { dispatchServerCommand } from './server-commands.js';
 import { getDialogue } from './npc-dialogues.js';
+import { scheduleOrExecute, actionKindLabel } from './pending-actions.js';
 
 import { setMoveTarget, clearMoveTarget } from './systems/movement.js';
 import { startHarvest, cancelHarvest, isHarvesting } from './systems/harvest.js';
@@ -110,11 +110,17 @@ function cancelConflictingStates(world: GameWorld, eid: number, action: DecodedA
     }));
     cancelCombat(eid, world);
   }
-  if (action.action !== ClientAction.Pickup) {
-    world.pendingPickups.delete(eid);
-  }
-  if (action.action !== ClientAction.Interact) {
-    world.pendingInteracts.delete(eid);
+  // Walk-to-act pending action: always cleared on any new action. Emit
+  // action_interrupted only when the kind differs — same-kind re-issue is a
+  // legitimate re-aim and stays quiet.
+  const existing = world.pendingActions.get(eid);
+  if (existing) {
+    if (existing.kind !== action.action) {
+      world.emitEvent(eid, world.makeEvent('action_interrupted', {
+        interruptedAction: actionKindLabel(existing.kind), reason: 'new action',
+      }));
+    }
+    world.pendingActions.delete(eid);
   }
   if (action.action !== ClientAction.UseConsumable && isConsuming(eid, world)) {
     world.emitEvent(eid, world.makeEvent('action_interrupted', {
@@ -140,9 +146,6 @@ function handleCancel(world: GameWorld, eid: number): void {
 
 function handlePickup(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
   const a = action as DecodedActionPickup;
-  const playerPos = world.entities.position.get(eid);
-  if (!playerPos) return;
-
   const targetPos = world.entities.position.get(a.entityId);
   const bp = world.entities.blueprint.get(a.entityId);
   if (!targetPos || !bp) {
@@ -159,28 +162,36 @@ function handlePickup(world: GameWorld, eid: number, slot: PlayerSlot, action: D
     return;
   }
 
-  const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-  if (dist <= 1) {
-    const result = world.inventoryMgr.addItem(eid, bp.blueprintId, 1);
-    if (!result.success) {
-      const inv = world.inventoryMgr.get(eid);
-      rejectAction(world, eid, {
-        code: 'inventory_full',
-        weight: inv ? getWeight(inv) : 0,
-        maxWeight: inv?.maxWeight ?? 0,
-      });
-      return;
-    }
-    // No occupancy.clear — ground items are not tracked by the occupancy grid.
-    world.entities.destroy(a.entityId);
-    slot.connection.onInventoryChanged(eid, world);
-    world.emitEvent(eid, world.makeEvent('item_picked_up', {
-      blueprintId: bp.blueprintId, itemName: world.bpName(bp.blueprintId), quantity: 1,
-    }));
-  } else {
-    world.pendingPickups.set(eid, { targetEntityId: a.entityId });
-    setMoveTarget(eid, targetPos.tileX, targetPos.tileY, world);
+  scheduleOrExecute(world, eid, slot, ClientAction.Pickup,
+    { kind: 'entity', entityId: a.entityId }, 1,
+    (w, e, s) => doPickup(w, e, s, a.entityId),
+  );
+}
+
+function doPickup(world: GameWorld, eid: number, slot: PlayerSlot, targetEntityId: number): ActionResult {
+  // Re-check on arrival: target may have been destroyed mid-walk.
+  if (!world.entities.exists(targetEntityId)) {
+    return Err({ code: 'target_missing', targetEntityId });
   }
+  const bp = world.entities.blueprint.get(targetEntityId);
+  if (!bp) return Err({ code: 'target_missing', targetEntityId });
+
+  const result = world.inventoryMgr.addItem(eid, bp.blueprintId, 1);
+  if (!result.success) {
+    const inv = world.inventoryMgr.get(eid);
+    return Err({
+      code: 'inventory_full',
+      weight: inv ? getWeight(inv) : 0,
+      maxWeight: inv?.maxWeight ?? 0,
+    });
+  }
+  // No occupancy.clear — ground items are not tracked by the occupancy grid.
+  world.entities.destroy(targetEntityId);
+  slot.connection.onInventoryChanged(eid, world);
+  world.emitEvent(eid, world.makeEvent('item_picked_up', {
+    blueprintId: bp.blueprintId, itemName: world.bpName(bp.blueprintId), quantity: 1,
+  }));
+  return Ok;
 }
 
 function handleEquip(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
@@ -278,87 +289,100 @@ function handleServerCommand(world: GameWorld, eid: number, slot: PlayerSlot, ac
 
 function handleInteractAction(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
   const a = action as DecodedActionInteract;
-  const playerPos = world.entities.position.get(eid);
-  if (!playerPos) return;
-
-  const targetPos = world.entities.position.get(a.entityId);
-  if (!targetPos) {
+  if (!world.entities.position.get(a.entityId)) {
     rejectAction(world, eid, { code: 'target_missing', targetEntityId: a.entityId });
     return;
   }
-
-  const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
-                        Math.abs(targetPos.tileY - playerPos.tileY));
-  if (dist <= 1) {
-    const r = executeInteract(world, eid, slot, a.entityId);
-    if (!r.ok) rejectAction(world, eid, r.reason);
-  } else {
-    world.pendingInteracts.set(eid, { targetEntityId: a.entityId });
-    setMoveTarget(eid, targetPos.tileX, targetPos.tileY, world);
-  }
+  scheduleOrExecute(world, eid, slot, ClientAction.Interact,
+    { kind: 'entity', entityId: a.entityId }, 1,
+    (w, e, s) => executeInteract(w, e, s, a.entityId),
+  );
 }
 
 function handleTransfer(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
   const a = action as DecodedActionTransfer;
-  const t = requireAdjacentTarget(eid, a.containerId, world);
-  if (!t.ok) { rejectAction(world, eid, t.reason); return; }
-
-  if (t.blueprintId !== BlueprintType.StorageChest) {
+  const targetPos = world.entities.position.get(a.containerId);
+  const bp = world.entities.blueprint.get(a.containerId);
+  if (!targetPos || !bp) {
+    rejectAction(world, eid, { code: 'target_missing', targetEntityId: a.containerId });
+    return;
+  }
+  if (bp.blueprintId !== BlueprintType.StorageChest) {
     rejectAction(world, eid, {
       code: 'wrong_target_kind', targetEntityId: a.containerId,
-      expected: 'storage chest', got: world.bpName(t.blueprintId).toLowerCase(),
+      expected: 'storage chest', got: world.bpName(bp.blueprintId).toLowerCase(),
     });
     return;
   }
 
+  scheduleOrExecute(world, eid, slot, ClientAction.Transfer,
+    { kind: 'entity', entityId: a.containerId }, 1,
+    (w, e, s) => doTransfer(w, e, s, a),
+  );
+}
+
+function doTransfer(world: GameWorld, eid: number, slot: PlayerSlot, a: DecodedActionTransfer): ActionResult {
+  if (!world.entities.exists(a.containerId)) {
+    return Err({ code: 'target_missing', targetEntityId: a.containerId });
+  }
   const r = a.direction === 0
     ? world.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId, a.quantity)
     : world.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId, a.quantity);
-  if (!r.ok) { rejectAction(world, eid, r.reason); return; }
+  if (!r.ok) return r;
   slot.connection.onInventoryChanged(eid, world);
   slot.connection.onContainerOpen(eid, a.containerId, world);
+  return Ok;
 }
 
 function handleDialogueSelect(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
   const a = action as DecodedActionDialogueSelect;
-  const t = requireAdjacentTarget(eid, a.npcEntityId, world);
-  if (!t.ok) { rejectAction(world, eid, t.reason); return; }
-
-  const dialogue = getDialogue(t.blueprintId);
-  if (!dialogue) {
-    rejectAction(world, eid, { code: 'dialogue_closed' });
+  if (!world.entities.position.get(a.npcEntityId) || !world.entities.blueprint.get(a.npcEntityId)) {
+    rejectAction(world, eid, { code: 'target_missing', targetEntityId: a.npcEntityId });
     return;
   }
+  scheduleOrExecute(world, eid, slot, ClientAction.DialogueSelect,
+    { kind: 'entity', entityId: a.npcEntityId }, 1,
+    (w, e, s) => doDialogueSelect(w, e, s, a),
+  );
+}
 
+function doDialogueSelect(world: GameWorld, eid: number, slot: PlayerSlot, a: DecodedActionDialogueSelect): ActionResult {
+  const bp = world.entities.blueprint.get(a.npcEntityId);
+  if (!bp) return Err({ code: 'target_missing', targetEntityId: a.npcEntityId });
+  const dialogue = getDialogue(bp.blueprintId);
+  if (!dialogue) return Err({ code: 'dialogue_closed' });
   const option = dialogue.options.find(o => o.optionId === a.optionId);
-  if (!option) {
-    rejectAction(world, eid, { code: 'dialogue_option_invalid', optionId: a.optionId });
-    return;
-  }
-
+  if (!option) return Err({ code: 'dialogue_option_invalid', optionId: a.optionId });
   if (option.type === 'talk' && option.response) {
     slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-      greeting: option.response,
-      options: dialogue.options,
+      greeting: option.response, options: dialogue.options,
     });
   } else if (option.type === 'trade' && option.trades) {
     slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-      greeting: dialogue.greeting,
-      options: [{ ...option }],
+      greeting: dialogue.greeting, options: [{ ...option }],
     });
   }
+  return Ok;
 }
 
 function handleTrade(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {
   const a = action as DecodedActionTrade;
-  const t = requireAdjacentTarget(eid, a.npcEntityId, world);
-  if (!t.ok) { rejectAction(world, eid, t.reason); return; }
-
-  const dialogue = getDialogue(t.blueprintId);
-  if (!dialogue) {
-    rejectAction(world, eid, { code: 'dialogue_closed' });
+  if (!world.entities.position.get(a.npcEntityId) || !world.entities.blueprint.get(a.npcEntityId)) {
+    rejectAction(world, eid, { code: 'target_missing', targetEntityId: a.npcEntityId });
     return;
   }
+  scheduleOrExecute(world, eid, slot, ClientAction.Trade,
+    { kind: 'entity', entityId: a.npcEntityId }, 1,
+    (w, e, s) => doTrade(w, e, s, a),
+  );
+}
+
+function doTrade(world: GameWorld, eid: number, slot: PlayerSlot, a: DecodedActionTrade): ActionResult {
+  const bp = world.entities.blueprint.get(a.npcEntityId);
+  if (!bp) return Err({ code: 'target_missing', targetEntityId: a.npcEntityId });
+
+  const dialogue = getDialogue(bp.blueprintId);
+  if (!dialogue) return Err({ code: 'dialogue_closed' });
 
   // Find the trade across all options
   let trade: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number } | undefined;
@@ -366,41 +390,34 @@ function handleTrade(world: GameWorld, eid: number, slot: PlayerSlot, action: De
     if (opt.trades) trade = opt.trades.find(t => t.tradeId === a.tradeId);
     if (trade) break;
   }
-  if (!trade) {
-    rejectAction(world, eid, { code: 'trade_unavailable', tradeId: a.tradeId });
-    return;
-  }
+  if (!trade) return Err({ code: 'trade_unavailable', tradeId: a.tradeId });
 
   // Hermit first-time free gift check
-  if (t.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
+  if (bp.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
     if (slot.playerFlags.has('hermit_gift')) {
-      rejectAction(world, eid, { code: 'trade_unavailable', tradeId: a.tradeId });
-      return;
+      return Err({ code: 'trade_unavailable', tradeId: a.tradeId });
     }
     world.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
     slot.playerFlags.add('hermit_gift');
     slot.connection.onInventoryChanged(eid, world);
     world.emitEvent(eid, world.makeEvent('trade_complete', {
-      npcEntityId: a.npcEntityId, npcName: world.bpName(t.blueprintId),
+      npcEntityId: a.npcEntityId, npcName: world.bpName(bp.blueprintId),
       gaveBlueprintId: 0, gaveName: '', gaveQuantity: 0,
       receivedBlueprintId: trade.givesBlueprint, receivedName: world.bpName(trade.givesBlueprint),
       receivedQuantity: trade.givesQty,
     }));
-    return;
+    return Ok;
   }
 
   // Normal trade: check player has the required items
   if (trade.wantsBlueprint > 0) {
     const inv = world.inventoryMgr.get(eid);
-    if (!inv) return;
+    if (!inv) return Ok;
     let have = 0;
     for (const item of inv.items) {
       if (item.blueprintId === trade.wantsBlueprint) have += item.quantity;
     }
-    if (have < trade.wantsQty) {
-      rejectAction(world, eid, { code: 'missing_materials', recipeId: a.tradeId });
-      return;
-    }
+    if (have < trade.wantsQty) return Err({ code: 'missing_materials', recipeId: a.tradeId });
     let remaining = trade.wantsQty;
     for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {
       if (inv.items[i].blueprintId === trade.wantsBlueprint) {
@@ -412,19 +429,17 @@ function handleTrade(world: GameWorld, eid: number, slot: PlayerSlot, action: De
     world.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
     slot.connection.onInventoryChanged(eid, world);
     world.emitEvent(eid, world.makeEvent('trade_complete', {
-      npcEntityId: a.npcEntityId, npcName: world.bpName(t.blueprintId),
+      npcEntityId: a.npcEntityId, npcName: world.bpName(bp.blueprintId),
       gaveBlueprintId: trade.wantsBlueprint, gaveName: world.bpName(trade.wantsBlueprint),
       gaveQuantity: trade.wantsQty,
       receivedBlueprintId: trade.givesBlueprint, receivedName: world.bpName(trade.givesBlueprint),
       receivedQuantity: trade.givesQty,
     }));
   }
+  return Ok;
 }
 
 function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId: number, tileX: number, tileY: number): void {
-  const playerPos = world.entities.position.get(eid);
-  if (!playerPos) return;
-
   if (tileX < 0 || tileX >= world.map.width || tileY < 0 || tileY >= world.map.height) {
     rejectAction(world, eid, { code: 'tile_out_of_bounds', tileX, tileY });
     return;
@@ -443,7 +458,7 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
     return;
   }
 
-  // Cooking
+  // Cooking — target is the campfire entity at (tileX, tileY).
   if (item.blueprintId === BlueprintType.RawFish || item.blueprintId === BlueprintType.RawMeat) {
     const campfireEid = world.occupancy.get(tileX, tileY);
     const campBp = campfireEid ? world.entities.blueprint.get(campfireEid) : undefined;
@@ -454,36 +469,56 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
       });
       return;
     }
-    const cookDist = Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY));
-    if (cookDist > 1) {
-      rejectAction(world, eid, { code: 'not_adjacent', targetEntityId: campfireEid, dist: cookDist });
-      return;
-    }
-
-    const outputBp = item.blueprintId === BlueprintType.RawFish ? BlueprintType.CookedFish : BlueprintType.CookedMeat;
-    world.inventoryMgr.removeItem(eid, itemId, 1);
-    world.inventoryMgr.addItem(eid, outputBp, 1);
-    slot.connection.onInventoryChanged(eid, world);
-    world.emitEvent(eid, world.makeEvent('item_cooked', {
-      inputBlueprintId: item.blueprintId, inputName: world.bpName(item.blueprintId),
-      outputBlueprintId: outputBp, outputName: world.bpName(outputBp),
-    }));
+    scheduleOrExecute(world, eid, slot, ClientAction.UseItemAt,
+      { kind: 'entity', entityId: campfireEid }, 1,
+      (w, e, s) => doCook(w, e, s, itemId, item.blueprintId),
+    );
     return;
   }
 
-  // Placing
+  // Placing — defer with arrival range 2. setMoveTarget('near') routes to a
+  // walkable adjacent tile if the goal itself is unwalkable (e.g. placing a
+  // wooden floor on a river tile), so the LLM doesn't have to pick a
+  // standing position.
   if (bp.category !== 'placeable') {
     rejectAction(world, eid, { code: 'not_placeable', itemId });
     return;
   }
-  if (Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) > 2) {
-    rejectAction(world, eid, { code: 'not_adjacent', targetEntityId: 0, dist: Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) });
-    return;
+
+  scheduleOrExecute(world, eid, slot, ClientAction.UseItemAt,
+    { kind: 'tile', x: tileX, y: tileY }, 2,
+    (w, e, s) => doPlace(w, e, s, itemId, tileX, tileY),
+  );
+}
+
+function doCook(world: GameWorld, eid: number, slot: PlayerSlot, itemId: number, expectedBlueprintId: number): ActionResult {
+  const inv = world.inventoryMgr.get(eid);
+  const item = inv ? findItem(inv, itemId) : undefined;
+  if (!item || item.blueprintId !== expectedBlueprintId) {
+    return Err({ code: 'item_missing', itemId });
   }
+  const outputBp = item.blueprintId === BlueprintType.RawFish ? BlueprintType.CookedFish : BlueprintType.CookedMeat;
+  world.inventoryMgr.removeItem(eid, itemId, 1);
+  world.inventoryMgr.addItem(eid, outputBp, 1);
+  slot.connection.onInventoryChanged(eid, world);
+  world.emitEvent(eid, world.makeEvent('item_cooked', {
+    inputBlueprintId: item.blueprintId, inputName: world.bpName(item.blueprintId),
+    outputBlueprintId: outputBp, outputName: world.bpName(outputBp),
+  }));
+  return Ok;
+}
+
+function doPlace(world: GameWorld, eid: number, slot: PlayerSlot, itemId: number, tileX: number, tileY: number): ActionResult {
+  // Re-resolve the item — could have been dropped/equipped/consumed mid-walk.
+  const inv = world.inventoryMgr.get(eid);
+  const item = inv ? findItem(inv, itemId) : undefined;
+  if (!item) return Err({ code: 'item_missing', itemId });
+  const bp = getBlueprint(item.blueprintId);
+  if (!bp || bp.category !== 'placeable') return Err({ code: 'not_placeable', itemId });
+
   const buildingType = blueprintToBuilding(item.blueprintId);
   if (world.occupancy.isOccupied(tileX, tileY)) {
-    rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by: 'entity' });
-    return;
+    return Err({ code: 'tile_blocked', tileX, tileY, by: 'entity' });
   }
   if (!world.map.isPlaceable(tileX, tileY, buildingType)) {
     const building = world.map.getBuilding(tileX, tileY);
@@ -492,8 +527,7 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
       building !== Building.None ? 'wall'
       : terrain === Terrain.Water || terrain === Terrain.River ? 'water'
       : 'rock';
-    rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by });
-    return;
+    return Err({ code: 'tile_blocked', tileX, tileY, by });
   }
 
   if (buildingType !== null) {
@@ -505,16 +539,14 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
     if (item.blueprintId === BlueprintType.WoodenDoor) {
       const floor = world.map.getBuilding(tileX, tileY);
       if (floor !== Building.WoodenFloor && floor !== Building.StoneFloor) {
-        rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-        return;
+        return Err({ code: 'tile_blocked', tileX, tileY, by: 'wall' });
       }
       const wallAt = (x: number, y: number) =>
         world.map.inBounds(x, y) && world.map.getBuilding(x, y) === Building.Wall;
       const ns = wallAt(tileX, tileY - 1) && wallAt(tileX, tileY + 1);
       const ew = wallAt(tileX - 1, tileY) && wallAt(tileX + 1, tileY);
       if (!ns && !ew) {
-        rejectAction(world, eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-        return;
+        return Err({ code: 'tile_blocked', tileX, tileY, by: 'wall' });
       }
     }
     world.inventoryMgr.removeItem(eid, itemId, 1);
@@ -531,6 +563,7 @@ function handleUseItemAt(world: GameWorld, eid: number, slot: PlayerSlot, itemId
     blueprintId: item.blueprintId, itemName: world.bpName(item.blueprintId),
     tileX, tileY,
   }));
+  return Ok;
 }
 
 // ---------------------------------------------------------------------------

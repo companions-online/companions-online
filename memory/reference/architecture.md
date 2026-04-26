@@ -42,8 +42,9 @@ GameWorld implements SystemState {
   moveStates, harvestStates, combatStates, consumableStates, critterStates
   treeResources, respawnQueue, playerRespawnTimers
 
-  // Pending async actions (walk-to-then-do)
-  pendingPickups, pendingInteracts
+  // Pending async actions (walk-to-then-do): pickup, interact, transfer,
+  // trade, dialogue_select, use_item_at — one queue, one resolver
+  pendingActions
 
   addPlayer(connection: PlayerConnection): entityId
   removePlayer(entityId)
@@ -109,9 +110,11 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 **Action rejection channel.** Invalid actions (walk into wall, pickup non-item, craft without materials, etc.) route through `rejectAction(world, eid, reason)` (exported from `server/src/world-actions.ts`) → `PlayerConnection.onActionRejected` rather than silently returning. `reason` is a discriminated union defined in `server/src/action-rejection.ts` (`RejectionReason`); `formatRejection(r)` renders it to LLM-readable text at the MCP boundary, same pattern as `GameEvent` / `formatEventText`. `McpConnection` resolves `awaitAction` immediately with `{ status: 'rejected', reason }`, and `mcp-tools.ts::doAction` returns `text(formatEnvelope(...), { isError: true })` with a `[rejected: ...]` prefix — envelope still renders so the LLM sees current state. `WebSocketConnection` no-ops (WS renders its own collision feedback); `HeadlessConnection` captures into `rejections[]` for tests. Add new variants to the union when new rejection sites appear — no catch-all variant.
 
-**ActionResult: helpers fail with structured reasons, handlers are shims.** Every mutating system helper that can reject (`setMoveTarget`, `startAttack`, `startHarvest`, `startConsume`, and the six `inventoryMgr.{equip,unequip,drop,craft,transferToContainer,transferFromContainer}`) returns `ActionResult = { ok: true } | { ok: false; reason: RejectionReason }` — defined alongside the union in `action-rejection.ts` with `Ok`, `OkValue<T>`, `Err(reason)` constructors (and `ActionResultOf<T>` for the `drop` case that carries the dropped item data). Validation (bounds, walkable, occupancy, target-exists, distance, weight, material, no-path) lives inside the helper; handlers pattern-match on the result and forward the reason via `rejectAction`. This kills the earlier "pre-validate in handler, re-validate in helper" duplication and eliminates the silent-failure class where a `void`/`false`-returning helper disagreed with a pre-check. The shared `requireAdjacentTarget(actorId, targetId, world, opts?)` helper in `server/src/action-helpers.ts` absorbs the `target_missing | wrong_target_kind | not_adjacent` preamble used by Transfer / DialogueSelect / Trade.
+**ActionResult: helpers fail with structured reasons, handlers are shims.** Every mutating system helper that can reject (`setMoveTarget`, `startAttack`, `startHarvest`, `startConsume`, and the six `inventoryMgr.{equip,unequip,drop,craft,transferToContainer,transferFromContainer}`) returns `ActionResult = { ok: true } | { ok: false; reason: RejectionReason }` — defined alongside the union in `action-rejection.ts` with `Ok`, `OkValue<T>`, `Err(reason)` constructors (and `ActionResultOf<T>` for the `drop` case that carries the dropped item data). Validation (bounds, walkable, occupancy, target-exists, distance, weight, material, no-path) lives inside the helper; handlers pattern-match on the result and forward the reason via `rejectAction`. This kills the earlier "pre-validate in handler, re-validate in helper" duplication and eliminates the silent-failure class where a `void`/`false`-returning helper disagreed with a pre-check. (Transfer / DialogueSelect / Trade no longer use the `requireAdjacentTarget` preamble — they go through the unified pending-action queue, which resolves adjacency on arrival.)
 
-**`setMoveTarget` mode: `'exact'` vs `'near'`.** Two call intents must coexist: player `move_to(x,y)` means "go exactly to that tile — if it's blocked, tell me", while pickup / interact / attack-chase mean "go near that tile — route to an adjacent walkable cell if the goal itself is blocked". `setMoveTarget(eid, x, y, world, mode)` takes `'exact'` (rejects a blocked goal tile with `tile_blocked`) or `'near'` (default; relies on `findPath`'s internal blocked-goal → adjacent-walkable fallback). `handleMoveTo` uses `'exact'`; every other caller uses the default.
+**`setMoveTarget` mode: `'exact'` vs `'near'`.** Two call intents must coexist: player `move_to(x,y)` means "go exactly to that tile — if it's blocked, tell me", while pickup / interact / attack-chase / pending-action dispatch mean "go near that tile — route to an adjacent walkable cell if the goal itself is blocked". `setMoveTarget(eid, x, y, world, mode)` takes `'exact'` (rejects a blocked goal tile with `tile_blocked`) or `'near'` (default; relies on `findPath`'s internal blocked-goal → adjacent-walkable fallback). `handleMoveTo` uses `'exact'`; every other caller uses the default. The `'near'` fallback is what makes `use_item_at(woodFloor, riverX, riverY)` from 5 tiles away work — the river tile itself isn't walkable, so the player routes to a walkable shore tile within range 2 and places from there.
+
+**Unified `pendingActions` queue.** Six actions need "walk to a target, then perform an effect" — pickup, interact, transfer, trade, dialogue_select, use_item_at. They share one map (`world.pendingActions`) and one resolver (`runPendingActions` in `server/src/pending-actions.ts`), running in the tick phase right after movement. Each handler dispatches via `scheduleOrExecute(world, eid, slot, kind, target, arrivalRange, executeFn)`: if the actor is already in range, run the effect synchronously (zero-tick completion preserves MCP `awaitAction`'s same-tick resolve); otherwise call `setMoveTarget('near')` and queue a `PendingAction`. The closure re-validates on arrival so a moving target / depleted inventory / dialogue option that vanished produces the right rejection. Resolver responsibilities: detect arrival, target loss (entity destroyed → `target_missing`), path failure (movement gave up → retry once, surface `no_path` if still unreachable), and entity re-aim (re-`setMoveTarget` whenever a mobile target's tile coord changes). Cancellation: `cancelConflictingStates` clears the entry on any new action and emits `action_interrupted` only when the new action's kind differs (same-kind re-issue is treated as a re-aim and stays quiet). Replaced two parallel `pendingPickups` / `pendingInteracts` maps that ignored `setMoveTarget`'s `Err` and silently dropped no-path failures — the unified path makes every walk-to-act failure surface a structured rejection.
 
 ## SystemState Interface
 
@@ -125,9 +128,7 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
 3. World pulse — resource respawns (trees) + creature respawns (night skeleton spawner) + creature lifecycle (skeleton sun damage, returns deaths → processEntityDeath(killerEntityId=0))
 4. Movement (A* pathfinding, occupancy collision, wait-and-repath; clearMoveTarget fires Idle on path end / unreachable)
-5. Arrival-triggered resolvers (walk-to-then-do):
-   5a. Pending pickups — dist check, pick up if adjacent
-   5b. Pending interacts — dist check, execute interact if adjacent
+5. Pending actions resolver — single queue covering pickup, interact, transfer, trade, dialogue_select, use_item_at. Detects arrival, target-loss, path failure, entity re-aim.
 6. Harvest — pathfinding→channel transition (arrival flip) + channel tick + yield
 7. Consumables — channel tick + heal
 8. Combat (damage, death detection) → returns CombatResult { deaths, hits }
@@ -137,15 +138,16 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 20Hz tick rate (50ms budget).
 
-**Why arrival-triggered resolvers sit together right after movement**: all three
-(pickups, interacts, harvest's pathfinding→channel flip) check `hasMoveTarget`
-to see whether the player has actually finished walking. Before this order,
-harvest ran *before* movement, so on the arrival tick it saw a still-pending
-move target, skipped the transition, and let `clearMoveTarget` flip the player to
-`Idle`. The MCP tool then saw `Idle` on broadcast and resolved as complete —
-with no yield. Placing harvest after movement lets the flip happen atomically
-in the same tick as arrival, so the MCP player sees `Harvesting` and keeps
-awaiting. Pickups and interacts already lived here for the same reason.
+**Why arrival-triggered resolvers sit together right after movement**: both
+the unified pending-actions resolver and harvest's pathfinding→channel flip
+check `hasMoveTarget` to see whether the player has actually finished walking.
+Before this order, harvest ran *before* movement, so on the arrival tick it saw
+a still-pending move target, skipped the transition, and let `clearMoveTarget`
+flip the player to `Idle`. The MCP tool then saw `Idle` on broadcast and
+resolved as complete — with no yield. Placing harvest after movement lets the
+flip happen atomically in the same tick as arrival, so the MCP player sees
+`Harvesting` and keeps awaiting. The pending-actions resolver lives at the
+same phase boundary for the same reason.
 
 ## Action System (17 actions)
 

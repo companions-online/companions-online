@@ -1,8 +1,7 @@
 /**
  * Edge-case tests for the movement / pathfinding / combat-chase pipeline.
  *
- * Each block targets one observed defect and is written against the *desired*
- * behaviour. Tests that fail today are the spec for the upcoming fix.
+ * Each block pins down one previously-observed defect.
  *
  *   1. MCP move_to into a building wall  -> tile_blocked rejection
  *   2. MCP move_to onto a closed door    -> tile_blocked by 'door'
@@ -11,6 +10,8 @@
  *   5. Aggro critter chasing an unreachable target gives up + Idle
  *   6. Door close guard against occupancy phasing
  *   7. Walled-in player + wolf in aggroRange: wolf stays in wander
+ *   8. MCP pickup with player boxed in   -> no_path rejection
+ *   9. MCP pickup with item boxed in     -> no_path rejection
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -119,7 +120,7 @@ describe('Movement edge cases — MCP rejection plumbing', () => {
     expect(hasMoveTarget(pid, w)).toBe(false);
   });
 
-  it('rejects MoveTo onto a closed-door entity (BUG: currently silent)', () => {
+  it('rejects MoveTo onto a closed-door entity', () => {
     placeClosedDoor(w, 13, 10);
     w.setAction(pid, { action: ClientAction.MoveTo, tileX: 13, tileY: 10 } as any);
     w.runTick();
@@ -132,7 +133,7 @@ describe('Movement edge cases — MCP rejection plumbing', () => {
     expect(hasMoveTarget(pid, w)).toBe(false);
   });
 
-  it('rejects MoveTo to an unreachable tile with no_path (BUG: currently silent)', () => {
+  it('rejects MoveTo to an unreachable tile with no_path', () => {
     // Wall-ring around (20,20); player at (10,10) cannot reach inside.
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -234,7 +235,7 @@ describe('Movement edge cases — critter stuck animation', () => {
     expect(endPos.tileX !== startPos.tileX || endPos.tileY !== startPos.tileY).toBe(true);
   });
 
-  it('aggro critter against an unreachable target gives up (BUG: chases forever today)', () => {
+  it('aggro critter against an unreachable target gives up', () => {
     // Skeleton at (30,30); player at (40,30) walled into a sealed room.
     const skel = spawnCritterAt(w, BlueprintType.Skeleton, 30, 30, 2.5);
     const player = spawnCritterAt(w, BlueprintType.Player, 40, 30, 3);
@@ -354,6 +355,68 @@ describe('Movement edge cases — door close guard (occupancy phasing)', () => {
 
     // Entire flow: zero occupancy invariant violations.
     expect(w.log.errorCount).toBe(0);
+  });
+});
+
+describe('Movement edge cases — pickup pathfinding rejection', () => {
+  let w: GameWorld;
+  let conn: HeadlessConnection;
+  let pid: number;
+
+  beforeEach(() => {
+    w = makeGameWorld();
+    conn = new HeadlessConnection();
+    pid = placePlayerAt(w, conn, 10, 10);
+    conn.rejections.length = 0;
+  });
+
+  /** Drop a ground item entity at (x,y). Mirrors handleDrop's footprint —
+   *  position + blueprint, no occupancy. */
+  function placeGroundItem(x: number, y: number, bp: BlueprintType = BlueprintType.Wood): number {
+    const eid = w.entities.create();
+    w.entities.position.set(eid, { tileX: x, tileY: y });
+    w.entities.blueprint.set(eid, { blueprintId: bp, variant: 0 });
+    return eid;
+  }
+
+  it('rejects Pickup with no_path when the player is boxed in', () => {
+    // Wall the player into their tile — every neighbor of (10,10) blocked.
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        w.map.setBuilding(10 + dx, 10 + dy, Building.Wall);
+      }
+    }
+    const itemId = placeGroundItem(15, 15);
+
+    w.setAction(pid, { action: ClientAction.Pickup, entityId: itemId } as any);
+    w.runTick();
+
+    expect(conn.rejections).toHaveLength(1);
+    expect(conn.rejections[0]).toMatchObject({ code: 'no_path' });
+    expect(hasMoveTarget(pid, w)).toBe(false);
+    // Item still on the ground.
+    expect(w.entities.exists(itemId)).toBe(true);
+  });
+
+  it('rejects Pickup with no_path when the item is boxed in', () => {
+    // Player free to roam. Item walled into a 1x1 cell at (20,20) so no
+    // walkable adjacent tile exists for the chase fallback to land on.
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        w.map.setBuilding(20 + dx, 20 + dy, Building.Wall);
+      }
+    }
+    const itemId = placeGroundItem(20, 20);
+
+    w.setAction(pid, { action: ClientAction.Pickup, entityId: itemId } as any);
+    w.runTick();
+
+    expect(conn.rejections).toHaveLength(1);
+    expect(conn.rejections[0]).toMatchObject({ code: 'no_path' });
+    expect(hasMoveTarget(pid, w)).toBe(false);
+    expect(w.entities.exists(itemId)).toBe(true);
   });
 });
 
