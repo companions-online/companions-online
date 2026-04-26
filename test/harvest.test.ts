@@ -74,7 +74,7 @@ describe('Harvest system', () => {
     createTree(w, 11, 10);
     w.entities.clearDirty();
 
-    expect(startHarvest(player, 11, 10, w)).toBe(true);
+    expect(startHarvest(player, 11, 10, w).ok).toBe(true);
     expect(isHarvesting(player, w)).toBe(true);
 
     for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) runHarvest(w);
@@ -162,7 +162,7 @@ describe('Harvest system', () => {
     createTree(w, 11, 10);
     w.entities.clearDirty();
 
-    expect(startHarvest(player, 11, 10, w)).toBe(true);
+    expect(startHarvest(player, 11, 10, w).ok).toBe(true);
 
     for (let i = 0; i < 30; i++) {
       runHarvest(w);

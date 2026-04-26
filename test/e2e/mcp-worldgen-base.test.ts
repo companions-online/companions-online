@@ -32,7 +32,7 @@ function spawnMcpPlayerInsideBase(): { conn: McpConnection; envelope: string } {
   // Teleport into the base. addPlayer set occupancy at the auto-picked
   // spawn tile; clear it before re-seating so the grid stays consistent.
   const oldPos = world.entities.position.get(eid)!;
-  world.occupancy.clear(oldPos.tileX, oldPos.tileY);
+  world.occupancy.clear(oldPos.tileX, oldPos.tileY, eid);
   const tx = SPAWN_X + 5 + 4;
   const ty = SPAWN_Y + 5 + 2;
   world.entities.position.set(eid, { tileX: tx, tileY: ty });

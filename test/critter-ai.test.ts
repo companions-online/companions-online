@@ -137,8 +137,13 @@ describe('Critter AI', () => {
 
   it('notifyCritterAttacked emits aggro once per transition', () => {
     const skeleton = createCritter(w, BlueprintType.Skeleton, 40, 40, 2.5);
+    // Reachability gate needs a real position on the attacker so the internal
+    // startAttack probe can path to it — otherwise aggro is correctly denied
+    // and this unit test's bookkeeping assertions don't apply.
     const attacker1 = w.entities.create();
+    w.entities.position.set(attacker1, { tileX: 42, tileY: 40 });
     const attacker2 = w.entities.create();
+    w.entities.position.set(attacker2, { tileX: 41, tileY: 41 });
     initCritterForEntity(skeleton, w);
 
     const first = notifyCritterAttacked(skeleton, attacker1, w);

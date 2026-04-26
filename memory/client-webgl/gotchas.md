@@ -145,13 +145,17 @@ lightmap — you'll dim the UI.
 
 ## Lighting: walls + collides-entities block light but are themselves lit
 
-Blocker predicate: `!worldMap.isWalkable(x,y) || blockers.has(tile)`
+Blocker predicate: `!worldMap.isLightPassing(x,y) || blockers.has(tile)`
 where blockers = entities with `blueprint.collides && !(statusEffects
 & Open)`. A wall adjacent to a campfire: the line from fire to wall
 has no intermediate tiles, so the wall IS visited and gets its full
 tint. Walls BEHIND that wall have the adjacent wall as a blocker and
 stay dark. Relies on the seam fix above to not leak light through
 sprite gaps.
+
+`isLightPassing` (not `isWalkable`) because rivers became non-walkable
+but must still transmit light; water/rock still block both. Swapping
+to `!isWalkable` here would cast black shadows across every river.
 
 ## Lighting: terrain per-instance tileXY, not VS-derived
 
@@ -208,6 +212,26 @@ Attack + harvest overlays use `scale: 0.5, alpha: 0.5` to read as
 (1.0/1.0) — deliberate, the smoke is the main visual of a death. Don't
 re-export the sheet at half size; the scale param keeps asset authoring
 decoupled from per-effect presentation.
+
+## Floor top must redraw after overlay — water bite
+
+Floor tiles render as raised slabs (lifted top diamond). Adjacent grass
+tiles next to a floor-on-water get their corners pulled to
+`SHORE_HEIGHT` by the elevation flatten pass, tilting their diamond in
+screen space: the grass's N vertex lands several pixels higher than
+its S, stretching the diamond upward. Water overlays painted on that
+tilted grass (pass order: base → overlay → …) therefore extend into
+screen-Y rows occupied by the floor's LIFTED top, and since the
+overlay pass runs after base, water-colored pixels paint over the
+floor's top surface — a triangular "bite" on the NW corner of the
+slab.
+
+Fix: `terrain-instances.ts` emits one top-redraw instance per floor
+tile (copy of the base instance with lifted corners) into a dedicated
+buffer; `terrain-renderer.ts` draws it with the base program AFTER the
+overlay pass. The redraw overdraws any bite. Cost: one extra opaque
+quad per visible floor tile — negligible. If you ever collapse the
+top-redraw pass into the base pass, the bite will come back.
 
 ## Game events channel: point-to-point vs broadcast
 

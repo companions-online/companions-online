@@ -4,6 +4,7 @@ import { getWeight, findItem, getEquipped, canCraft, equipSlotToNumber } from '@
 import type { Inventory, InventoryItem } from '@shared/inventory.js';
 import type { Recipe } from '@shared/recipes.js';
 import type { SyncedInventoryItem } from '@shared/protocol/codec.js';
+import { Ok, OkValue, Err, type ActionResult, type ActionResultOf } from './action-rejection.js';
 
 export class InventoryManager {
   private inventories = new Map<number, Inventory>();
@@ -62,27 +63,26 @@ export class InventoryManager {
     return true;
   }
 
-  equip(entityId: number, itemId: number, quantity?: number): boolean {
+  equip(entityId: number, itemId: number, quantity?: number): ActionResult {
     const inv = this.inventories.get(entityId);
-    if (!inv) return false;
+    if (!inv) return Err({ code: 'item_missing', itemId });
 
     const item = findItem(inv, itemId);
-    if (!item) return false;
+    if (!item) return Err({ code: 'item_missing', itemId });
 
     const bp = getBlueprint(item.blueprintId);
-    if (!bp?.equipSlot) return false;
+    if (!bp?.equipSlot) return Err({ code: 'not_equippable', itemId });
 
     // If already equipped in the same slot, unequip (whole stack)
     if (item.equippedSlot) {
       item.equippedSlot = undefined;
-      return true;
+      return Ok;
     }
 
     // Split-equip: if caller requested fewer than the full stack, peel off
     // `quantity` into a new inventory entry marked equipped. The remainder
     // stays in the source stack, unequipped.
     if (quantity !== undefined && quantity > 0 && quantity < item.quantity) {
-      // Unequip any existing occupant of the target slot first
       const current = getEquipped(inv, bp.equipSlot);
       if (current) current.equippedSlot = undefined;
       item.quantity -= quantity;
@@ -92,36 +92,35 @@ export class InventoryManager {
         quantity,
         equippedSlot: bp.equipSlot,
       });
-      return true;
+      return Ok;
     }
 
-    // Unequip current item in that slot
     const current = getEquipped(inv, bp.equipSlot);
     if (current) {
       current.equippedSlot = undefined;
     }
 
     item.equippedSlot = bp.equipSlot;
-    return true;
+    return Ok;
   }
 
-  unequip(entityId: number, slot: EquipSlot): boolean {
+  unequip(entityId: number, slot: EquipSlot): ActionResult {
     const inv = this.inventories.get(entityId);
-    if (!inv) return false;
+    if (!inv) return Err({ code: 'slot_empty', slot });
 
     const item = getEquipped(inv, slot);
-    if (!item) return false;
+    if (!item) return Err({ code: 'slot_empty', slot });
 
     item.equippedSlot = undefined;
-    return true;
+    return Ok;
   }
 
-  drop(entityId: number, itemId: number, quantity?: number): { blueprintId: number; quantity: number } | null {
+  drop(entityId: number, itemId: number, quantity?: number): ActionResultOf<{ blueprintId: number; quantity: number }> {
     const inv = this.inventories.get(entityId);
-    if (!inv) return null;
+    if (!inv) return Err({ code: 'item_missing', itemId });
 
     const idx = inv.items.findIndex(i => i.itemId === itemId);
-    if (idx === -1) return null;
+    if (idx === -1) return Err({ code: 'item_missing', itemId });
 
     const item = inv.items[idx];
     const take = quantity !== undefined && quantity > 0 && quantity < item.quantity
@@ -133,19 +132,18 @@ export class InventoryManager {
     } else {
       item.quantity -= take;
     }
-    return result;
+    return OkValue(result);
   }
 
-  craft(entityId: number, recipeId: number): boolean {
+  craft(entityId: number, recipeId: number): ActionResult {
     const inv = this.inventories.get(entityId);
-    if (!inv) return false;
+    if (!inv) return Err({ code: 'recipe_unknown', recipeId });
 
     const recipe = getRecipe(recipeId);
-    if (!recipe) return false;
+    if (!recipe) return Err({ code: 'recipe_unknown', recipeId });
 
-    if (!canCraft(recipe, inv)) return false;
+    if (!canCraft(recipe, inv)) return Err({ code: 'missing_materials', recipeId });
 
-    // Check weight of output
     const outBp = getBlueprint(recipe.output.blueprintId);
     const outputWeight = (outBp?.weight ?? 0) * recipe.output.quantity;
     let inputWeight = 0;
@@ -153,16 +151,16 @@ export class InventoryManager {
       const ibp = getBlueprint(input.blueprintId);
       inputWeight += (ibp?.weight ?? 0) * input.quantity;
     }
-    if (getWeight(inv) - inputWeight + outputWeight > inv.maxWeight) return false;
+    if (getWeight(inv) - inputWeight + outputWeight > inv.maxWeight) {
+      return Err({ code: 'inventory_full', weight: getWeight(inv), maxWeight: inv.maxWeight });
+    }
 
-    // Consume inputs
     for (const input of recipe.inputs) {
       this.consumeByBlueprint(inv, input.blueprintId, input.quantity);
     }
 
-    // Produce output
     this.addItem(entityId, recipe.output.blueprintId, recipe.output.quantity);
-    return true;
+    return Ok;
   }
 
   destroy(entityId: number): void {
@@ -184,30 +182,34 @@ export class InventoryManager {
     }));
   }
 
-  transferToContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): boolean {
+  transferToContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): ActionResult {
     const playerInv = this.get(playerEid);
     const containerInv = this.get(containerEid);
-    if (!playerInv || !containerInv) return false;
+    if (!playerInv || !containerInv) return Err({ code: 'target_missing', targetEntityId: containerEid });
     const item = findItem(playerInv, itemId);
-    if (!item) return false;
+    if (!item) return Err({ code: 'item_missing', itemId });
     const take = quantity !== undefined && quantity > 0 && quantity < item.quantity ? quantity : item.quantity;
     const result = this.addItem(containerEid, item.blueprintId, take);
-    if (!result.success) return false;
+    if (!result.success) {
+      return Err({ code: 'inventory_full', weight: getWeight(containerInv), maxWeight: containerInv.maxWeight });
+    }
     this.removeItem(playerEid, itemId, take);
-    return true;
+    return Ok;
   }
 
-  transferFromContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): boolean {
+  transferFromContainer(playerEid: number, containerEid: number, itemId: number, quantity?: number): ActionResult {
     const containerInv = this.get(containerEid);
     const playerInv = this.get(playerEid);
-    if (!containerInv || !playerInv) return false;
+    if (!containerInv || !playerInv) return Err({ code: 'target_missing', targetEntityId: containerEid });
     const item = findItem(containerInv, itemId);
-    if (!item) return false;
+    if (!item) return Err({ code: 'item_missing', itemId });
     const take = quantity !== undefined && quantity > 0 && quantity < item.quantity ? quantity : item.quantity;
     const result = this.addItem(playerEid, item.blueprintId, take);
-    if (!result.success) return false;
+    if (!result.success) {
+      return Err({ code: 'inventory_full', weight: getWeight(playerInv), maxWeight: playerInv.maxWeight });
+    }
     this.removeItem(containerEid, itemId, take);
-    return true;
+    return Ok;
   }
 
   private consumeByBlueprint(inv: Inventory, blueprintId: number, quantity: number): void {

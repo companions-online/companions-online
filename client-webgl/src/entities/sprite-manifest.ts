@@ -104,4 +104,8 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   // WoodenWall is a building tile (wall-sprites.ts draws it in the world). This
   // entry only feeds the inventory icon and placement preview.
   { blueprintId: BlueprintType.WoodenWall,   name: 'WoodenWall',   frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
+  // WoodenFloor / StoneFloor are building tiles rendered by the terrain system
+  // in-world. Inventory-icon entries kept commented until PNG assets exist.
+  // { blueprintId: BlueprintType.WoodenFloor,  name: 'WoodenFloor',  frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
+  // { blueprintId: BlueprintType.StoneFloor,   name: 'StoneFloor',   frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
 ];

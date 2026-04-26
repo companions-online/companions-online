@@ -36,19 +36,19 @@ entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap 
 ## Terrain (chunk-sparse)
 ```
 terrain/elevation.ts         buildElevationGridChunk(seed, worldMap, cx, cy) + getTileCornersLocal. Regenerated per chunk rebuild, not persisted.
-terrain/terrain-instances.ts buildChunkTerrainData — base (256) + overlay instances for one chunk. Reads 1-tile border. Stride 48 base / 52 overlay; writes per-instance a_tileXY.
-terrain/terrain-renderer.ts  GL terrain renderer. uploadInstances() full-replaces both buffers on any chunk change. Binds lightmap to TEXTURE2; passes lightmap uniforms to both passes.
+terrain/terrain-instances.ts buildChunkTerrainData — base (256) + overlay + side + top-redraw instances for one chunk. Reads 1-tile border. Strides: 48 base / 52 overlay / 44 side / 48 top. Floor tiles (WoodenFloor/StoneFloor) lift their base-diamond top corners by FLOOR_LIFT_Z * PX_PER_Z, emit up to 2 side quads (SE/SW faces; shared interior edges suppressed), and emit 1 top-redraw instance (copy of the lifted base) for the post-overlay pass.
+terrain/terrain-renderer.ts  GL terrain renderer. uploadInstances() full-replaces four buffers on any chunk change. Four-pass render: base → overlay → floor top-redraw (base program, topBuffer) → side (dedicated side program). Binds lightmap to TEXTURE2; passes lightmap uniforms to every pass.
 terrain/texture.ts           generateRawTerrainTiles — procedural tile textures (OffscreenCanvas).
 terrain/texture-arrays.ts    buildTerrainTextureArray / buildMaskTextureArray — upload to texture arrays.
 terrain/blend-masks.ts       generateBlendMasks — blendomatic masks (CPU-only, static).
-terrain/terrain-blend.ts     gatherInfluences + pickAdjacentMaskId + pickDiagonalMaskIds (blendomatic math).
-terrain/shaders.ts           Terrain base + overlay VS/FS source strings. FS multiplies final RGB by u_lightmap sample at v_tileXY.
+terrain/terrain-blend.ts     gatherInfluences + pickAdjacentMaskId + pickDiagonalMaskIds (blendomatic math). TERRAIN_NO_OVERLAY flags floors so they never contribute an overlay onto neighbors (hard edges).
+terrain/shaders.ts           Terrain base + overlay + side VS/FS source strings. TILE_SIDE_VS uses rectangular corner UVs (all v=0.5, u varies 0→1) for a vertical-stripe slice of the top texture. TILE_SIDE_FS is opaque and applies SIDE_SHADE = 0.82 darkening. FS multiplies final RGB by u_lightmap sample at v_tileXY.
 ```
 
 ## Lighting
 ```
 lighting/lighting.ts         LightingManager — per-frame RGB lightmap (ambient + shadowcast point lights), uploaded as GL texture. Advances gameMinute locally between server syncs.
-lighting/shadowcast.ts       Per-target Bresenham raycast with blocker predicate (worldMap.isWalkable + collides-entities). Strictly correct wall occlusion.
+lighting/shadowcast.ts       Per-target Bresenham raycast with blocker predicate (!worldMap.isLightPassing + collides-entities). Split from isWalkable so rivers are non-walkable but still transmit light. Strictly correct wall occlusion.
 ```
 
 ## Buildings

@@ -1,5 +1,5 @@
 import { MAP_SIZE, INTEREST_RANGE } from '../shared/src/constants.js';
-import { Terrain, Building } from '../shared/src/terrain.js';
+import { Terrain, Building, isWalkable } from '../shared/src/terrain.js';
 import { tileChar } from '../shared/src/ascii.js';
 import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
 import { ActionType } from '../shared/src/actions.js';
@@ -32,15 +32,14 @@ export function buildCursorContext(playerX: number, playerY: number, dx: number,
   const gi = ty * MAP_SIZE + tx;
   const t = state.terrainGrid[gi] as Terrain;
   const b = state.buildingsGrid[gi] as Building;
-  const isWalkable = !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
-    && (b === Building.None || b === Building.WoodenFloor || b === Building.StoneFloor);
+  const walkable = isWalkable(t, b);
   const entAt = entityAtWorldTile(tx, ty);
   const handItem = state.inventory.find(i => i.equippedSlot === 1);
 
   return {
     targetX: tx,
     targetY: ty,
-    isWalkable,
+    isWalkable: walkable,
     terrainType: t,
     entityAtTarget: entAt,
     equippedHandBlueprintId: handItem?.blueprintId,

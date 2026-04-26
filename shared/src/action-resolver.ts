@@ -46,12 +46,11 @@ export function resolveAction(ctx: ActionContext): DecodedAction | null {
     return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
   }
 
-  // Water tile with fishing rod
-  if (ctx.terrainType === Terrain.Water || ctx.terrainType === Terrain.River) {
-    if (ctx.equippedHandBlueprintId === BlueprintType.FishingRod) {
-      return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
-    }
-    return null;
+  // Water / River with fishing rod → Fish. Otherwise fall through to the
+  // walkability check so bridged rivers (river + floor) route to MoveTo.
+  if ((ctx.terrainType === Terrain.Water || ctx.terrainType === Terrain.River) &&
+      ctx.equippedHandBlueprintId === BlueprintType.FishingRod) {
+    return { action: ClientAction.Harvest, tileX: ctx.targetX, tileY: ctx.targetY };
   }
 
   if (!ctx.isWalkable) return null;

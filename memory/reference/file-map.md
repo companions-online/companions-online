@@ -6,7 +6,7 @@ index.ts                 Barrel re-export of everything
 constants.ts             TICK_RATE=20, MAP_SIZE=128, CHUNK_SIZE=16, VIEW/INTEREST_RANGE, SPAWN, TICKS_PER_GAME_MINUTE/HOUR, GAME_MINUTES_PER_DAY, TICKS_PER_GAME_DAY
 lighting.ts              Day/night keyframes, ambientTint, gameMinuteFromTick/gameHourFromTick, KEYFRAME_HOURS, TWILIGHT_TICK_OFFSET
 actions.ts               ActionType enum (Idle..Consuming), ClientAction enum (Cancel..Say, 17 total)
-blueprints.ts            Blueprint interface + ~35 types, blueprintToBuilding() mapping (+ optional lightRadius, lightColor on Blueprint; Campfire sets both)
+blueprints.ts            Blueprint interface + ~37 types, blueprintToBuilding() maps WoodenWall→Wall, WoodenFloor→WoodenFloor, StoneFloor→StoneFloor (+ optional lightRadius, lightColor on Blueprint; Campfire sets both)
 recipes.ts               17 crafting recipes (tools, weapons, armor, placeables, bandage)
 inventory.ts             InventoryItem/Inventory types, pure helpers (getWeight, canCraft, equipSlot conversions)
 loot-tables.ts           Drop tables per creature (deer→hide+meat, skeleton→iron+rock, etc.)
@@ -16,7 +16,7 @@ ascii.ts                 terrainChar, buildingChar, blueprintChar (with door ope
 components.ts            ComponentBit enum (7 synced components), wire data interfaces
 coordinates.ts           tileToScreen / screenToTile isometric helpers
 direction.ts             Direction enum (8-dir), DX/DY arrays, isDiagonal
-terrain.ts               Terrain/Building enums (Wall, Floor, Fence — no Door), isWalkable
+terrain.ts               Terrain/Building enums (Wall, WoodenFloor, StoneFloor, Fence — no Door); isWalkable (river walkable only when bridged by floor); isPlaceable (terrain, current, newBuilding|null) for handleUseItemAt pre-check; isLightPassing for shadowcast
 status-effects.ts        StatusEffect bitmask (Poisoned, Slowed, Hasted, Stunned, Open, Placed) + isPlaced(se) helper
 protocol/opcodes.ts      Client/Server opcodes incl ContainerOpen, DialogueOpen, ChatMessage, EntityMeta=0x36, EnvironmentSync, GameEvents=0x37; DeltaSectionTag.Environment; WireEventType enum (numeric subset of GameEventType for the wire)
 protocol/codec.ts        BufferWriter/Reader, encode/decode for all message types incl ServerCommand action, EntityMeta msg, GameEvents batch (encodeGameEvents/decodeGameEvents + WireEvent discriminated union), DecodedAction union
@@ -30,13 +30,18 @@ world/index.ts           Barrel re-export
 
 ## server/src/
 ```
-main.ts                  Entry: createDefaultWorld + Hono server + GameLoop (~40 lines)
+main.ts                  Entry: createNewWorld/loadWorld + Hono server + GameLoop. Dashboard keys s/p/q/d (d = dumpWorld). Warns at boot when stdin isn't a TTY so dashboard keys won't work (e.g. under concurrently).
 app.ts                   Hono app factory: MCP routes + WS upgrade + static serving
-game-world.ts            GameWorld class — all state, runTick, player lifecycle, action dispatch, event emission (emitEvent point-to-point + broadcastEvent to nearby for visuals), clearAiTargetsOn(deadEntityId) for player/creature death AI cleanup; weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings
+game-world.ts            GameWorld class — state container + runTick orchestration + player lifecycle + event emission (public emitEvent point-to-point + broadcastEvent to nearby + makeEvent + bpName). processEntityDeath + handlePlayerDeath + clearAiTargetsOn + spawnCreatureEntity/spawnGroundItem live here; action dispatch moved to world-actions.ts. Weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings.
+world-actions.ts         Player action dispatch layer — processAction (switch), cancelConflictingStates, rejectAction, all 17 handle* (MoveTo..ServerCommand), executeInteract, toggleDoor. Free functions taking world: GameWorld (same shape as systems/*). Handlers are thin shims over ActionResult-returning helpers.
+action-rejection.ts      RejectionReason discriminated union + formatRejection renderer + ActionResult / ActionResultOf<T> types with Ok/OkValue/Err constructors.
+action-helpers.ts        requireAdjacentTarget(actorId, targetId, world, opts?) — shared target_missing | wrong_target_kind | not_adjacent preamble used by Transfer / DialogueSelect / Trade.
 system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
 player-connection.ts     PlayerConnection interface (10 methods incl onGameEvent point-to-point + onBroadcastEvent spectator-range) + TickDelta + GameWorldView
 events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out. Details for combat_hit_dealt / harvest_yield / craft_complete carry actor id (attackerEntityId / harvesterEntityId / crafterEntityId) so broadcast wire events can identify the actor.
-occupancy.ts             OccupancyGrid (Uint16Array tile→entityId)
+occupancy.ts             OccupancyGrid — single-blocker per tile (players, critters, NPCs, placed entities, trees). Not tracked: ground items, corpses, building-layer walls. Ownership-enforced API: set/clear/move assert tile owner matches; violations routed to onViolation (wired to world.log.error) without throwing.
+world-logger.ts          Per-world WorldLogger (info/warn/error + assert). createFileLogger writes JSONL to data/worlds/<id>/server.log; createMemoryLogger retains entries for tests (expectCleanLog helper asserts zero warn+error).
+world-dump.ts            Reflective world-state dumper for the `d` debug key. serializeWorld/dumpWorld handle Map/Set/TypedArray/ComponentStore/Date/circular. SKIP_KEYS (connection/telemetry/log) + SKIP_PATHS (map.terrain/buildings/buildingMeta). EntityManager serialized only at world.entities; elsewhere collapsed to __ref.
 inventory-manager.ts     InventoryManager class (add/remove/equip/craft/drop/transfer)
 telemetry.ts             Telemetry class (per-phase timing, network bytes, rolling averages)
 dashboard.ts             ANSI telemetry dashboard rendering; shows in-game time HH:MM in header
@@ -49,11 +54,11 @@ mcp-formatters.ts        Text formatters: self, map, entities, terrain, events, 
 ecs/component-store.ts   ComponentStore<T> — generic Map with auto-dirty
 ecs/entity-manager.ts    EntityManager — entity lifecycle, 7 component stores, dirty/destroyed tracking
 ecs/game-loop.ts         GameLoop — setTimeout with drift compensation
-systems/movement.ts      A* path-following, occupancy collision, wait-and-repath
+systems/movement.ts      A* path-following, occupancy collision, wait-and-repath. setMoveTarget returns ActionResult; takes mode: 'exact' | 'near' ('exact' rejects blocked goal; 'near' routes to adjacent walkable via findPath fallback). clearMoveTarget resets currentAction=Idle + nextWaypoint=NONE when a moveState is actually deleted (single "entity stopped moving" primitive; arriveIdle was collapsed into it).
 systems/harvest.ts       Channeled gathering, auto-pathfind to adjacent, tree depletion → returns HarvestEvent[]
 systems/consumable.ts    Channeled healing, single-use, interruptible → returns ConsumeEvent[]
-systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }. startAttack + per-swing sets attacker direction via dirFromTo so swing animation faces target.
-systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]. Skips Dead players when scanning for nearest aggro target.
+systems/combat.ts        Attack system — pathfind+swing+damage, auto-follow → returns CombatResult { deaths, hits }. startAttack + per-swing sets attacker direction via dirFromTo so swing animation faces target. startAttack is side-effect-free on Err: the non-adjacent branch relies on setMoveTarget's atomic-on-Ok / no-op-on-Err contract; only the adjacent branch calls clearMoveTarget. critter-ai reuses startAttack as its reachability probe.
+systems/critter-ai.ts    Wander/flee/aggro/passive behaviors → returns CritterBehaviorChange[]. Skips Dead players when scanning for nearest aggro target. Wander→aggro transition commits only when startAttack returns Ok (reachability gate); failure sets CritterState.aggroProbeCooldown (DEFAULT = 20 ticks) to throttle the next probe. executeAggro drops back to wander if startAttack starts failing mid-chase. notifyCritterAttacked applies the same gate so unreachable attackers don't lock a critter into aggro.
 systems/harvest.ts       (see above) — faceHarvestTarget helper sets harvester direction when entering Harvesting state so harvest-craft anim plays toward the target.
 systems/resources.ts     Tree resource pools (5 wood), respawn queue (30s delay). Exports runResourceRespawns (renamed from runRespawns as part of the worldPulse split).
 systems/creature-lifecycle.ts   Night skeleton spawner + sunrise decay. runCreatureRespawns rolls 1/720 per tick at night and spawns a skeleton 10–20 tiles from any player on an unlit, walkable, unoccupied tile (AABB light check, no shadowcast). runCreatureLifecycle pulses 4 damage every 25 ticks on all living Skeletons during daylight; returned deaths route through processEntityDeath with killerEntityId=0.
@@ -78,6 +83,7 @@ view-map.ts     Static fullscreen ASCII map viewer (npm run cli:map [seed])
 map-stats.ts    Terrain/entity/elevation statistical analysis (npm run cli:stats [seed])
 mcp.ts          MCP CLI test tool (npm run cli:mcp [tool] [key=value ...]), session persistence in .session
 death-debug.ts  Death debugging helper
+world-dump-view.ts  Forensic viewer for dashboard-`d` dumps. Commands: overview, stuck, near <x> <y> [r], entity <eid>, find <bp>, state <mapName> [eid], keys. Takes either a dump file or a world dir (picks latest). See `memory/reference/debug-tools.md`.
 ```
 
 ## client/ (web — placeholder, CLI is primary)
@@ -112,11 +118,14 @@ e2e/environment.test.ts  Env sync emission cadence + tickOffset behavior + effec
 e2e/mcp-e2e.test.ts      Real server E2E: MCP client → HTTP → tools → game → response format; identify lifecycle; nametag broadcast
 mcp-keepalive.test.ts    Per-session ping cadence, cleanup on destroy, rejection swallow (unit-level)
 lighting.test.ts         Keyframe interpolation + gameMinute math
-persistence.test.ts      Save/load round-trip + tickOffset + new-world twilight seed
+persistence.test.ts      Save/load round-trip + tickOffset carrying
+world-logger.test.ts     Memory logger: capture + warn/error counts + assert pass/fail
+world-dump.test.ts       serializeWorld round-trip + skips + TypedArray stub + disk write + reflection of new fields + ref collapsing
 client-gl/shadowcast.test.ts  Per-target raycast + blocker behavior + wall occlusion
 client-gl/scene.test.ts       Scene mutators + factory dispatch + capacity + onGameEvent dispatch + smoke-puff spawn (via EntityDied + Dead-transition paths) + Dead→Idle snap
 client-gl/effects.test.ts     Damage number + pickup text + chat bubble lifecycle
 e2e/event-observer.test.ts    GameWorld.setEventObserver fires for emit + broadcast channels; observer-throws don't break runTicks
+movement-edge-cases.test.ts   Regression file for movement/pathfinding/combat-chase: move_to rejection plumbing (wall / door-entity / no_path); critter-stuck-animation + aggro-give-up; door close guard (3 tests covering occupancy-phasing repro); walled-in-player wolf stays in wander + Walking-without-moveState invariant. Corner-diagonal clip-through + river-walkability open as design items — not tracked here.
 ```
 
 ## harness/

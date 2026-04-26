@@ -5,16 +5,21 @@ import { dirFromTo } from '@shared/direction.js';
 import { ACTION_BASE_TICKS } from '@shared/constants.js';
 import type { SystemState } from '../system-state.js';
 import { setMoveTarget, hasMoveTarget, clearMoveTarget } from './movement.js';
+import { Ok, Err, type ActionResult } from '../action-rejection.js';
 
 function isAdjacent(ax: number, ay: number, bx: number, by: number): boolean {
   return Math.abs(ax - bx) <= 1 && Math.abs(ay - by) <= 1 && !(ax === bx && ay === by);
 }
 
-export function startAttack(attackerId: number, targetId: number, world: SystemState): boolean {
-  if (!world.entities.exists(targetId)) return false;
+export function startAttack(attackerId: number, targetId: number, world: SystemState): ActionResult {
+  if (!world.entities.exists(targetId)) {
+    return Err({ code: 'target_missing', targetEntityId: targetId });
+  }
   const attackerPos = world.entities.position.get(attackerId);
   const targetPos = world.entities.position.get(targetId);
-  if (!attackerPos || !targetPos) return false;
+  if (!attackerPos || !targetPos) {
+    return Err({ code: 'target_missing', targetEntityId: targetId });
+  }
 
   // Determine damage + speed from equipped weapon or fist
   let damage = 1;
@@ -40,9 +45,27 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
 
   attackSpeed = Math.round(attackSpeed * ACTION_BASE_TICKS);
 
-  if (damage <= 0 || attackSpeed <= 0) return false;
+  if (damage <= 0 || attackSpeed <= 0) {
+    return Err({ code: 'target_missing', targetEntityId: targetId });
+  }
 
-  clearMoveTarget(attackerId, world);
+  // If not adjacent, validate that we can actually reach the target before
+  // committing to combat state. setMoveTarget('near') routes to an adjacent
+  // walkable tile; if it fails, the target is sealed off — no combat.
+  //
+  // We deliberately do NOT clearMoveTarget before the probe. setMoveTarget
+  // overwrites moveStates atomically on success and leaves all state
+  // untouched on Err, so a failing probe has zero side effects. That
+  // property is load-bearing for runCritterAI, which calls startAttack
+  // once per tick as a reachability gate from the wander behavior.
+  if (!isAdjacent(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY)) {
+    const r = setMoveTarget(attackerId, targetPos.tileX, targetPos.tileY, world);
+    if (!r.ok) return r;
+  } else {
+    // Adjacent — kill any stale wander move so the attacker doesn't drift
+    // off the tile between swings.
+    clearMoveTarget(attackerId, world);
+  }
 
   world.combatStates.set(attackerId, {
     targetEntityId: targetId,
@@ -53,16 +76,10 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
 
   world.entities.currentAction.set(attackerId, { actionType: ActionType.Attacking, targetEntity: targetId });
 
-  // Face the target so the swing animation plays toward them.
   const dir = dirFromTo(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY);
   if (dir !== undefined) world.entities.direction.set(attackerId, { dir });
 
-  // If not adjacent, pathfind to target
-  if (!isAdjacent(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY)) {
-    setMoveTarget(attackerId, targetPos.tileX, targetPos.tileY, world);
-  }
-
-  return true;
+  return Ok;
 }
 
 export function cancelCombat(entityId: number, world: SystemState): void {
@@ -121,9 +138,13 @@ export function runCombat(world: SystemState): CombatResult {
     const adjacent = isAdjacent(attackerPos.tileX, attackerPos.tileY, targetPos.tileX, targetPos.tileY);
 
     if (!adjacent) {
-      // Chase: re-pathfind to target if not already moving toward them
+      // Chase: re-pathfind to target if not already moving toward them.
+      // If the target is now unreachable (closed door, walled in), give up.
       if (!hasMoveTarget(attackerId, world)) {
-        setMoveTarget(attackerId, targetPos.tileX, targetPos.tileY, world);
+        const r = setMoveTarget(attackerId, targetPos.tileX, targetPos.tileY, world);
+        if (!r.ok) {
+          cancelCombat(attackerId, world);
+        }
       }
       continue;
     }

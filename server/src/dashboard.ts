@@ -10,7 +10,10 @@ let lastRenderTime = performance.now();
 export interface DashboardState {
   worldId: string;
   paused: boolean;
-  saveStatus: '' | 'saving' | 'saved';
+  /** Status flash shown on the hint line. Known tags 'saving'/'saved' are
+   *  colorized; any other non-empty value renders as a dim tail (e.g.
+   *  `dumped 2026-...-dump.json`). */
+  saveStatus: string;
   /** Pre-formatted in-game time of day (HH:MM) — main.ts refreshes this
    *  each render from gameMinuteFromTick(world.effectiveTick). */
   currentTimeOfDay: string;
@@ -77,8 +80,9 @@ export function renderDashboard(snap: TelemetrySnapshot, state: DashboardState):
 
   // Status line
   const saveTag = state.saveStatus === 'saving' ? ' \x1b[33msaving...\x1b[0m' :
-                  state.saveStatus === 'saved'  ? ' \x1b[32msaved\x1b[0m' : '';
-  lines.push(` \x1b[2m[q]\x1b[0m quit  \x1b[2m[s]\x1b[0m save  \x1b[2m[p]\x1b[0m pause${saveTag}   world: \x1b[36m${state.worldId}\x1b[0m`);
+                  state.saveStatus === 'saved'  ? ' \x1b[32msaved\x1b[0m' :
+                  state.saveStatus             ? ` \x1b[36m${state.saveStatus}\x1b[0m` : '';
+  lines.push(` \x1b[2m[q]\x1b[0m quit  \x1b[2m[s]\x1b[0m save  \x1b[2m[p]\x1b[0m pause  \x1b[2m[d]\x1b[0m dump${saveTag}   world: \x1b[36m${state.worldId}\x1b[0m`);
 
   const cols = process.stdout.columns || 80;
   const out = '\x1b[H' + lines.map(l => l.padEnd(cols)).join('\n');

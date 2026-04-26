@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { BlueprintType } from '@shared/blueprints.js';
 import { ClientAction } from '@shared/actions.js';
 import { Direction } from '@shared/direction.js';
-import { Terrain } from '@shared/terrain.js';
+import { Terrain, Building } from '@shared/terrain.js';
 import { StatusEffect } from '@shared/status-effects.js';
 import { CHUNK_SIZE } from '@shared/constants.js';
 import { resolveAction } from '@shared/action-resolver.js';
@@ -158,6 +158,41 @@ describe('resolveAction against cursor context', () => {
     const ctx = buildCursorContext(scene, 10, 10)!;
     const action = resolveAction(ctx)!;
     expect(action.action).toBe(ClientAction.Attack);
+  });
+
+  it('click on river (un-bridged, no rod) → null', async () => {
+    const { scene, conn } = await createTestScene();
+    fillChunkTerrain(conn, 0, 0, Terrain.River);
+    const ctx = buildCursorContext(scene, 6, 6)!;
+    expect(resolveAction(ctx)).toBeNull();
+  });
+
+  it('click on river with fishing rod → Harvest (fish)', async () => {
+    const { scene, conn } = await createTestScene();
+    fillChunkTerrain(conn, 0, 0, Terrain.River);
+    spawnPlayer(scene, conn, 100, 1, 1);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 1, blueprintId: BlueprintType.FishingRod, quantity: 1, equippedSlot: 1 }],
+    });
+    const ctx = buildCursorContext(scene, 6, 6)!;
+    const action = resolveAction(ctx)!;
+    expect(action.action).toBe(ClientAction.Harvest);
+  });
+
+  it('click on bridged river (river + WoodenFloor) → MoveTo', async () => {
+    const { scene, conn } = await createTestScene();
+    // River chunk with a WoodenFloor building at tile (6, 6).
+    const t = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE).fill(Terrain.River);
+    const b = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const m = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    b[6 * CHUNK_SIZE + 6] = Building.WoodenFloor;
+    conn.deliver({ type: 'chunk', data: { chunkX: 0, chunkY: 0, terrain: t, buildings: b, buildingMeta: m } });
+    const ctx = buildCursorContext(scene, 6, 6)!;
+    expect(ctx.isWalkable).toBe(true);
+    expect(ctx.terrainType).toBe(Terrain.River);
+    const action = resolveAction(ctx)!;
+    expect(action.action).toBe(ClientAction.MoveTo);
   });
 
   it('click on door → Interact', async () => {

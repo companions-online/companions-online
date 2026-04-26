@@ -1,36 +1,31 @@
 import { SPAWN_X, SPAWN_Y, MAP_SIZE, CHUNK_SIZE, INTEREST_RANGE } from '@shared/constants.js';
 import { gameMinuteFromTick, gameHourFromTick, KEYFRAME_HOURS } from '@shared/lighting.js';
 import { Direction } from '@shared/direction.js';
-import { ActionType, ClientAction } from '@shared/actions.js';
-import { BlueprintType, getBlueprint, blueprintToBuilding } from '@shared/blueprints.js';
-import { Building, Terrain } from '@shared/terrain.js';
+import { ActionType } from '@shared/actions.js';
+import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
-import { findItem, getWeight, canCraft, getEquipped } from '@shared/inventory.js';
-import { numberToEquipSlot } from '@shared/inventory.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import { StatusEffect } from '@shared/status-effects.js';
-import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate, DecodedActionInteract, DecodedActionPickup, DecodedActionEquip, DecodedActionUnequip, DecodedActionDrop, DecodedActionCraft, DecodedActionHarvest, DecodedActionUseItemAt, DecodedActionAttack, DecodedActionTransfer, DecodedActionDialogueSelect, DecodedActionTrade, DecodedActionUseConsumable, DecodedActionSay, DecodedActionServerCommand } from '@shared/protocol/codec.js';
+import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
 import { MetaKey } from '@shared/entity-meta.js';
-import { dispatchServerCommand } from './server-commands.js';
-import { getDialogue } from './npc-dialogues.js';
 import { getLootTable } from '@shared/loot-tables.js';
-import { getRecipe } from '@shared/recipes.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
 import type { PlayerConnection, TickDelta } from './player-connection.js';
 import type { SystemState, MovementState, HarvestState, CritterState, CombatState } from './system-state.js';
-import { setMoveTarget, clearMoveTarget, hasMoveTarget, runMovement } from './systems/movement.js';
-import { startHarvest, cancelHarvest, isHarvesting, runHarvest } from './systems/harvest.js';
+import { clearMoveTarget, hasMoveTarget, runMovement } from './systems/movement.js';
+import { cancelHarvest, runHarvest } from './systems/harvest.js';
 import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
-import { startAttack, cancelCombat, isInCombat, runCombat } from './systems/combat.js';
-import { startConsume, cancelConsume, isConsuming, runConsume, type ConsumableState } from './systems/consumable.js';
+import { cancelCombat, runCombat } from './systems/combat.js';
+import { cancelConsume, runConsume, type ConsumableState } from './systems/consumable.js';
 import { initTreeResource, runResourceRespawns } from './systems/resources.js';
 import { runCreatureRespawns, runCreatureLifecycle } from './systems/creature-lifecycle.js';
 import { Telemetry } from './telemetry.js';
-import { EventPriority, EVENT_PRIORITY, type GameEvent } from './events.js';
-import type { RejectionReason } from './action-rejection.js';
+import { EVENT_PRIORITY, type GameEvent } from './events.js';
+import { processAction, executeInteract, rejectAction } from './world-actions.js';
+import { createMemoryLogger, type WorldLogger } from './world-logger.js';
 
 const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
 
@@ -98,10 +93,15 @@ export class GameWorld implements SystemState {
   /** Last weather value we broadcast an Environment section for. */
   private _lastEnvEmitWeather = 0;
 
+  readonly log: WorldLogger;
+
   private eventObserver: (entityId: number, event: GameEvent, channel: 'emit' | 'broadcast') => void = () => {};
 
-  constructor(readonly map: WorldMap, readonly seed = 0) {
-    this.occupancy = new OccupancyGrid(map.width, map.height);
+  constructor(readonly map: WorldMap, readonly seed = 0, logger?: WorldLogger) {
+    this.log = logger ?? createMemoryLogger();
+    this.occupancy = new OccupancyGrid(map.width, map.height, (msg, data) =>
+      this.log.error(msg, data),
+    );
     this.spawnRng = seed;
     this.respawnRng = seed + 12345;
   }
@@ -128,20 +128,10 @@ export class GameWorld implements SystemState {
     this.eventObserver = fn;
   }
 
-  private emitEvent(entityId: number, event: GameEvent): void {
+  emitEvent(entityId: number, event: GameEvent): void {
     const slot = this.players.get(entityId);
     if (slot) slot.connection.onGameEvent(entityId, event);
     try { this.eventObserver(entityId, event, 'emit'); } catch { /* swallow */ }
-  }
-
-  /** Reject a pending action before it takes effect. Routes the structured
-   *  reason to the connection so MCP tools can surface it with `isError: true`
-   *  (see mcp-tools.ts::doAction). Handlers run synchronously inside the
-   *  'actions' tick phase, so McpConnection resolves `awaitAction` immediately
-   *  on receipt — no intermediate state change is required. */
-  private rejectAction(entityId: number, reason: RejectionReason): void {
-    const slot = this.players.get(entityId);
-    if (slot) slot.connection.onActionRejected(entityId, reason);
   }
 
   /** Deliver a spectator-visible notification to every player within
@@ -151,7 +141,7 @@ export class GameWorld implements SystemState {
    *  nearby (including the actor themselves). Use for hit-landed,
    *  yield-popped, entity-died. Keep hit_received / item_picked_up / trades
    *  on `emitEvent`. */
-  private broadcastEvent(tileX: number, tileY: number, event: GameEvent): void {
+  broadcastEvent(tileX: number, tileY: number, event: GameEvent): void {
     for (const [eid, slot] of this.players) {
       const p = this.entities.position.get(eid);
       if (!p) continue;
@@ -163,7 +153,7 @@ export class GameWorld implements SystemState {
     }
   }
 
-  private makeEvent<T extends GameEvent['type']>(
+  makeEvent<T extends GameEvent['type']>(
     type: T,
     details: Extract<GameEvent, { type: T }>['details'],
   ): GameEvent {
@@ -176,7 +166,7 @@ export class GameWorld implements SystemState {
     } as GameEvent;
   }
 
-  private bpName(blueprintId: number): string {
+  bpName(blueprintId: number): string {
     return getBlueprint(blueprintId)?.name ?? 'Unknown';
   }
 
@@ -267,12 +257,19 @@ export class GameWorld implements SystemState {
     // "entered" detection on the next tick — that path triggers the full-state
     // + sendMetaFor emission. No pre-seeding of knownEntities.
 
+    this.log.info('player joined', {
+      entityId: eid,
+      connectionType: connection.constructor.name,
+      tileX: sx,
+      tileY: sy,
+    });
+
     return eid;
   }
 
   removePlayer(entityId: number): void {
     const pos = this.entities.position.get(entityId);
-    if (pos) this.occupancy.clear(pos.tileX, pos.tileY);
+    if (pos) this.occupancy.clear(pos.tileX, pos.tileY, entityId);
     this.entities.destroy(entityId);
     clearMoveTarget(entityId, this);
     this.pendingPickups.delete(entityId);
@@ -280,6 +277,7 @@ export class GameWorld implements SystemState {
     this.inventoryMgr.destroy(entityId);
     this.entityMeta.delete(entityId);
     this.players.delete(entityId);
+    this.log.info('player disconnected', { entityId });
   }
 
   setAction(entityId: number, action: DecodedAction): void {
@@ -307,7 +305,7 @@ export class GameWorld implements SystemState {
       const action = slot.pendingAction;
       if (!action) continue;
       slot.pendingAction = null;
-      this.processAction(eid, slot, action);
+      processAction(this, eid, slot, action);
     }
     t.endPhase('actions');
 
@@ -367,7 +365,8 @@ export class GameWorld implements SystemState {
         if (bp) {
           const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
           if (result.success) {
-            this.occupancy.clear(targetPos.tileX, targetPos.tileY);
+            // No occupancy.clear — ground items are not tracked by the
+            // occupancy grid. See OccupancyGrid comment.
             this.entities.destroy(pending.targetEntityId);
             const slot = this.players.get(eid);
             if (slot) {
@@ -394,7 +393,10 @@ export class GameWorld implements SystemState {
       const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
       if (dist <= 1) {
         const slot = this.players.get(eid);
-        if (slot) this.executeInteract(eid, slot, pending.targetEntityId);
+        if (slot) {
+          const r = executeInteract(this, eid, slot, pending.targetEntityId);
+          if (!r.ok) rejectAction(this, eid, r.reason);
+        }
       }
       this.pendingInteracts.delete(eid);
     }
@@ -546,492 +548,6 @@ export class GameWorld implements SystemState {
     for (let i = 0; i < n; i++) this.runTick();
   }
 
-  // --- Private ---
-
-  private processAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    // Dead players can't act
-    const ca = this.entities.currentAction.get(eid);
-    if (ca && ca.actionType === ActionType.Dead) return;
-
-    // Say is instant and must not cancel other actions
-    if (action.action === ClientAction.Say) {
-      this.handleSay(eid, slot, action);
-      return;
-    }
-
-    // Server commands (/nick, etc.) are instant and must not cancel other actions
-    if (action.action === ClientAction.ServerCommand) {
-      this.handleServerCommand(eid, slot, action);
-      return;
-    }
-
-    this.cancelConflictingStates(eid, action);
-
-    switch (action.action) {
-      case ClientAction.MoveTo:    this.handleMoveTo(eid, action); break;
-      case ClientAction.Cancel:    this.handleCancel(eid); break;
-      case ClientAction.Pickup:    this.handlePickup(eid, slot, action); break;
-      case ClientAction.Equip:     this.handleEquip(eid, slot, action); break;
-      case ClientAction.Unequip:   this.handleUnequip(eid, slot, action); break;
-      case ClientAction.Drop:      this.handleDrop(eid, slot, action); break;
-      case ClientAction.Craft:     this.handleCraft(eid, slot, action); break;
-      case ClientAction.Harvest:   this.handleHarvest(eid, action); break;
-      case ClientAction.UseItemAt: {
-        const a = action as DecodedActionUseItemAt;
-        this.handleUseItemAt(eid, slot, a.itemId, a.tileX, a.tileY);
-        break;
-      }
-      case ClientAction.Attack:          this.handleAttack(eid, action); break;
-      case ClientAction.Interact:        this.handleInteractAction(eid, slot, action); break;
-      case ClientAction.Transfer:        this.handleTransfer(eid, slot, action); break;
-      case ClientAction.DialogueSelect:  this.handleDialogueSelect(eid, slot, action); break;
-      case ClientAction.Trade:           this.handleTrade(eid, slot, action); break;
-      case ClientAction.UseConsumable:   this.handleUseConsumable(eid, slot, action); break;
-    }
-  }
-
-  private cancelConflictingStates(eid: number, action: DecodedAction): void {
-    if (action.action !== ClientAction.Harvest && isHarvesting(eid, this)) {
-      this.emitEvent(eid, this.makeEvent('action_interrupted', {
-        interruptedAction: 'harvesting', reason: 'new action',
-      }));
-      cancelHarvest(eid, this);
-    }
-    if (action.action !== ClientAction.Attack && isInCombat(eid, this)) {
-      this.emitEvent(eid, this.makeEvent('action_interrupted', {
-        interruptedAction: 'attacking', reason: 'new action',
-      }));
-      cancelCombat(eid, this);
-    }
-    if (action.action !== ClientAction.Pickup) {
-      this.pendingPickups.delete(eid);
-    }
-    if (action.action !== ClientAction.Interact) {
-      this.pendingInteracts.delete(eid);
-    }
-    if (action.action !== ClientAction.UseConsumable && isConsuming(eid, this)) {
-      this.emitEvent(eid, this.makeEvent('action_interrupted', {
-        interruptedAction: 'consuming', reason: 'new action',
-      }));
-      cancelConsume(eid, this);
-    }
-  }
-
-  private handleMoveTo(eid: number, action: DecodedAction): void {
-    const a = action as { action: number; tileX: number; tileY: number };
-    if (a.tileX < 0 || a.tileX >= this.map.width || a.tileY < 0 || a.tileY >= this.map.height) {
-      this.rejectAction(eid, { code: 'tile_out_of_bounds', tileX: a.tileX, tileY: a.tileY });
-      return;
-    }
-    if (!this.map.isWalkable(a.tileX, a.tileY)) {
-      const building = this.map.getBuilding(a.tileX, a.tileY);
-      const terrain = this.map.getTerrain(a.tileX, a.tileY);
-      const by: 'wall' | 'water' | 'rock' =
-        building !== Building.None ? 'wall'
-        : terrain === Terrain.Water || terrain === Terrain.River ? 'water'
-        : 'rock';
-      this.rejectAction(eid, { code: 'tile_blocked', tileX: a.tileX, tileY: a.tileY, by });
-      return;
-    }
-    setMoveTarget(eid, a.tileX, a.tileY, this);
-  }
-
-  private handleCancel(eid: number): void {
-    clearMoveTarget(eid, this);
-  }
-
-  private handlePickup(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionPickup;
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    const targetPos = this.entities.position.get(a.entityId);
-    const bp = this.entities.blueprint.get(a.entityId);
-    if (!targetPos || !bp) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.entityId });
-      return;
-    }
-
-    const bpDef = getBlueprint(bp.blueprintId);
-    if (!bpDef || (bpDef.category !== 'item' && bpDef.category !== 'resource' && bpDef.category !== 'placeable')) {
-      this.rejectAction(eid, {
-        code: 'wrong_target_kind', targetEntityId: a.entityId,
-        expected: 'ground item', got: bpDef?.category ?? 'unknown',
-      });
-      return;
-    }
-
-    const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-    if (dist <= 1) {
-      const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
-      if (!result.success) {
-        const inv = this.inventoryMgr.get(eid);
-        this.rejectAction(eid, {
-          code: 'inventory_full',
-          weight: inv ? getWeight(inv) : 0,
-          maxWeight: inv?.maxWeight ?? 0,
-        });
-        return;
-      }
-      this.occupancy.clear(targetPos.tileX, targetPos.tileY);
-      this.entities.destroy(a.entityId);
-      slot.connection.onInventoryChanged(eid, this);
-      this.emitEvent(eid, this.makeEvent('item_picked_up', {
-        blueprintId: bp.blueprintId, itemName: this.bpName(bp.blueprintId), quantity: 1,
-      }));
-    } else {
-      this.pendingPickups.set(eid, { targetEntityId: a.entityId });
-      setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
-    }
-  }
-
-  private handleEquip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionEquip;
-    const inv = this.inventoryMgr.get(eid);
-    const item = inv ? findItem(inv, a.itemId) : undefined;
-    if (!item) {
-      this.rejectAction(eid, { code: 'item_missing', itemId: a.itemId });
-      return;
-    }
-    const bp = getBlueprint(item.blueprintId);
-    if (!bp?.equipSlot) {
-      this.rejectAction(eid, { code: 'not_equippable', itemId: a.itemId });
-      return;
-    }
-    if (this.inventoryMgr.equip(eid, a.itemId, a.quantity)) {
-      slot.connection.onInventoryChanged(eid, this);
-    }
-  }
-
-  private handleUnequip(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionUnequip;
-    const eqSlot = numberToEquipSlot(a.slot);
-    if (!eqSlot) return;
-    const inv = this.inventoryMgr.get(eid);
-    if (!inv || !getEquipped(inv, eqSlot)) {
-      this.rejectAction(eid, { code: 'slot_empty', slot: eqSlot });
-      return;
-    }
-    if (this.inventoryMgr.unequip(eid, eqSlot)) {
-      slot.connection.onInventoryChanged(eid, this);
-    }
-  }
-
-  private handleDrop(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionDrop;
-    const inv = this.inventoryMgr.get(eid);
-    if (!inv || !findItem(inv, a.itemId)) {
-      this.rejectAction(eid, { code: 'item_missing', itemId: a.itemId });
-      return;
-    }
-    const dropped = this.inventoryMgr.drop(eid, a.itemId, a.quantity);
-    if (dropped) {
-      const playerPos = this.entities.position.get(eid);
-      if (playerPos) {
-        const groundEid = this.entities.create();
-        this.entities.position.set(groundEid, { tileX: playerPos.tileX, tileY: playerPos.tileY });
-        this.entities.blueprint.set(groundEid, { blueprintId: dropped.blueprintId, variant: 0 });
-      }
-      slot.connection.onInventoryChanged(eid, this);
-    }
-  }
-
-  private handleCraft(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionCraft;
-    const recipe = getRecipe(a.recipeId);
-    if (!recipe) {
-      this.rejectAction(eid, { code: 'recipe_unknown', recipeId: a.recipeId });
-      return;
-    }
-    const inv = this.inventoryMgr.get(eid);
-    if (!inv || !canCraft(recipe, inv)) {
-      this.rejectAction(eid, { code: 'missing_materials', recipeId: a.recipeId });
-      return;
-    }
-    // Weight check parallel to inventoryMgr.craft — reject with inventory_full
-    // so the LLM gets a distinct, actionable reason.
-    const outBp = getBlueprint(recipe.output.blueprintId);
-    const outputWeight = (outBp?.weight ?? 0) * recipe.output.quantity;
-    let inputWeight = 0;
-    for (const input of recipe.inputs) {
-      const ibp = getBlueprint(input.blueprintId);
-      inputWeight += (ibp?.weight ?? 0) * input.quantity;
-    }
-    if (getWeight(inv) - inputWeight + outputWeight > inv.maxWeight) {
-      this.rejectAction(eid, { code: 'inventory_full', weight: getWeight(inv), maxWeight: inv.maxWeight });
-      return;
-    }
-    if (this.inventoryMgr.craft(eid, a.recipeId)) {
-      slot.connection.onInventoryChanged(eid, this);
-      const event = this.makeEvent('craft_complete', {
-        crafterEntityId: eid,
-        blueprintId: recipe.output.blueprintId,
-        itemName: this.bpName(recipe.output.blueprintId),
-        quantity: recipe.output.quantity,
-      });
-      this.emitEvent(eid, event);
-      const pos = this.entities.position.get(eid);
-      if (pos) this.broadcastEvent(pos.tileX, pos.tileY, event);
-    }
-  }
-
-  private handleHarvest(eid: number, action: DecodedAction): void {
-    const a = action as DecodedActionHarvest;
-    if (a.tileX < 0 || a.tileX >= this.map.width || a.tileY < 0 || a.tileY >= this.map.height) {
-      this.rejectAction(eid, { code: 'tile_out_of_bounds', tileX: a.tileX, tileY: a.tileY });
-      return;
-    }
-    clearMoveTarget(eid, this);
-    if (!startHarvest(eid, a.tileX, a.tileY, this)) {
-      // Either nothing harvestable at the tile, or pathfinding couldn't reach.
-      // Unified under not_harvestable — the LLM's remedy is the same either
-      // way: pick a different tile or equip the right tool.
-      this.rejectAction(eid, { code: 'not_harvestable', tileX: a.tileX, tileY: a.tileY });
-    }
-  }
-
-  private handleUseConsumable(eid: number, _slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionUseConsumable;
-    const inv = this.inventoryMgr.get(eid);
-    const item = inv ? findItem(inv, a.itemId) : undefined;
-    if (!item) {
-      this.rejectAction(eid, { code: 'item_missing', itemId: a.itemId });
-      return;
-    }
-    const bp = getBlueprint(item.blueprintId);
-    if (!bp?.consumeHeal || !bp.consumeTicks) {
-      this.rejectAction(eid, { code: 'not_consumable', itemId: a.itemId });
-      return;
-    }
-    clearMoveTarget(eid, this);
-    startConsume(eid, a.itemId, this);
-  }
-
-  private handleAttack(eid: number, action: DecodedAction): void {
-    const a = action as DecodedActionAttack;
-    if (!this.entities.exists(a.entityId) || !this.entities.position.get(a.entityId)) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.entityId });
-      return;
-    }
-    clearMoveTarget(eid, this);
-    startAttack(eid, a.entityId, this);
-  }
-
-  private handleSay(eid: number, _slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionSay;
-    const msg = a.message.slice(0, 200);
-    const pos = this.entities.position.get(eid);
-    if (!pos) return;
-    const senderName = this.getEntityMeta(eid, MetaKey.Name) ?? 'Player';
-    for (const [otherEid, otherSlot] of this.players) {
-      const otherPos = this.entities.position.get(otherEid);
-      if (!otherPos) continue;
-      if (Math.abs(pos.tileX - otherPos.tileX) <= INTEREST_RANGE &&
-          Math.abs(pos.tileY - otherPos.tileY) <= INTEREST_RANGE) {
-        otherSlot.connection.onChatMessage(otherEid, eid, msg);
-        this.emitEvent(otherEid, this.makeEvent('player_say', {
-          senderEntityId: eid, senderName, message: msg,
-        }));
-      }
-    }
-  }
-
-  private handleServerCommand(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionServerCommand;
-    const result = dispatchServerCommand(this, eid, slot, a.command, a.parameter);
-    if (!result.ok) {
-      slot.connection.onChatMessage(eid, 0, `[system] ${result.error}`);
-    }
-  }
-
-    private handleInteractAction(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionInteract;
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    const targetPos = this.entities.position.get(a.entityId);
-    if (!targetPos) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.entityId });
-      return;
-    }
-
-    const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX),
-                          Math.abs(targetPos.tileY - playerPos.tileY));
-    if (dist <= 1) {
-      this.executeInteract(eid, slot, a.entityId);
-    } else {
-      this.pendingInteracts.set(eid, { targetEntityId: a.entityId });
-      setMoveTarget(eid, targetPos.tileX, targetPos.tileY, this);
-    }
-  }
-
-  private handleTransfer(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionTransfer;
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    const containerPos = this.entities.position.get(a.containerId);
-    const bp = this.entities.blueprint.get(a.containerId);
-    if (!containerPos || !bp) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.containerId });
-      return;
-    }
-
-    const dist = Math.max(Math.abs(containerPos.tileX - playerPos.tileX),
-                          Math.abs(containerPos.tileY - playerPos.tileY));
-    if (dist > 1) {
-      this.rejectAction(eid, { code: 'not_adjacent', targetEntityId: a.containerId, dist });
-      return;
-    }
-
-    if (bp.blueprintId !== BlueprintType.StorageChest) {
-      this.rejectAction(eid, {
-        code: 'wrong_target_kind', targetEntityId: a.containerId,
-        expected: 'storage chest', got: this.bpName(bp.blueprintId).toLowerCase(),
-      });
-      return;
-    }
-
-    const ok = a.direction === 0
-      ? this.inventoryMgr.transferToContainer(eid, a.containerId, a.itemId, a.quantity)
-      : this.inventoryMgr.transferFromContainer(eid, a.containerId, a.itemId, a.quantity);
-    if (!ok) {
-      this.rejectAction(eid, { code: 'item_missing', itemId: a.itemId });
-      return;
-    }
-    slot.connection.onInventoryChanged(eid, this);
-    slot.connection.onContainerOpen(eid, a.containerId, this);
-  }
-
-  private handleDialogueSelect(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionDialogueSelect;
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    const npcPos = this.entities.position.get(a.npcEntityId);
-    const npcBp = this.entities.blueprint.get(a.npcEntityId);
-    if (!npcPos || !npcBp) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.npcEntityId });
-      return;
-    }
-
-    const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
-    if (dist > 1) {
-      this.rejectAction(eid, { code: 'not_adjacent', targetEntityId: a.npcEntityId, dist });
-      return;
-    }
-
-    const dialogue = getDialogue(npcBp.blueprintId);
-    if (!dialogue) {
-      this.rejectAction(eid, { code: 'dialogue_closed' });
-      return;
-    }
-
-    const option = dialogue.options.find(o => o.optionId === a.optionId);
-    if (!option) {
-      this.rejectAction(eid, { code: 'dialogue_option_invalid', optionId: a.optionId });
-      return;
-    }
-
-    if (option.type === 'talk' && option.response) {
-      slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-        greeting: option.response,
-        options: dialogue.options,
-      });
-    } else if (option.type === 'trade' && option.trades) {
-      slot.connection.onDialogueOpen(eid, a.npcEntityId, {
-        greeting: dialogue.greeting,
-        options: [{ ...option }],
-      });
-    }
-  }
-
-  private handleTrade(eid: number, slot: PlayerSlot, action: DecodedAction): void {
-    const a = action as DecodedActionTrade;
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    const npcPos = this.entities.position.get(a.npcEntityId);
-    const npcBp = this.entities.blueprint.get(a.npcEntityId);
-    if (!npcPos || !npcBp) {
-      this.rejectAction(eid, { code: 'target_missing', targetEntityId: a.npcEntityId });
-      return;
-    }
-
-    const dist = Math.max(Math.abs(npcPos.tileX - playerPos.tileX), Math.abs(npcPos.tileY - playerPos.tileY));
-    if (dist > 1) {
-      this.rejectAction(eid, { code: 'not_adjacent', targetEntityId: a.npcEntityId, dist });
-      return;
-    }
-
-    const dialogue = getDialogue(npcBp.blueprintId);
-    if (!dialogue) {
-      this.rejectAction(eid, { code: 'dialogue_closed' });
-      return;
-    }
-
-    // Find the trade across all options
-    let trade: { tradeId: number; givesBlueprint: number; givesQty: number; wantsBlueprint: number; wantsQty: number } | undefined;
-    for (const opt of dialogue.options) {
-      if (opt.trades) trade = opt.trades.find(t => t.tradeId === a.tradeId);
-      if (trade) break;
-    }
-    if (!trade) {
-      this.rejectAction(eid, { code: 'trade_unavailable', tradeId: a.tradeId });
-      return;
-    }
-
-    // Hermit first-time free gift check
-    if (npcBp.blueprintId === BlueprintType.Hermit && trade.wantsBlueprint === 0) {
-      if (slot.playerFlags.has('hermit_gift')) {
-        this.rejectAction(eid, { code: 'trade_unavailable', tradeId: a.tradeId });
-        return;
-      }
-      this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
-      slot.playerFlags.add('hermit_gift');
-      slot.connection.onInventoryChanged(eid, this);
-      this.emitEvent(eid, this.makeEvent('trade_complete', {
-        npcEntityId: a.npcEntityId, npcName: this.bpName(npcBp.blueprintId),
-        gaveBlueprintId: 0, gaveName: '', gaveQuantity: 0,
-        receivedBlueprintId: trade.givesBlueprint, receivedName: this.bpName(trade.givesBlueprint),
-        receivedQuantity: trade.givesQty,
-      }));
-      return;
-    }
-
-    // Normal trade: check player has the required items
-    if (trade.wantsBlueprint > 0) {
-      const inv = this.inventoryMgr.get(eid);
-      if (!inv) return;
-      let have = 0;
-      for (const item of inv.items) {
-        if (item.blueprintId === trade.wantsBlueprint) have += item.quantity;
-      }
-      if (have < trade.wantsQty) {
-        this.rejectAction(eid, { code: 'missing_materials', recipeId: a.tradeId });
-        return;
-      }
-      // Consume wants, give gives
-      let remaining = trade.wantsQty;
-      for (let i = inv.items.length - 1; i >= 0 && remaining > 0; i--) {
-        if (inv.items[i].blueprintId === trade.wantsBlueprint) {
-          const take = Math.min(inv.items[i].quantity, remaining);
-          this.inventoryMgr.removeItem(eid, inv.items[i].itemId, take);
-          remaining -= take;
-        }
-      }
-      this.inventoryMgr.addItem(eid, trade.givesBlueprint, trade.givesQty);
-      slot.connection.onInventoryChanged(eid, this);
-      this.emitEvent(eid, this.makeEvent('trade_complete', {
-        npcEntityId: a.npcEntityId, npcName: this.bpName(npcBp.blueprintId),
-        gaveBlueprintId: trade.wantsBlueprint, gaveName: this.bpName(trade.wantsBlueprint),
-        gaveQuantity: trade.wantsQty,
-        receivedBlueprintId: trade.givesBlueprint, receivedName: this.bpName(trade.givesBlueprint),
-        receivedQuantity: trade.givesQty,
-      }));
-    }
-  }
-
   private processEntityDeath(entityId: number, killerEntityId: number): void {
     const pos = this.entities.position.get(entityId);
     const bp = this.entities.blueprint.get(entityId);
@@ -1085,166 +601,13 @@ export class GameWorld implements SystemState {
     }
 
     // Cleanup
-    this.occupancy.clear(pos.tileX, pos.tileY);
+    this.occupancy.clear(pos.tileX, pos.tileY, entityId);
     this.critterStates.delete(entityId);
     this.combatStates.delete(entityId);
     this.clearAiTargetsOn(entityId);
     this.entities.destroy(entityId);
   }
 
-  private handleUseItemAt(eid: number, slot: PlayerSlot, itemId: number, tileX: number, tileY: number): void {
-    const playerPos = this.entities.position.get(eid);
-    if (!playerPos) return;
-
-    if (tileX < 0 || tileX >= this.map.width || tileY < 0 || tileY >= this.map.height) {
-      this.rejectAction(eid, { code: 'tile_out_of_bounds', tileX, tileY });
-      return;
-    }
-
-    const inv = this.inventoryMgr.get(eid);
-    const item = inv ? findItem(inv, itemId) : undefined;
-    if (!item) {
-      this.rejectAction(eid, { code: 'item_missing', itemId });
-      return;
-    }
-
-    const bp = getBlueprint(item.blueprintId);
-    if (!bp) {
-      this.rejectAction(eid, { code: 'item_missing', itemId });
-      return;
-    }
-
-    // Cooking
-    if (item.blueprintId === BlueprintType.RawFish || item.blueprintId === BlueprintType.RawMeat) {
-      const campfireEid = this.occupancy.get(tileX, tileY);
-      const campBp = campfireEid ? this.entities.blueprint.get(campfireEid) : undefined;
-      if (!campfireEid || !campBp || campBp.blueprintId !== BlueprintType.Campfire) {
-        this.rejectAction(eid, {
-          code: 'wrong_target_kind', targetEntityId: campfireEid ?? 0,
-          expected: 'campfire', got: campBp ? this.bpName(campBp.blueprintId).toLowerCase() : 'empty tile',
-        });
-        return;
-      }
-      const cookDist = Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY));
-      if (cookDist > 1) {
-        this.rejectAction(eid, { code: 'not_adjacent', targetEntityId: campfireEid, dist: cookDist });
-        return;
-      }
-
-      const outputBp = item.blueprintId === BlueprintType.RawFish ? BlueprintType.CookedFish : BlueprintType.CookedMeat;
-      this.inventoryMgr.removeItem(eid, itemId, 1);
-      this.inventoryMgr.addItem(eid, outputBp, 1);
-      slot.connection.onInventoryChanged(eid, this);
-      this.emitEvent(eid, this.makeEvent('item_cooked', {
-        inputBlueprintId: item.blueprintId, inputName: this.bpName(item.blueprintId),
-        outputBlueprintId: outputBp, outputName: this.bpName(outputBp),
-      }));
-      return;
-    }
-
-    // Placing
-    if (bp.category !== 'placeable') {
-      this.rejectAction(eid, { code: 'not_placeable', itemId });
-      return;
-    }
-    if (Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) > 2) {
-      this.rejectAction(eid, { code: 'not_adjacent', targetEntityId: 0, dist: Math.max(Math.abs(playerPos.tileX - tileX), Math.abs(playerPos.tileY - tileY)) });
-      return;
-    }
-    if (!this.map.isWalkable(tileX, tileY) || this.occupancy.isOccupied(tileX, tileY)) {
-      const building = this.map.getBuilding(tileX, tileY);
-      const terrain = this.map.getTerrain(tileX, tileY);
-      const by: 'wall' | 'water' | 'rock' | 'entity' =
-        this.occupancy.isOccupied(tileX, tileY) ? 'entity'
-        : building !== Building.None ? 'wall'
-        : terrain === Terrain.Water || terrain === Terrain.River ? 'water'
-        : 'rock';
-      this.rejectAction(eid, { code: 'tile_blocked', tileX, tileY, by });
-      return;
-    }
-
-    const buildingType = blueprintToBuilding(item.blueprintId);
-    if (buildingType !== null) {
-      // Static building tile (walls) — write to map layer
-      if (this.map.getBuilding(tileX, tileY) !== Building.None) {
-        this.rejectAction(eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-        return;
-      }
-      this.inventoryMgr.removeItem(eid, itemId, 1);
-      this.map.setBuilding(tileX, tileY, buildingType);
-    } else {
-      // Doors must stand in a wall gap — floor underneath, walls on opposite
-      // sides. Relied on for both elevation flattening (floor corners are
-      // flattened in Pass 3) and facing detection (two-wall neighbors).
-      if (item.blueprintId === BlueprintType.WoodenDoor) {
-        const floor = this.map.getBuilding(tileX, tileY);
-        if (floor !== Building.WoodenFloor && floor !== Building.StoneFloor) {
-          this.rejectAction(eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-          return;
-        }
-        const wallAt = (x: number, y: number) =>
-          this.map.inBounds(x, y) && this.map.getBuilding(x, y) === Building.Wall;
-        const ns = wallAt(tileX, tileY - 1) && wallAt(tileX, tileY + 1);
-        const ew = wallAt(tileX - 1, tileY) && wallAt(tileX + 1, tileY);
-        if (!ns && !ew) {
-          this.rejectAction(eid, { code: 'tile_blocked', tileX, tileY, by: 'wall' });
-          return;
-        }
-      }
-      // Interactive placeables (campfire, door, chest) — remain entities
-      this.inventoryMgr.removeItem(eid, itemId, 1);
-      const newEid = this.entities.create();
-      this.entities.position.set(newEid, { tileX, tileY });
-      this.entities.blueprint.set(newEid, { blueprintId: item.blueprintId, variant: 0 });
-      this.entities.statusEffects.set(newEid, { effects: StatusEffect.Placed });
-      if (bp.maxHp) this.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-      if (bp.collides) this.occupancy.set(tileX, tileY, newEid);
-      if (item.blueprintId === BlueprintType.StorageChest) this.inventoryMgr.create(newEid, 100);
-    }
-    slot.connection.onInventoryChanged(eid, this);
-    this.emitEvent(eid, this.makeEvent('building_placed', {
-      blueprintId: item.blueprintId, itemName: this.bpName(item.blueprintId),
-      tileX, tileY,
-    }));
-  }
-
-  private executeInteract(eid: number, slot: PlayerSlot, targetEntityId: number): void {
-    const bp = this.entities.blueprint.get(targetEntityId);
-    if (!bp) return;
-    switch (bp.blueprintId) {
-      case BlueprintType.WoodenDoor:
-        this.toggleDoor(targetEntityId);
-        break;
-      case BlueprintType.StorageChest:
-        slot.connection.onContainerOpen(eid, targetEntityId, this);
-        break;
-      case BlueprintType.Hermit:
-      case BlueprintType.Trader:
-      case BlueprintType.Wanderer: {
-        const npcBp = this.entities.blueprint.get(targetEntityId);
-        if (npcBp) {
-          const dialogue = getDialogue(npcBp.blueprintId);
-          if (dialogue) slot.connection.onDialogueOpen(eid, targetEntityId, dialogue);
-        }
-        break;
-      }
-    }
-  }
-
-  private toggleDoor(doorEntityId: number): void {
-    const pos = this.entities.position.get(doorEntityId);
-    const effects = this.entities.statusEffects.get(doorEntityId);
-    if (!pos || !effects) return;
-
-    const isOpen = (effects.effects & StatusEffect.Open) !== 0;
-    if (isOpen) {
-      this.occupancy.set(pos.tileX, pos.tileY, doorEntityId);
-      this.entities.statusEffects.set(doorEntityId, { effects: effects.effects & ~StatusEffect.Open });
-    } else {
-      this.occupancy.clear(pos.tileX, pos.tileY);
-      this.entities.statusEffects.set(doorEntityId, { effects: effects.effects | StatusEffect.Open });
-    }
-  }
 
   private handlePlayerDeath(entityId: number): void {
     // Don't re-process if already dead
@@ -1272,7 +635,7 @@ export class GameWorld implements SystemState {
     }
 
     // Clear occupancy — corpse is walk-through
-    this.occupancy.clear(pos.tileX, pos.tileY);
+    this.occupancy.clear(pos.tileX, pos.tileY, entityId);
 
     // Cancel all active states
     clearMoveTarget(entityId, this);

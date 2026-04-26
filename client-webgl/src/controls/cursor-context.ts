@@ -3,7 +3,7 @@
 // Mirrors cli/render.ts's buildCursorContext but sources state from the
 // webgl Scene (entities Map + WorldMap + inventory) instead of flat grids.
 
-import { Terrain, Building } from '@shared/terrain.js';
+import { Terrain } from '@shared/terrain.js';
 import { isPlaced } from '@shared/status-effects.js';
 import type { ActionContext } from '@shared/action-resolver.js';
 import type { Scene } from '../scene.js';
@@ -24,10 +24,7 @@ export function buildContextFromEntity(
   if (!scene.worldMap.inBounds(tx, ty)) return null;
 
   const t = scene.worldMap.getTerrain(tx, ty) as Terrain;
-  const b = scene.worldMap.getBuilding(tx, ty) as Building;
-  const isWalkable =
-    !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
-    && (b === Building.None || b === Building.WoodenFloor || b === Building.StoneFloor);
+  const isWalkable = scene.worldMap.isWalkable(tx, ty);
 
   const handItem = scene.inventory.find(i => i.equippedSlot === 1);
 
@@ -65,10 +62,7 @@ export function buildCursorContext(
   if (!scene.worldMap.inBounds(tileX, tileY)) return null;
 
   const t = scene.worldMap.getTerrain(tileX, tileY) as Terrain;
-  const b = scene.worldMap.getBuilding(tileX, tileY) as Building;
-  const isWalkable =
-    !(t === Terrain.Water || t === Terrain.Rock || t === Terrain.River)
-    && (b === Building.None || b === Building.WoodenFloor || b === Building.StoneFloor);
+  const isWalkable = scene.worldMap.isWalkable(tileX, tileY);
 
   // Hand slot = 1 (matches the CLI convention); fishing rod on water
   // resolves to Harvest via the shared resolver.

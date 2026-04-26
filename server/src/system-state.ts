@@ -47,6 +47,10 @@ export interface CritterState {
   rng: number;
   behavior: 'wander' | 'flee' | 'aggro' | 'passive';
   targetEntityId?: number;
+  /** Ticks until the next wander→aggro reachability probe is allowed. Set
+   *  to DEFAULT_AGGRO_PROBE_COOLDOWN whenever a probe fails so we don't
+   *  pathfind every tick against an unreachable player. */
+  aggroProbeCooldown?: number;
 }
 
 /** All mutable game state needed by systems. GameWorld implements this. */

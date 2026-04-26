@@ -69,16 +69,32 @@ eviction is broken.
    player chunk actually changes, not every frame.
 2. For each dirty chunk still in-interest: rebuild elevation →
    build terrain instances + wall drawables.
-3. If anything changed, concat all `chunkTerrainData` values into two
-   big buffers and call `terrainRenderer.uploadInstances()`.
+3. If anything changed, concat all `chunkTerrainData` values into four
+   big buffers (base / overlay / side / top) and call
+   `terrainRenderer.uploadInstances()`.
 
 ### Upload strategy
 
 `TerrainRenderer.uploadInstances(baseData, baseCount, overlayData,
-overlayCount)` is **full-replace** (`bufferData`, not `bufferSubData`).
-Chunk changes are infrequent enough (initial stream + tile deltas)
-that rebuild-on-any-change is simpler than tracking dense-packed slot
-offsets. One draw call for base, one for overlays.
+overlayCount, sideData, sideCount, topData, topCount)` is
+**full-replace** (`bufferData`, not `bufferSubData`). Chunk changes
+are infrequent enough (initial stream + tile deltas) that
+rebuild-on-any-change is simpler than tracking dense-packed slot
+offsets.
+
+### Four-pass draw order
+
+`TerrainRenderer.render()` runs four sub-passes per frame:
+1. **Base** — one quad per tile (including floor tiles at lifted
+   top-diamond corners). Opaque.
+2. **Overlay** — neighbor-bleed blendomatic overlays onto lower-
+   priority centers. `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`.
+3. **Floor top-redraw** — one quad per floor tile, same lifted corners
+   as the base, drawn with the base program. Overdraws any neighbor
+   overlay that tilted into the floor's screen-Y band (e.g. water-on-
+   grass bleeding into a bridged river slab). Opaque.
+4. **Side** — floor SE/SW side quads via a dedicated side program
+   (rectangular UVs, `SIDE_SHADE` darkening). Opaque.
 
 The render-side side of this is `renderer.ts` — drain dirty chunks →
 `terrainRenderer.render` → flatten `wallDrawablesByChunk.values()`
@@ -136,7 +152,7 @@ creature-entity.ts; revisit if it looks bad.
 `controls/mouse.ts`:
 1. `canvas.mousedown` → `camera.tileAt(cx, cy)` for world tile.
 2. `buildCursorContext(scene, tx, ty)` (`controls/cursor-context.ts`)
-   — reads `worldMap.getTerrain/getBuilding` for walkability,
+   — calls `worldMap.isWalkable(tx, ty)` (the shared predicate) for walkability,
    iterates `scene.entities` for entity-at-tile (skipping self),
    reads `scene.inventory.find(i => i.equippedSlot === 1)` for hand
    item.

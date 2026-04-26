@@ -2,6 +2,7 @@ import type { SystemState } from '../system-state.js';
 import { ActionType } from '@shared/actions.js';
 import { getBlueprint } from '@shared/blueprints.js';
 import { findItem } from '@shared/inventory.js';
+import { Ok, Err, type ActionResult } from '../action-rejection.js';
 
 export interface ConsumableState {
   itemId: number;
@@ -10,13 +11,15 @@ export interface ConsumableState {
   healAmount: number;
 }
 
-export function startConsume(eid: number, itemId: number, world: SystemState): void {
+export function startConsume(eid: number, itemId: number, world: SystemState): ActionResult {
   const inv = world.inventoryMgr.get(eid);
-  if (!inv) return;
+  if (!inv) return Err({ code: 'item_missing', itemId });
   const item = findItem(inv, itemId);
-  if (!item) return;
+  if (!item) return Err({ code: 'item_missing', itemId });
   const bp = getBlueprint(item.blueprintId);
-  if (!bp || !bp.consumeHeal || !bp.consumeTicks) return;
+  if (!bp || !bp.consumeHeal || !bp.consumeTicks) {
+    return Err({ code: 'not_consumable', itemId });
+  }
 
   world.consumableStates.set(eid, {
     itemId,
@@ -25,6 +28,7 @@ export function startConsume(eid: number, itemId: number, world: SystemState): v
     healAmount: bp.consumeHeal,
   });
   world.entities.currentAction.set(eid, { actionType: ActionType.Consuming });
+  return Ok;
 }
 
 export function cancelConsume(eid: number, world: SystemState): void {

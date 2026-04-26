@@ -34,6 +34,8 @@ const RECIPES: Recipe[] = [
   { id: 14, output: { blueprintId: BlueprintType.WoodenWall, quantity: 1 },   inputs: [{ blueprintId: BlueprintType.Wood, quantity: 4 }] },
   { id: 15, output: { blueprintId: BlueprintType.WoodenDoor, quantity: 1 },   inputs: [{ blueprintId: BlueprintType.Wood, quantity: 5 }, { blueprintId: BlueprintType.Iron, quantity: 1 }] },
   { id: 16, output: { blueprintId: BlueprintType.StorageChest, quantity: 1 }, inputs: [{ blueprintId: BlueprintType.Wood, quantity: 6 }, { blueprintId: BlueprintType.Iron, quantity: 2 }] },
+  { id: 17, output: { blueprintId: BlueprintType.WoodenFloor, quantity: 1 },  inputs: [{ blueprintId: BlueprintType.Wood, quantity: 1 }] },
+  { id: 18, output: { blueprintId: BlueprintType.StoneFloor, quantity: 1 },   inputs: [{ blueprintId: BlueprintType.Rock, quantity: 2 }] },
 ];
 
 const recipeMap = new Map<number, Recipe>();

@@ -29,6 +29,16 @@ export type RejectionReason =
   | { code: 'not_placeable'; itemId: number }
   | { code: 'dead' };
 
+/** Helpers can fail with a structured RejectionReason or succeed.
+ *  Use ActionResultOf<T> when the success path also carries a payload. */
+export type ActionResult = { ok: true } | { ok: false; reason: RejectionReason };
+export type ActionResultOf<T> = { ok: true; value: T } | { ok: false; reason: RejectionReason };
+export const Ok: ActionResult = { ok: true };
+export function OkValue<T>(value: T): ActionResultOf<T> { return { ok: true, value }; }
+export function Err(reason: RejectionReason): { ok: false; reason: RejectionReason } {
+  return { ok: false, reason };
+}
+
 export function formatRejection(r: RejectionReason): string {
   switch (r.code) {
     case 'tile_blocked':

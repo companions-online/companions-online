@@ -47,7 +47,7 @@ GameWorld implements SystemState {
 
   addPlayer(connection: PlayerConnection): entityId
   removePlayer(entityId)
-  setAction(entityId, action)  // → processAction switch dispatch
+  setAction(entityId, action)  // queues pendingAction; runTick's action phase calls processAction(this, ...) from world-actions.ts
   runTick() / runTicks(n)
 }
 ```
@@ -107,7 +107,11 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 **Identify + keepalive contract.** New MCP sessions stay entity-less until the client calls `identify(name)`. Pre-identify tool calls return an `isError` text block steering to identify. Node HTTP timeouts (`requestTimeout`, `headersTimeout`) are disabled in `main.ts` to keep long-lived SSE streams alive; a 15s MCP-native `ping()` interval per session produces real bytes on the standalone SSE stream so upstream proxies / harness liveness checks don't tear the stream down either. Background in `docs/plans/mcp-server-keepalive.md`.
 
-**Action rejection channel.** Invalid actions (walk into wall, pickup non-item, craft without materials, etc.) route through `GameWorld.rejectAction(eid, reason)` → `PlayerConnection.onActionRejected` rather than silently returning. `reason` is a discriminated union defined in `server/src/action-rejection.ts` (`RejectionReason`); `formatRejection(r)` renders it to LLM-readable text at the MCP boundary, same pattern as `GameEvent` / `formatEventText`. `McpConnection` resolves `awaitAction` immediately with `{ status: 'rejected', reason }`, and `mcp-tools.ts::doAction` returns `text(formatEnvelope(...), { isError: true })` with a `[rejected: ...]` prefix — envelope still renders so the LLM sees current state. `WebSocketConnection` no-ops (WS renders its own collision feedback); `HeadlessConnection` captures into `rejections[]` for tests. Add new variants to the union when new rejection sites appear — no catch-all variant.
+**Action rejection channel.** Invalid actions (walk into wall, pickup non-item, craft without materials, etc.) route through `rejectAction(world, eid, reason)` (exported from `server/src/world-actions.ts`) → `PlayerConnection.onActionRejected` rather than silently returning. `reason` is a discriminated union defined in `server/src/action-rejection.ts` (`RejectionReason`); `formatRejection(r)` renders it to LLM-readable text at the MCP boundary, same pattern as `GameEvent` / `formatEventText`. `McpConnection` resolves `awaitAction` immediately with `{ status: 'rejected', reason }`, and `mcp-tools.ts::doAction` returns `text(formatEnvelope(...), { isError: true })` with a `[rejected: ...]` prefix — envelope still renders so the LLM sees current state. `WebSocketConnection` no-ops (WS renders its own collision feedback); `HeadlessConnection` captures into `rejections[]` for tests. Add new variants to the union when new rejection sites appear — no catch-all variant.
+
+**ActionResult: helpers fail with structured reasons, handlers are shims.** Every mutating system helper that can reject (`setMoveTarget`, `startAttack`, `startHarvest`, `startConsume`, and the six `inventoryMgr.{equip,unequip,drop,craft,transferToContainer,transferFromContainer}`) returns `ActionResult = { ok: true } | { ok: false; reason: RejectionReason }` — defined alongside the union in `action-rejection.ts` with `Ok`, `OkValue<T>`, `Err(reason)` constructors (and `ActionResultOf<T>` for the `drop` case that carries the dropped item data). Validation (bounds, walkable, occupancy, target-exists, distance, weight, material, no-path) lives inside the helper; handlers pattern-match on the result and forward the reason via `rejectAction`. This kills the earlier "pre-validate in handler, re-validate in helper" duplication and eliminates the silent-failure class where a `void`/`false`-returning helper disagreed with a pre-check. The shared `requireAdjacentTarget(actorId, targetId, world, opts?)` helper in `server/src/action-helpers.ts` absorbs the `target_missing | wrong_target_kind | not_adjacent` preamble used by Transfer / DialogueSelect / Trade.
+
+**`setMoveTarget` mode: `'exact'` vs `'near'`.** Two call intents must coexist: player `move_to(x,y)` means "go exactly to that tile — if it's blocked, tell me", while pickup / interact / attack-chase mean "go near that tile — route to an adjacent walkable cell if the goal itself is blocked". `setMoveTarget(eid, x, y, world, mode)` takes `'exact'` (rejects a blocked goal tile with `tile_blocked`) or `'near'` (default; relies on `findPath`'s internal blocked-goal → adjacent-walkable fallback). `handleMoveTo` uses `'exact'`; every other caller uses the default.
 
 ## Harness + Eval
 
@@ -140,7 +144,7 @@ Sample checkpoints (see `configs/survival-basics.json`): `harvest_yield {resourc
 1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]
 3. World pulse — resource respawns (trees) + creature respawns (night skeleton spawner) + creature lifecycle (skeleton sun damage, returns deaths → processEntityDeath(killerEntityId=0))
-4. Movement (A* pathfinding, occupancy collision, wait-and-repath; arriveIdle fires Idle)
+4. Movement (A* pathfinding, occupancy collision, wait-and-repath; clearMoveTarget fires Idle on path end / unreachable)
 5. Arrival-triggered resolvers (walk-to-then-do):
    5a. Pending pickups — dist check, pick up if adjacent
    5b. Pending interacts — dist check, execute interact if adjacent
@@ -157,7 +161,7 @@ Sample checkpoints (see `configs/survival-basics.json`): `harvest_yield {resourc
 (pickups, interacts, harvest's pathfinding→channel flip) check `hasMoveTarget`
 to see whether the player has actually finished walking. Before this order,
 harvest ran *before* movement, so on the arrival tick it saw a still-pending
-move target, skipped the transition, and let `arriveIdle` flip the player to
+move target, skipped the transition, and let `clearMoveTarget` flip the player to
 `Idle`. The MCP tool then saw `Idle` on broadcast and resolved as complete —
 with no yield. Placing harvest after movement lets the flip happen atomically
 in the same tick as arrival, so the MCP player sees `Harvesting` and keeps
@@ -165,7 +169,9 @@ awaiting. Pickups and interacts already lived here for the same reason.
 
 ## Action System (17 actions)
 
-`processAction` uses a switch/dispatch to handler methods:
+Action dispatch lives in `server/src/world-actions.ts` — a flat sibling file to `game-world.ts`. `processAction(world, eid, slot, action)` is the switch/dispatch; individual `handle*` functions are module-private; `rejectAction` and `executeInteract` are the only other exports. Every handler is a free function taking `world: GameWorld` (matching `systems/*`). `game-world.ts` holds the state + tick orchestration; the action layer calls back into it via the now-public `emitEvent` / `broadcastEvent` / `makeEvent` / `bpName` methods.
+
+`processAction` uses a switch/dispatch to handlers:
 - **World**: MoveTo, Cancel, Attack, Harvest, Pickup, UseItemAt, Interact, Say
 - **Inventory**: Equip, Unequip, Drop, UseConsumable, Craft, Transfer
 - **NPC**: DialogueSelect, Trade
@@ -199,8 +205,18 @@ NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams wit
 
 ## Building Layer vs Entities
 
-Static structures (WoodenWall) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas.
+Static structures (WoodenWall, WoodenFloor, StoneFloor) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas. `blueprintToBuilding()` in `shared/src/blueprints.ts` is the single source of truth: a non-null return routes the placement through the building-tile branch in `handleUseItemAt`. Walls block movement; floors are walkable and can bridge rivers (see `isWalkable` / `isPlaceable` below).
 Interactive placeables (Door, Campfire, StorageChest) → entities with components (statusEffects, optional health). Placed vs ground-item is keyed on the `StatusEffect.Placed` bit — `isPlaced(se)` in `shared/src/status-effects.ts` is the canonical check used by the MCP formatter, WebGL cursor/click routing, and CLI render. `handleUseItemAt` sets the bit on placement; `spawnCreatureEntity` sets it at worldgen for `category === 'placeable'` entities and Trees; `handleDrop` + `spawnGroundItem` leave it off. Persistence round-trips the bit inside the existing statusEffects byte.
+
+## Terrain Predicates (walk / place / light)
+
+`shared/src/terrain.ts` exposes three predicates, each answering a different question about a tile:
+
+- **`isWalkable(terrain, building)`** — can an entity stand on and traverse this tile? Water and rock are never walkable; walls and fences block; river is only walkable when bridged by a WoodenFloor/StoneFloor; everything else walkable. Used by pathfinding, movement, AI, and every server-side reachability check.
+- **`isPlaceable(terrain, currentBuilding, newBuilding | null)`** — can `newBuilding` be placed on this tile (or an entity if `null`)? Requires no existing building; water/rock never placeable; river only placeable when the new building is a floor (bridging). Called from `handleUseItemAt`'s pre-check in place of the old `isWalkable`-based check, because walls-on-grass and floors-on-river are both valid but can't both be expressed as "currently walkable".
+- **`isLightPassing(terrain, building)`** — does the shadowcaster's ray pass through this tile? Walls/fences block; water/rock block (preserves pre-split behavior); river, floors, grass/dirt/sand pass. Used by `client-webgl/src/lighting/lighting.ts` shadowcast blocker. Split out so rivers can be non-walkable while still transmitting light.
+
+The three are thin pure functions over the same `(terrain, building)` pair; the WorldMap class exposes one-argument wrappers (`map.isWalkable(x, y)`, etc.).
 
 ## Player Death + Respawn
 
