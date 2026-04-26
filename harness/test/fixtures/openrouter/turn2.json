@@ -1,0 +1,19 @@
+{
+  "id": "fixture-turn2",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": "Recording progress.",
+        "tool_calls": [
+          {
+            "id": "call_2",
+            "type": "function",
+            "function": { "name": "memory_update", "arguments": "{\"content\":\"progress: 5\"}" }
+          }
+        ]
+      }
+    }
+  ]
+}

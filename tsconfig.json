@@ -18,6 +18,6 @@
       "@client-webgl/*": ["./client-webgl/src/*"]
     }
   },
-  "include": ["shared/src/**/*", "server/src/**/*", "client-webgl/src/**/*", "cli/**/*"],
+  "include": ["shared/src/**/*", "server/src/**/*", "client-webgl/src/**/*", "cli/**/*", "harness/**/*"],
   "exclude": ["node_modules", "dist"]
 }

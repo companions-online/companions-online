@@ -113,6 +113,26 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 
 **`setMoveTarget` mode: `'exact'` vs `'near'`.** Two call intents must coexist: player `move_to(x,y)` means "go exactly to that tile — if it's blocked, tell me", while pickup / interact / attack-chase mean "go near that tile — route to an adjacent walkable cell if the goal itself is blocked". `setMoveTarget(eid, x, y, world, mode)` takes `'exact'` (rejects a blocked goal tile with `tile_blocked`) or `'near'` (default; relies on `findPath`'s internal blocked-goal → adjacent-walkable fallback). `handleMoveTo` uses `'exact'`; every other caller uses the default.
 
+## Harness + Eval
+
+`harness/` holds three interchangeable LLM harness variants and an eval system that scores them on behavioral checkpoints.
+
+**Variants** (all share `bootstrap.ts` for env/MCP/decider/memory/logger setup; `decider.ts` is the LLM abstraction with `decide() → { message, usage }`):
+- `compact.ts` — rolling action window + last-perception snapshot rebuilt every turn into a 3-message prompt (system + assistant + tool). Self-contained: fold of the old `state.ts` + `prompt-builder.ts`.
+- `baseline.ts` — accumulates the full message history (every assistant + tool + reasoning_details) and pings `user: "continue"` after each tool result. No truncation.
+- `truncated.ts` — full history but turns older than the most recent 2 are collapsed via `compactOldTurns(messages, 2)` to a single `user` line: `<tool>(<args>) → <action-tag>; events:[player_say,entity_died]`.
+
+Each variant exports `run<Variant>(opts: RunVariantOpts): Promise<VariantResult>` and a CLI shim. `RunVariantOpts.onTurnComplete(step, usage)` lets the eval-runner observe tokens and short-circuit (`return 'stop'` → `stopReason: 'host_stop'`).
+
+**Eval system** (`harness/eval/`):
+- `match.ts` — `matches(checkpoint, event)` shallow-equals `checkpoint.match` against `event.details`.
+- `scoreboard.ts` — `Scoreboard` attaches a `world.setEventObserver(...)` (added in `game-world.ts` — single observer, fires for both `emitEvent` and `broadcastEvent` channels). Resolves AI eid via `world.players.keys()` snapshot diff at first `'emit'` channel callback. Only first-person `'emit'` events count toward score.
+- `eval-runner.ts` — orchestrates: `createDefaultWorld(seed)` (overridable via `worldFactory` for tests) + `createApp` + `serve` on ephemeral port + `GameLoop`. Sets `process.env.MCP_URL` so the harness connects to it. Runs the chosen variant with `maxSteps: maxTurns`. Stop reasons: `all_checkpoints` (early), `max_tokens`, `max_turns`, `aborted`, `error`. Writes `harness/eval/runs/<runId>.json`.
+- `cli.ts` — `tsx harness/eval/cli.ts <llm-config-name> <eval-config-path>`; exit code = `score === total ? 0 : 1`.
+- `configs/<name>.json` — eval definitions (harness variant, world seed, max turns/tokens, list of checkpoints).
+
+Sample checkpoints (see `configs/survival-basics.json`): `harvest_yield {resourceName:"Wood"}`, `craft_complete {itemName:"Axe"}`, `entity_died {entityName:"Deer"}`, `item_cooked {outputName:"Cooked Meat"}`.
+
 ## SystemState Interface
 
 `server/src/system-state.ts` — subset of GameWorld that system functions accept. Unit tests can create plain objects satisfying it without needing full GameWorld. Exposes `players` for efficient critter AI (iterates players, not all entities).

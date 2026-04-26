@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "harness": "./harness/cli/harness.ts",
+    "eval": "./harness/cli/eval.ts"
+  },
   "scripts": {
     "dev": "tsx server/src/main.ts",
     "dev:server": "tsx server/src/main.ts",
@@ -11,10 +15,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:harness": "vitest run harness/test",
     "cli:map": "tsx scripts/view-map.ts",
     "cli:play": "tsx cli/client.ts",
     "cli:stats": "tsx scripts/map-stats.ts",
     "cli:mcp": "tsx scripts/mcp.ts",
+    "harness": "tsx harness/cli/harness.ts",
+    "eval": "tsx harness/cli/eval.ts",
     "import:sprite": "tsx scripts/import-sprite.ts",
     "render": "tsx scripts/render-frame.ts",
     "render:gl": "tsx scripts/render-gl-frame.ts"
