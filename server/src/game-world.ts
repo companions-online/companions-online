@@ -15,7 +15,7 @@ import { OccupancyGrid } from './occupancy.js';
 import { InventoryManager } from './inventory-manager.js';
 import type { PlayerConnection, TickDelta } from './player-connection.js';
 import type { SystemState, MovementState, HarvestState, CritterState, CombatState } from './system-state.js';
-import { clearMoveTarget, hasMoveTarget, runMovement } from './systems/movement.js';
+import { clearMoveTarget, runMovement } from './systems/movement.js';
 import { cancelHarvest, runHarvest } from './systems/harvest.js';
 import { initCritterAI, runCritterAI, notifyCritterAttacked } from './systems/critter-ai.js';
 import { cancelCombat, runCombat } from './systems/combat.js';
@@ -24,7 +24,8 @@ import { initTreeResource, runResourceRespawns } from './systems/resources.js';
 import { runCreatureRespawns, runCreatureLifecycle } from './systems/creature-lifecycle.js';
 import { Telemetry } from './telemetry.js';
 import { EVENT_PRIORITY, type GameEvent } from './events.js';
-import { processAction, executeInteract, rejectAction } from './world-actions.js';
+import { processAction } from './world-actions.js';
+import { runPendingActions, type PendingAction } from './pending-actions.js';
 import { createMemoryLogger, type WorldLogger } from './world-logger.js';
 
 const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
@@ -60,8 +61,7 @@ export class GameWorld implements SystemState {
   readonly inventoryMgr = new InventoryManager();
 
   readonly players = new Map<number, PlayerSlot>();
-  readonly pendingPickups = new Map<number, { targetEntityId: number }>();
-  readonly pendingInteracts = new Map<number, { targetEntityId: number }>();
+  readonly pendingActions = new Map<number, PendingAction>();
 
   readonly moveStates = new Map<number, MovementState>();
   readonly harvestStates = new Map<number, HarvestState>();
@@ -272,8 +272,7 @@ export class GameWorld implements SystemState {
     if (pos) this.occupancy.clear(pos.tileX, pos.tileY, entityId);
     this.entities.destroy(entityId);
     clearMoveTarget(entityId, this);
-    this.pendingPickups.delete(entityId);
-    this.pendingInteracts.delete(entityId);
+    this.pendingActions.delete(entityId);
     this.inventoryMgr.destroy(entityId);
     this.entityMeta.delete(entityId);
     this.players.delete(entityId);
@@ -346,61 +345,13 @@ export class GameWorld implements SystemState {
     runMovement(this);
     t.endPhase('movement');
 
-    // 5. Resolve arrival-triggered actions: pickups + pending interacts.
-    //    Must run after movement so hasMoveTarget reflects post-movement state.
-    //    Sits before harvest so its pathfinding→channel transition in the
-    //    same phase group runs with the same post-movement view.
-    t.beginPhase('pickups');
-    for (const [eid, pending] of this.pendingPickups) {
-      if (hasMoveTarget(eid, this)) continue;
-      const playerPos = this.entities.position.get(eid);
-      const targetPos = this.entities.position.get(pending.targetEntityId);
-      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
-        this.pendingPickups.delete(eid);
-        continue;
-      }
-      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-      if (dist <= 1) {
-        const bp = this.entities.blueprint.get(pending.targetEntityId);
-        if (bp) {
-          const result = this.inventoryMgr.addItem(eid, bp.blueprintId, 1);
-          if (result.success) {
-            // No occupancy.clear — ground items are not tracked by the
-            // occupancy grid. See OccupancyGrid comment.
-            this.entities.destroy(pending.targetEntityId);
-            const slot = this.players.get(eid);
-            if (slot) {
-              slot.connection.onInventoryChanged(eid, this);
-              this.emitEvent(eid, this.makeEvent('item_picked_up', {
-                blueprintId: bp.blueprintId, itemName: this.bpName(bp.blueprintId), quantity: 1,
-              }));
-            }
-          }
-        }
-      }
-      this.pendingPickups.delete(eid);
-    }
-
-    // 5b. Resolve pending interacts (walk-to then interact)
-    for (const [eid, pending] of this.pendingInteracts) {
-      if (hasMoveTarget(eid, this)) continue;
-      const playerPos = this.entities.position.get(eid);
-      const targetPos = this.entities.position.get(pending.targetEntityId);
-      if (!playerPos || !targetPos || !this.entities.exists(pending.targetEntityId)) {
-        this.pendingInteracts.delete(eid);
-        continue;
-      }
-      const dist = Math.max(Math.abs(targetPos.tileX - playerPos.tileX), Math.abs(targetPos.tileY - playerPos.tileY));
-      if (dist <= 1) {
-        const slot = this.players.get(eid);
-        if (slot) {
-          const r = executeInteract(this, eid, slot, pending.targetEntityId);
-          if (!r.ok) rejectAction(this, eid, r.reason);
-        }
-      }
-      this.pendingInteracts.delete(eid);
-    }
-    t.endPhase('pickups');
+    // 5. Resolve arrival-triggered actions (pickup, interact, transfer,
+    //    trade, dialogue, use_item_at). Must run after movement so
+    //    hasMoveTarget reflects post-movement state. Sits before harvest so
+    //    its pathfinding→channel transition runs with the same view.
+    t.beginPhase('pendingActions');
+    runPendingActions(this);
+    t.endPhase('pendingActions');
 
     // 6. Harvest (after movement so pathfinding→channel transition happens
     //    on arrival tick, not the tick after)
@@ -642,8 +593,7 @@ export class GameWorld implements SystemState {
     cancelHarvest(entityId, this);
     cancelCombat(entityId, this);
     cancelConsume(entityId, this);
-    this.pendingPickups.delete(entityId);
-    this.pendingInteracts.delete(entityId);
+    this.pendingActions.delete(entityId);
 
     // Set dead state
     this.entities.currentAction.set(entityId, { actionType: ActionType.Dead });
