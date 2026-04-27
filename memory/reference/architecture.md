@@ -123,7 +123,7 @@ Design principle: only emit events NOT inferrable from state snapshots (damage c
 **Variants** (all share `bootstrap.ts` for env/MCP/decider/memory/logger setup; `decider.ts` is the LLM abstraction with `decide() → { message, usage }`):
 - `compact.ts` — rolling action window + last-perception snapshot rebuilt every turn into a 3-message prompt (system + assistant + tool). Self-contained: fold of the old `state.ts` + `prompt-builder.ts`.
 - `baseline.ts` — accumulates the full message history (every assistant + tool + reasoning_details) and pings `user: "continue"` after each tool result. No truncation.
-- `truncated.ts` — full history but turns older than the most recent 2 are collapsed via `compactOldTurns(messages, 2)` to a single `user` line: `<tool>(<args>) → <action-tag>; events:[player_say,entity_died]`.
+- `shortened.ts` — full history but turns older than the most recent 2 are collapsed via `compactOldTurns(messages, 2)` to a single `assistant` message composed verbatim of the assistant's inline content + `<thinking>` reasoning + `<tool>(<args>) → <action-tag>; events:[…said…, …died…]`. No truncation on any of the three components.
 
 Each variant exports `run<Variant>(opts: RunVariantOpts): Promise<VariantResult>` and a CLI shim. `RunVariantOpts.onTurnComplete(step, usage)` lets the eval-runner observe tokens and short-circuit (`return 'stop'` → `stopReason: 'host_stop'`).
 

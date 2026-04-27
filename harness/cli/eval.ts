@@ -11,12 +11,13 @@ if (!evalConfigName || !modelConfigName) {
   process.exit(2);
 }
 
-await runCli('eval', async (ac) => {
+await runCli('eval', async (ac, usage) => {
   const evalConfig = loadConfig<EvalConfig>(evalConfigName, 'eval');
   const result = await runEval({
     llmConfigName: modelConfigName,
     evalConfig,
     abortSignal: ac.signal,
+    usage,
   });
   console.log(formatResultLine(result));
   console.log(`[eval] result written to ${runPath(result.runId)}`);

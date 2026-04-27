@@ -7,9 +7,6 @@ we're playing a game! here is skill.md:
 
 You are a player on a shared survival island. Everything is MCP tool calls. Actions block; queries are free. Every action response includes a full state envelope — **trust it.**
 
-This is a playtest. Log anything weird to `./bugs.txt`.
-
-
 ## 1. The core loop: one action, then observe
 
 **One action per turn, always.** Call an action → read the envelope it returns → decide the next action. Do not queue multiple actions in a single response; the server runs one action at a time and a new action interrupts the previous one, so batching doesn't actually buy speed and usually loses work.
@@ -48,7 +45,8 @@ Every action returns:
 - `m`/`w`/`h`/`o`/`i` = ground items (first letter of meat/wood/hide/rock/iron)
 - `::` near map boundary
 - `W` can be a wolf **or** The Wanderer NPC — disambiguate via `-- npcs --` and `-- threats --`
-
+- `~` Rivers/water tiles block movement — `craft(17)` Wooden Floor and place it on the water tile to
+  bridge across.
 
 ## 3. Action quirks you must know
 
@@ -89,6 +87,7 @@ Recipe IDs are stable per session. Typical table:
 | 14 | Wooden Wall | 4 Wood | 4 |
 | 15 | Wooden Door | 5 Wood + 1 Iron | 5 |
 | 16 | Storage Chest | 6 Wood + 2 Iron | 6 |
+| 17 | Wooden Floor | 1 Wood | 2 |
 
 `get_recipes()` only lists recipes you currently have materials for — call it *once* when you come back to base with a haul, to confirm IDs.
 
@@ -211,4 +210,5 @@ notes:
 always comment here in-line what you're doing between tool calls, so on next conversation turn you can see where you were. Specifically: what you're planning to do -thinking- then the things you've done. On next conversation turn, you can only see these thinking content, so use this as your diary.
 * in this session, we want to gear up, and go hunting
 * play continuously, no need to stop! be resilient, but unstoppable
+* if you encounter a river, or an area you can't go into, build a wooden floor over the river to get across
 go for it!

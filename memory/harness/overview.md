@@ -15,7 +15,7 @@ A third entry, `npx harness human <model>`, swaps the LLM decider for a TTY menu
 
 ## Why three variants exist
 
-The whole point is to compare how history-management strategies affect a small/cheap model's play quality. `compact` (rolling 3-msg window), `baseline` (full history), and `truncated` (full history with old turns rolled up) are the same loop with three different state shapes. Eval scoring lets you measure the difference quantitatively.
+The whole point is to compare how history-management strategies affect a small/cheap model's play quality. `compact` (rolling 3-msg window), `baseline` (full history), and `shortened` (full history with old turns rolled up into single assistant messages) are the same loop with three different state shapes. Eval scoring lets you measure the difference quantitatively.
 
 ## What lives where (one-liners — see `architecture.md` for relationships)
 

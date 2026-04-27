@@ -42,11 +42,18 @@ function loadPrompt(configDir: string): { system: string; first: string } {
   return { system: raw.slice(0, idx).trim(), first: raw.slice(idx + 5).trim() };
 }
 
+// Sentinel: when configName === 'human', the CLI is running the TTY UI and
+// no model JSON is required. The decider is supplied externally; the OpenRouter
+// branch is never taken, so the model field is never read off this stub.
+const HUMAN_STUB_CONFIG: ModelConfig = { type: 'model', model: 'human', actionWindowSize: 20 };
+
 export async function bootstrapHarness(opts: BootstrapOpts): Promise<Bootstrap> {
   loadEnv();
 
   const configDir = opts.configDir ?? CONFIG_DIR;
-  const config = loadConfig<ModelConfig>(opts.configName, 'model', configDir);
+  const config = opts.configName === 'human'
+    ? HUMAN_STUB_CONFIG
+    : loadConfig<ModelConfig>(opts.configName, 'model', configDir);
   const { system, first } = loadPrompt(configDir);
 
   const sessionId = opts.sessionId ?? randomUUID();

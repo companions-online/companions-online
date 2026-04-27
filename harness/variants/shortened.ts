@@ -6,12 +6,6 @@ export type { RunVariantOpts, VariantResult, StopReason } from '../helpers/runne
 
 const KEEP_RECENT_TURNS = 2;
 
-function shortText(text: string | null | undefined, max = 120): string {
-  if (!text) return '';
-  const clean = text.replace(/\s+/g, ' ').trim();
-  return clean.length <= max ? clean : clean.slice(0, max - 1) + '…';
-}
-
 function renderSystem(systemPrompt: string, memory: string): string {
   const parts = [systemPrompt.trim(), '## Memory', memory.trim() || '(empty)'];
   return parts.join('\n\n');
@@ -24,14 +18,15 @@ export function extractActionTag(text: string): string | null {
 
 /**
  * Pluck noteworthy event mentions from a tool result text. We look for
- * `player_say` and `entity_died` substrings (these typically appear in MCP
- * narration / event blocks). Returns an array of short hints; empty if none.
+ * ` said ` and ` died` substrings (these typically appear in MCP narration —
+ * e.g. "Alice said hi", "Wolf died"). Returns an array of short hints; empty
+ * if none.
  */
 export function extractKeyEvents(text: string): string[] {
   const out: string[] = [];
-  const says = text.matchAll(/player_say[^\n]{0,160}/g);
+  const says = text.matchAll(/ said [^\n]{0,160}/g);
   for (const m of says) out.push(m[0].replace(/\s+/g, ' ').trim().slice(0, 120));
-  const deaths = text.matchAll(/entity_died[^\n]{0,160}/g);
+  const deaths = text.matchAll(/ died[^\n]{0,160}/g);
   for (const m of deaths) out.push(m[0].replace(/\s+/g, ' ').trim().slice(0, 120));
   return out;
 }
@@ -69,27 +64,39 @@ function splitTurns(messages: ChatMessage[]): { prefix: ChatMessage[]; turns: Tu
   return { prefix, turns };
 }
 
+/**
+ * Build the collapsed line for a single turn. Composes (verbatim, no
+ * truncation) any of: assistant inline content, assistant reasoning wrapped
+ * in <thinking>, and the tool call summary `name(args) → <action>; events:[…]`.
+ */
 function compactTurnLine(turn: Turn): string {
+  const parts: string[] = [];
+
+  const inline = typeof turn.assistant.content === 'string' ? turn.assistant.content : '';
+  if (inline) parts.push(inline);
+
+  const reasoning = typeof turn.assistant.reasoning === 'string' ? turn.assistant.reasoning : '';
+  if (reasoning) parts.push(`<thinking>${reasoning}</thinking>`);
+
   const calls = turn.assistant.tool_calls ?? [];
-  if (calls.length === 0) {
-    const inline = turn.assistant.content;
-    const said = typeof inline === 'string' && inline ? `said: ${JSON.stringify(shortText(inline))}` : '(no tool call)';
-    return said;
+  if (calls.length > 0) {
+    const call = calls[0];
+    const name = call.function.name;
+    const args = call.function.arguments ?? '{}';
+    const result = typeof turn.tool?.content === 'string' ? turn.tool.content : '';
+    const action = extractActionTag(result);
+    const events = extractKeyEvents(result);
+    const tail = events.length > 0 ? `; events:[${events.join(', ')}]` : '';
+    const summary = action ?? result;
+    parts.push(`${name}(${args}) → ${summary}${tail}`);
   }
-  const call = calls[0];
-  const name = call.function.name;
-  const args = call.function.arguments ?? '{}';
-  const result = typeof turn.tool?.content === 'string' ? turn.tool.content : '';
-  const action = extractActionTag(result);
-  const events = extractKeyEvents(result);
-  const tail = events.length > 0 ? `; events:[${events.join(', ')}]` : '';
-  const summary = action ?? shortText(result, 80);
-  return `${name}(${args}) → ${summary}${tail}`;
+
+  return parts.length > 0 ? parts.join('\n') : '(no tool call)';
 }
 
 /**
- * Replace turns older than the most recent `keepRecent` with a single user
- * message summarizing each. Returns a new flattened message array.
+ * Replace turns older than the most recent `keepRecent` with a single
+ * assistant message summarizing each. Returns a new flattened message array.
  */
 export function compactOldTurns(messages: ChatMessage[], keepRecent = KEEP_RECENT_TURNS): ChatMessage[] {
   const { prefix, turns } = splitTurns(messages);
@@ -97,7 +104,7 @@ export function compactOldTurns(messages: ChatMessage[], keepRecent = KEEP_RECEN
   const cutoff = turns.length - keepRecent;
   const out: ChatMessage[] = [...prefix];
   for (let i = 0; i < cutoff; i++) {
-    out.push({ role: 'user', content: compactTurnLine(turns[i]) });
+    out.push({ role: 'assistant', content: compactTurnLine(turns[i]) });
   }
   for (let i = cutoff; i < turns.length; i++) {
     out.push(turns[i].assistant);
@@ -109,13 +116,13 @@ export function compactOldTurns(messages: ChatMessage[], keepRecent = KEEP_RECEN
 
 // --- Strategy ---
 
-interface TruncatedState {
+interface ShortenedState {
   system: string;
   messages: ChatMessage[];
 }
 
-const truncatedStrategy: VariantStrategy<TruncatedState> = {
-  initialize(b: Bootstrap): TruncatedState {
+const shortenedStrategy: VariantStrategy<ShortenedState> = {
+  initialize(b: Bootstrap): ShortenedState {
     return {
       system: b.system,
       messages: [
@@ -142,9 +149,10 @@ const truncatedStrategy: VariantStrategy<TruncatedState> = {
 };
 
 /**
- * Truncated harness: full history, but turns older than the last 2 are
- * collapsed to a single user line per turn: `tool(args) → <action>; events:[…]`.
+ * Shortened harness: full history, but turns older than the last 2 are
+ * collapsed to a single assistant message containing the assistant's verbatim
+ * inline text + reasoning + tool call summary `tool(args) → <action>; events:[…]`.
  */
-export async function runTruncated(opts: RunVariantOpts): Promise<VariantResult> {
-  return runHarness(truncatedStrategy, opts);
+export async function runShortened(opts: RunVariantOpts): Promise<VariantResult> {
+  return runHarness(shortenedStrategy, opts);
 }

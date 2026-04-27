@@ -1,0 +1,6 @@
+{
+  "type": "model",
+  "model": "deepseek/deepseek-v4-flash",
+  "temperature": 1,
+  "reasoning": { "effort": "none" }
+}

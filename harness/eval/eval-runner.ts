@@ -16,11 +16,12 @@ import type { Scratchpad } from '../helpers/scratchpad.js';
 import type { RunVariantOpts, VariantResult } from '../helpers/runner.js';
 import { runCompact } from '../variants/compact.js';
 import { runBaseline } from '../variants/baseline.js';
-import { runTruncated } from '../variants/truncated.js';
+import { runShortened } from '../variants/shortened.js';
 import { Scoreboard } from './scoreboard.js';
 import type { Checkpoint } from './match.js';
+import type { UsageAccumulator } from '../helpers/runner.js';
 
-export type HarnessVariant = 'compact' | 'baseline' | 'truncated';
+export type HarnessVariant = 'compact' | 'baseline' | 'shortened';
 
 export interface EvalConfig {
   name: string;
@@ -48,6 +49,8 @@ export interface EvalResult {
   checkpointsHit: string[];
   turnCount: number;
   totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
   stopReason: StopReason;
   error?: string;
   aiEid: number | null;
@@ -68,12 +71,14 @@ export interface RunEvalOpts {
   memory?: Scratchpad;
   /** Where per-run JSON results land. Defaults to `harness/logs/`. Tests override. */
   resultsDir?: string;
+  /** Mutable token accumulator forwarded to the variant runner. */
+  usage?: UsageAccumulator;
 }
 
 const RUN_FNS: Record<HarnessVariant, (opts: RunVariantOpts) => Promise<VariantResult>> = {
   compact: runCompact,
   baseline: runBaseline,
-  truncated: runTruncated,
+  shortened: runShortened,
 };
 
 export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
@@ -102,6 +107,8 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
   process.env.MCP_URL = `http://127.0.0.1:${actualPort}/mcp`;
 
   let totalTokens = 0;
+  let promptTokens = 0;
+  let completionTokens = 0;
   let turnCount = 0;
   let stopReason: StopReason | null = null;
   let errorMessage: string | undefined;
@@ -109,6 +116,8 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
   const onTurnComplete = (step: number, usage?: TokenUsage): void | 'stop' => {
     turnCount = step;
     if (usage?.total_tokens) totalTokens += usage.total_tokens;
+    if (usage?.prompt_tokens) promptTokens += usage.prompt_tokens;
+    if (usage?.completion_tokens) completionTokens += usage.completion_tokens;
     if (scoreboard.isComplete()) { stopReason = 'all_checkpoints'; return 'stop'; }
     if (totalTokens >= evalConfig.maxTokens) { stopReason = 'max_tokens'; return 'stop'; }
   };
@@ -125,6 +134,7 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
       logger: opts.logger,
       memory: opts.memory,
       onTurnComplete,
+      usage: opts.usage,
     });
     if (stopReason == null) {
       if (variantResult.stopReason === 'aborted') stopReason = 'aborted';
@@ -151,6 +161,8 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
     checkpointsHit: scoreboard.getHits(),
     turnCount,
     totalTokens,
+    promptTokens,
+    completionTokens,
     stopReason: stopReason ?? 'error',
     error: errorMessage,
     aiEid: scoreboard.getAiEid(),
@@ -176,5 +188,6 @@ async function listen(fetch: (req: Request) => Response | Promise<Response>, por
 export function formatResultLine(result: EvalResult): string {
   const hits = result.checkpointsHit.length === 0 ? 'none' : result.checkpointsHit.join(', ');
   const err = result.error ? ` — error: ${result.error}` : '';
-  return `score ${result.score}/${result.total} — hit: ${hits} — turns: ${result.turnCount} — tokens: ${result.totalTokens} — stop: ${result.stopReason}${err}`;
+  const tokens = `in=${result.promptTokens}/out=${result.completionTokens}/total=${result.totalTokens}`;
+  return `score ${result.score}/${result.total} — hit: ${hits} — turns: ${result.turnCount} — tokens: ${tokens} — stop: ${result.stopReason}${err}`;
 }

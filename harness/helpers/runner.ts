@@ -9,12 +9,25 @@ export interface VariantResult {
   stopReason: StopReason;
 }
 
+/**
+ * Mutable token accumulator threaded from the CLI through the runner. The
+ * CLI prints from this object on every exit path (success / error / SIGINT),
+ * so the runner mutates fields in place rather than returning a snapshot.
+ */
+export interface UsageAccumulator {
+  prompt: number;
+  completion: number;
+  total: number;
+}
+
 export interface RunVariantOpts extends BootstrapOpts {
   /** Test-only cap. Production run is unbounded. */
   maxSteps?: number;
   abortSignal?: AbortSignal;
   /** Called after each turn. Return 'stop' to end the loop early. */
   onTurnComplete?: (step: number, usage?: TokenUsage) => void | 'stop' | Promise<void | 'stop'>;
+  /** Mutable accumulator updated each turn from the decider's reported usage. */
+  usage?: UsageAccumulator;
 }
 
 export interface ToolResultCtx {
@@ -73,6 +86,12 @@ export async function runHarness<S>(
     }
     const { message: assistantMsg, usage } = result;
     log.event('response', { step: stepCount, assistantMsg, usage });
+
+    if (opts.usage && usage) {
+      if (usage.prompt_tokens) opts.usage.prompt += usage.prompt_tokens;
+      if (usage.completion_tokens) opts.usage.completion += usage.completion_tokens;
+      if (usage.total_tokens) opts.usage.total += usage.total_tokens;
+    }
 
     const inlineText = assistantMsg.content ?? '';
     if (inlineText) log.stdout(`assistant: ${shortText(inlineText)}`);

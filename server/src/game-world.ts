@@ -1,5 +1,5 @@
 import { SPAWN_X, SPAWN_Y, MAP_SIZE, CHUNK_SIZE, INTEREST_RANGE } from '@shared/constants.js';
-import { gameMinuteFromTick, gameHourFromTick, KEYFRAME_HOURS } from '@shared/lighting.js';
+import { gameMinuteFromTick, gameHourFromTick, KEYFRAME_HOURS, MORNING_TICK_OFFSET } from '@shared/lighting.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType } from '@shared/actions.js';
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
@@ -816,6 +816,9 @@ export class GameWorld implements SystemState {
 export function createDefaultWorld(seed: number): GameWorld {
   const { map, entitySpawns } = generateWorld(seed);
   const world = new GameWorld(map, seed);
+  // Match createNewWorld's morning start so eval / test worlds don't boot at
+  // midnight (tickOffset=0 = 00:00 = night, which triggers skeleton spawning).
+  world.tickOffset = MORNING_TICK_OFFSET;
 
   for (const spawn of entitySpawns) {
     const bp = getBlueprint(spawn.blueprint);

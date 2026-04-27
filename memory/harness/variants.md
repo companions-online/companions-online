@@ -25,11 +25,17 @@ Why it works for small models: the model sees a stable, bounded prompt regardles
 
 **Cost:** tokens grow O(turns). A 100-turn run can blow well past 100K input tokens.
 
-## truncated
+## shortened
 
-**Full history, but old turns collapsed.** State shape identical to baseline. The `buildMessages` step runs `compactOldTurns(state.messages, keepRecent=2)` before sending: turns older than the last 2 are each replaced with a single `user` line shaped like `tool(args) → <action>; events:[player_say…, entity_died…]`.
+**Full history, but old turns collapsed.** State shape identical to baseline. The `buildMessages` step runs `compactOldTurns(state.messages, keepRecent=2)` before sending: turns older than the last 2 are each replaced with a single `assistant` message composed (verbatim, untruncated) of:
 
-The action tag (`<action>...</action>`) and the `player_say`/`entity_died` event hints come from regex-extracting the tool result text. If neither is present, the line falls back to the first 80 chars of the result.
+1. the assistant's inline `content` (chatresponse), if any
+2. the assistant's `reasoning` (thinking), if any, wrapped as `<thinking>…</thinking>`
+3. `tool(args) → <action>; events:[…said…, …died…]`
+
+The action tag (`<action>...</action>`) and the ` said `/` died` event hints come from regex-extracting the tool result text — they target MCP narration phrasing like "Alice said hi" / "Wolf died". If no action tag is present, the full tool result text is included verbatim — no truncation.
+
+Collapsed messages use `role: 'assistant'` (not `'user'`) so the model sees prior turns as its own conversational continuity rather than as instructions.
 
 **Use when:** baseline is too expensive but you want more recent context than compact's 3-message window.
 

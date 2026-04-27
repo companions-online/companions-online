@@ -235,7 +235,7 @@ export async function createNewWorld(
   // Generate world (same logic as createDefaultWorld)
   const { map, entitySpawns } = generateWorld(seed);
   const world = new GameWorld(map, seed, createFileLogger(join(worldDir, 'server.log')));
-  world.tickOffset = TWILIGHT_TICK_OFFSET;
+  world.tickOffset = MORNING_TICK_OFFSET;
   world.log.info('world created', { worldId, seed });
 
   for (const spawn of entitySpawns) {
@@ -273,7 +273,7 @@ export async function createNewWorld(
     createdAt: new Date().toISOString(),
     savedAt: new Date().toISOString(),
     tick: 0,
-    tickOffset: TWILIGHT_TICK_OFFSET,
+    tickOffset: MORNING_TICK_OFFSET,
     mapWidth: map.width,
     mapHeight: map.height,
   };

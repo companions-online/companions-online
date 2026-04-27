@@ -135,7 +135,7 @@ pending-actions.test.ts       Coverage for the unified pendingActions queue. Bas
 bootstrap.ts             Shared setup: loadEnv + config + prompt + MCP connect + decider + memory + logger
 compact.ts               Rolling-window harness (system + assistant + tool, 3 messages/turn) + CLI; folds in old state/prompt-builder
 baseline.ts              Full-history harness, "continue" ping after each tool, no truncation + CLI
-truncated.ts             Full-history harness, but turns older than last 2 collapse to one user line + CLI; exports compactOldTurns/extractActionTag
+shortened.ts             Full-history harness, but turns older than last 2 collapse to one assistant message (inline content + <thinking> reasoning + tool summary, all verbatim); exports compactOldTurns/extractActionTag
 decider.ts               Decider interface + OpenRouterDecider (returns { message, usage })
 openrouter.ts            ChatResponse + TokenUsage types + thin fetch wrapper
 mcp-client.ts            ReconnectingMcpClient with backoff
