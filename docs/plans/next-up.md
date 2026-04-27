@@ -1,5 +1,25 @@
-Specific issue:
-* when attempting to scale up the map (MAP_SIZE => eg 2048), world-gen makes everything larger as well -rivers larger, fields larger, forests larger, etc. We want to maintain the current density of stuff, but make it possible to run an infinitely large map -and entities / environment / trees etc to be generated at current density.
+harness:
+
+----
+ we're going to make a bunch of smallish changes:
+  * harness: npx harness human *does not takes* a model .conf, but _does_ takes a variant, so we
+  flip it out: npx harness compact human    <- uses the compact variant, starts human UI.
+  Explicitly: if model-config === "human" -> launch ui.
+  * rename "truncated" variant to "shortened"
+  * ctrl+c on eval, or exit of any kind -> print out input + output token usage totals
+  * shortened variant: compactOldTurn -> all chatMessages are marked from assistant (not user);
+  compactTurnLine: extracted messages (chatresponse or thinking) are _never_ truncated, added as-is;
+  additionally, extract reasoning, and add that back into message as well;
+  ---
+
+
+
+* human harness to use strategies/variants
+* Y coords on map (w/ max width clamping)
+* player's name on entity rendering
+* player's name in say
+* assistant-says
+
 
 
 
@@ -141,3 +161,7 @@ pathfinding vs closed doors; pathfinding vs water
 
 ----
 -water should not be walkable [??]
+----
+Specific issue:
+* when attempting to scale up the map (MAP_SIZE => eg 2048), world-gen makes everything larger as well -rivers larger, fields larger, forests larger, etc. We want to maintain the current density of stuff, but make it possible to run an infinitely large map -and entities / environment / trees etc to be generated at current density.
+
