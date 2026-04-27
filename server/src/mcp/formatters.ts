@@ -6,8 +6,9 @@ import { StatusEffect, isPlaced } from '@shared/status-effects.js';
 import { getWeight, getEquipped, canCraft } from '@shared/inventory.js';
 import { getAllRecipes } from '@shared/recipes.js';
 import { MetaKey, metaKeyLabel } from '@shared/entity-meta.js';
-import type { McpConnection } from './connections/mcp-connection.js';
-import type { GameEvent } from './events.js';
+import type { McpConnection } from '../connections/mcp-connection.js';
+import type { GameEvent } from '../events.js';
+import { mcpConfig } from './config.js';
 
 // --- Helpers ---
 
@@ -45,6 +46,21 @@ const HOSTILE_BLUEPRINTS = new Set([BlueprintType.Wolf, BlueprintType.Bear, Blue
 
 function bpName(id: number): string {
   return getBlueprint(id)?.name ?? 'Unknown';
+}
+
+/**
+ * Render an entity reference. For player entities, returns
+ * `Player#<eid> (<metaName>)`; for everything else falls through to the
+ * legacy `<fallbackName>#<eid>`. Lookup is live against `conn.world`, so a
+ * destroyed entity falls back gracefully.
+ */
+function entityRef(conn: McpConnection, eid: number, fallbackName: string): string {
+  const bp = conn.world?.entities.blueprint.get(eid);
+  if (bp?.blueprintId === BlueprintType.Player) {
+    const metaName = conn.world?.entityMeta.get(eid)?.get(MetaKey.Name) ?? 'Player';
+    return `Player#${eid} (${metaName})`;
+  }
+  return `${fallbackName}#${eid}`;
 }
 
 // --- formatSelf ---
@@ -108,9 +124,14 @@ export function formatMap(conn: McpConnection): string {
     entityAt.set(key, { blueprintId: bp.blueprintId, effects: se?.effects, isPlayer });
   }
 
+  const showYPrefix = mcpConfig.mapLinePrefix;
+  const yLabelWidth = showYPrefix ? Math.max(String(minY).length, String(maxY).length) : 0;
+  const yPad = showYPrefix ? ' '.repeat(yLabelWidth + 1) : '';
+
   const lines: string[] = [];
+  if (showYPrefix) lines.push(`${'y'.padStart(yLabelWidth)} `);
   for (let y = minY; y <= maxY; y++) {
-    let row = '';
+    let row = showYPrefix ? `${String(y).padStart(yLabelWidth)} ` : '';
     for (let x = minX; x <= maxX; x++) {
       if (x === pos.tileX && y === pos.tileY) {
         row += '@';
@@ -135,7 +156,7 @@ export function formatMap(conn: McpConnection): string {
     lines.push(row);
   }
 
-  lines.push('<legend>~ water . grass , dirt T tree ^ hill @ you W wolf d deer r rabbit P player # wall + door C chest F campfire * item</legend>');
+  lines.push(`${yPad}<legend>~ water . grass , dirt T tree ^ hill @ you W wolf d deer r rabbit P player # wall + door C chest F campfire * item</legend>`);
   return `<map>\n${lines.join('\n')}\n</map>`;
 }
 
@@ -284,7 +305,8 @@ export function formatEntities(conn: McpConnection): string {
     lines.push('-- players --');
     for (const e of players) {
       const hpStr = e.hp ? ` hp:${e.hp.current}/${e.hp.max}` : '';
-      lines.push(`  player#${e.eid} (${e.x},${e.y}) ${e.dirLabel}${hpStr}`);
+      const metaName = conn.world?.entityMeta.get(e.eid)?.get(MetaKey.Name) ?? 'Player';
+      lines.push(`  player#${e.eid} (${metaName}) (${e.x},${e.y}) ${e.dirLabel}${hpStr}`);
     }
   }
 
@@ -302,22 +324,46 @@ export function formatEntities(conn: McpConnection): string {
     }
   }
 
-  if (trees.length) {
-    const shown = trees.slice(0, 3);
-    const remaining = trees.length - shown.length;
-    lines.push(`-- trees (${trees.length} in view) --`);
-    for (const e of shown) {
-      const resStr = e.treeRemaining !== undefined ? ` wood:${e.treeRemaining}/5` : '';
-      lines.push(`  tree#${e.eid} (${e.x},${e.y}) ${e.dirLabel}${resStr}`);
+  // Scan viewport for River tiles (closest 2 surfaced; full list still in
+  // formatTerrain). River is fishable + bridgeable, so it's distinct from
+  // dead-water for nav purposes.
+  const rivers: { x: number; y: number; dist: number; dirLabel: string }[] = [];
+  {
+    const w = conn.world;
+    const r = conn.viewRange;
+    for (let y = pos.tileY - r; y <= pos.tileY + r; y++) {
+      for (let x = pos.tileX - r; x <= pos.tileX + r; x++) {
+        if (x < 0 || x >= w.map.width || y < 0 || y >= w.map.height) continue;
+        if (w.map.getTerrain(x, y) !== Terrain.River) continue;
+        const dist = Math.max(Math.abs(x - pos.tileX), Math.abs(y - pos.tileY));
+        rivers.push({ x, y, dist, dirLabel: directionLabel(pos.tileX, pos.tileY, x, y) });
+      }
     }
-    if (remaining > 0) {
-      const nearest = shown.length > 0 ? shown[0].dist : 0;
-      lines.push(`  ...${remaining} more, nearest: ${nearest} tiles`);
-    }
+    rivers.sort((a, b) => a.dist - b.dist);
   }
+  const nearestRivers = rivers.slice(0, 2);
 
-  if (structures.length) {
-    lines.push('-- structures --');
+  if (nearestRivers.length || trees.length || structures.length) {
+    lines.push('-- environment --');
+
+    if (nearestRivers.length) {
+      const riverStr = nearestRivers.map(r => `(${r.x},${r.y}) ${r.dirLabel}`).join(', ');
+      lines.push(`  closest river: ${riverStr}`);
+    }
+
+    if (trees.length) {
+      const shown = trees.slice(0, 3);
+      const remaining = trees.length - shown.length;
+      for (const e of shown) {
+        const resStr = e.treeRemaining !== undefined ? ` wood:${e.treeRemaining}/5` : '';
+        lines.push(`  tree#${e.eid} (${e.x},${e.y}) ${e.dirLabel}${resStr}`);
+      }
+      if (remaining > 0) {
+        const nearest = shown.length > 0 ? shown[0].dist : 0;
+        lines.push(`  ...${remaining} more trees, nearest: ${nearest} tiles`);
+      }
+    }
+
     for (const e of structures) {
       const doorState = e.blueprintId === BlueprintType.WoodenDoor && e.effects !== undefined
         ? ((e.effects & StatusEffect.Open) ? ' open' : ' closed') : '';
@@ -366,28 +412,28 @@ export function formatTerrain(conn: McpConnection): string {
 
 // --- formatEvents ---
 
-function formatEventText(event: GameEvent, currentTick: number): string {
+function formatEventText(event: GameEvent, currentTick: number, conn: McpConnection): string {
   const offset = currentTick - event.tick;
   const prefix = `[t-${offset}]`;
   const d = event.details as any;
 
   switch (event.type) {
     case 'combat_hit_received':
-      return `${prefix}  ${d.attackerName}#${d.attackerEntityId} hit you for ${d.damage} dmg (${d.currentHp}/${d.maxHp} HP)`;
+      return `${prefix}  ${entityRef(conn, d.attackerEntityId, d.attackerName)} hit you for ${d.damage} dmg (${d.currentHp}/${d.maxHp} HP)`;
     case 'combat_hit_dealt':
-      return `${prefix}  You hit ${d.targetName}#${d.targetEntityId} for ${d.damage} dmg (${d.targetCurrentHp}/${d.targetMaxHp} HP)`;
+      return `${prefix}  You hit ${entityRef(conn, d.targetEntityId, d.targetName)} for ${d.damage} dmg (${d.targetCurrentHp}/${d.targetMaxHp} HP)`;
     case 'entity_died': {
       const dropStr = d.drops.length
         ? ' → dropped ' + d.drops.map((dr: any) => `${dr.quantity} ${dr.name}`).join(', ') + ` at (${d.tileX},${d.tileY})`
         : '';
-      return `${prefix}  ${d.entityName}#${d.entityId} died${dropStr}`;
+      return `${prefix}  ${entityRef(conn, d.entityId, d.entityName)} died${dropStr}`;
     }
     case 'player_died':
       return `${prefix}  You died. Respawning...`;
     case 'player_respawned':
       return `${prefix}  Respawned at (${d.tileX},${d.tileY}) hp:${d.currentHp}/${d.maxHp}`;
     case 'player_say':
-      return `${prefix}  ${d.senderName}#${d.senderEntityId} said: "${d.message}"`;
+      return `${prefix}  ${entityRef(conn, d.senderEntityId, d.senderName)} said: "${d.message}"`;
     case 'action_interrupted':
       return `${prefix}  ${d.interruptedAction} interrupted: ${d.reason}`;
     case 'creature_aggro':
@@ -417,8 +463,8 @@ function formatEventText(event: GameEvent, currentTick: number): string {
       return `${prefix}  ${d.creatureName}#${d.creatureEntityId} is fleeing`;
     case 'creature_died':
       return d.killerEntityId === 0
-        ? `${prefix}  ${d.entityName}#${d.entityId} died at (${d.tileX},${d.tileY})`
-        : `${prefix}  ${d.entityName}#${d.entityId} killed by ${d.killerName}#${d.killerEntityId} at (${d.tileX},${d.tileY})`;
+        ? `${prefix}  ${entityRef(conn, d.entityId, d.entityName)} died at (${d.tileX},${d.tileY})`
+        : `${prefix}  ${entityRef(conn, d.entityId, d.entityName)} killed by ${entityRef(conn, d.killerEntityId, d.killerName)} at (${d.tileX},${d.tileY})`;
     case 'entity_meta_changed': {
       const label = metaKeyLabel(d.key as MetaKey);
       if (d.key === MetaKey.Name) {
@@ -438,7 +484,7 @@ export function formatEvents(conn: McpConnection): string {
   const events = conn.eventBuffer.flush();
   if (events.length === 0) return '<events>\n</events>';
 
-  const lines = events.map(e => formatEventText(e, currentTick));
+  const lines = events.map(e => formatEventText(e, currentTick, conn));
   return `<events>\n${lines.join('\n')}\n</events>`;
 }
 

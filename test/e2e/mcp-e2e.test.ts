@@ -8,7 +8,7 @@ import { GameLoop } from '../../server/src/ecs/game-loop.js';
 import { Telemetry } from '../../server/src/telemetry.js';
 import { createApp } from '../../server/src/app.js';
 import { TICK_RATE } from '../../shared/src/constants.js';
-import { destroySession } from '../../server/src/mcp-session.js';
+import { destroySession } from '../../server/src/mcp/session.js';
 import { BlueprintType } from '../../shared/src/blueprints.js';
 import { StatusEffect } from '../../shared/src/status-effects.js';
 

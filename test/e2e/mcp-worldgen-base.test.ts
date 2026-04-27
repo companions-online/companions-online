@@ -16,7 +16,7 @@ import { SPAWN_X, SPAWN_Y } from '../../shared/src/constants.js';
 import { MetaKey } from '../../shared/src/entity-meta.js';
 import { createDefaultWorld } from '../../server/src/game-world.js';
 import { McpConnection } from '../../server/src/connections/mcp-connection.js';
-import { formatEnvelope, ResponseShape } from '../../server/src/mcp-formatters.js';
+import { formatEnvelope, ResponseShape } from '../../server/src/mcp/formatters.js';
 
 function spawnMcpPlayerInsideBase(): { conn: McpConnection; envelope: string } {
   const world = createDefaultWorld(42);
@@ -55,7 +55,7 @@ function section(envelope: string, header: string): string {
   return nextHeader ? rest.slice(0, nextHeader.index!) : rest;
 }
 
-describe('MCP worldgen base: ground items vs structures', () => {
+describe('MCP worldgen base: ground items vs environment', () => {
   it('lists all 6 test-base resource ground items under "ground items"', () => {
     const { envelope } = spawnMcpPlayerInsideBase();
     const ground = section(envelope, 'ground items');
@@ -69,29 +69,29 @@ describe('MCP worldgen base: ground items vs structures', () => {
     expect(ground).toContain('raw fish#');
   });
 
-  it('lists the 2 base Campfires under "structures"', () => {
+  it('lists the 2 base Campfires under "environment"', () => {
     const { envelope } = spawnMcpPlayerInsideBase();
-    const structures = section(envelope, 'structures');
+    const environment = section(envelope, 'environment');
 
     // Both worldgen campfires are in view from the base center.
-    const campfireMatches = structures.match(/campfire#\d+/g) ?? [];
+    const campfireMatches = environment.match(/campfire#\d+/g) ?? [];
     expect(campfireMatches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('lists both Wooden Doors under "structures"', () => {
+  it('lists both Wooden Doors under "environment"', () => {
     const { envelope } = spawnMcpPlayerInsideBase();
-    const structures = section(envelope, 'structures');
+    const environment = section(envelope, 'environment');
 
-    const doorMatches = structures.match(/wooden door#\d+/g) ?? [];
+    const doorMatches = environment.match(/wooden door#\d+/g) ?? [];
     expect(doorMatches.length).toBe(2);
   });
 
-  it('does not mis-file any base resource under "structures"', () => {
+  it('does not mis-file any base resource under "environment"', () => {
     const { envelope } = spawnMcpPlayerInsideBase();
-    const structures = section(envelope, 'structures');
+    const environment = section(envelope, 'environment');
 
     for (const name of ['wood#', 'rock#', 'iron#', 'hide#', 'raw meat#', 'raw fish#']) {
-      expect(structures).not.toContain(name);
+      expect(environment).not.toContain(name);
     }
   });
 });

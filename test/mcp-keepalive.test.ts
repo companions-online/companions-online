@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   createSession, destroySession, _setKeepaliveIntervalMs,
-} from '../server/src/mcp-session.js';
+} from '../server/src/mcp/session.js';
 import { McpConnection } from '../server/src/connections/mcp-connection.js';
 import { createTestWorld } from './e2e/helpers.js';
 
