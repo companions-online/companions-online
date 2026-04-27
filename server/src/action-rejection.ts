@@ -3,7 +3,7 @@
  *
  * Structured codes kept internally so tests + non-MCP consumers can branch on
  * them; `formatRejection` renders them to LLM-readable text at the MCP boundary
- * (mirrors the GameEvent / formatEventText split in mcp-formatters.ts).
+ * (mirrors the GameEvent / formatEventText split in mcp/formatters.ts).
  *
  * Grow the union as new rejection sites appear — no catch-all "other" variant.
  */

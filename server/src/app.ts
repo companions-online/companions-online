@@ -9,8 +9,8 @@ import type { GameWorld } from './game-world.js';
 import { McpConnection } from './connections/mcp-connection.js';
 import { WebSocketConnection } from './connections/ws-connection.js';
 import { Telemetry } from './telemetry.js';
-import { registerTools } from './mcp-tools.js';
-import { getSession, createSession, destroySession } from './mcp-session.js';
+import { registerTools } from './mcp/tools.js';
+import { getSession, createSession, destroySession } from './mcp/session.js';
 
 export function createApp(world: GameWorld, telemetry: Telemetry) {
   const app = new Hono();

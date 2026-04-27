@@ -4,15 +4,15 @@ import { ClientAction } from '@shared/actions.js';
 import { EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from '@shared/inventory.js';
 import { getBlueprint } from '@shared/blueprints.js';
 import { MetaKey } from '@shared/entity-meta.js';
-import type { McpConnection } from './connections/mcp-connection.js';
-import type { GameWorld } from './game-world.js';
-import { dispatchServerCommand, validateName } from './server-commands.js';
-import { setSessionEntity } from './mcp-session.js';
+import type { McpConnection } from '../connections/mcp-connection.js';
+import type { GameWorld } from '../game-world.js';
+import { dispatchServerCommand, validateName } from '../server-commands.js';
+import { setSessionEntity } from './session.js';
 import {
   formatEnvelope, ResponseShape,
   formatInventory, formatRecipes, formatContainer, formatEvents,
-} from './mcp-formatters.js';
-import { formatRejection } from './action-rejection.js';
+} from './formatters.js';
+import { formatRejection } from '../action-rejection.js';
 
 function text(t: string, opts?: { isError?: boolean }) {
   const result: { content: { type: 'text'; text: string }[]; isError?: boolean } = {

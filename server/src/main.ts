@@ -5,7 +5,7 @@ import { gameMinuteFromTick } from '@shared/lighting.js';
 import { GameLoop } from './ecs/game-loop.js';
 import { renderDashboard, type DashboardState } from './dashboard.js';
 import { createApp } from './app.js';
-import { getSessionCount } from './mcp-session.js';
+import { getSessionCount } from './mcp/session.js';
 import { saveWorld, loadWorld, createNewWorld } from './world-persistence.js';
 import { dumpWorld } from './world-dump.js';
 import type { GameWorld } from './game-world.js';
