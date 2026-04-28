@@ -35,8 +35,9 @@ app.ts                   Hono app factory: MCP routes + WS upgrade + static serv
 game-world.ts            GameWorld class — state container + runTick orchestration + player lifecycle + event emission (public emitEvent point-to-point + broadcastEvent to nearby + makeEvent + bpName). processEntityDeath + handlePlayerDeath + clearAiTargetsOn + spawnCreatureEntity/spawnGroundItem live here; action dispatch moved to world-actions.ts. Weather + tickOffset + effectiveTick getter; env section emission on keyframe crossings.
 world-actions.ts         Player action dispatch layer — processAction (switch), cancelConflictingStates, rejectAction, all 17 handle* (MoveTo..ServerCommand), executeInteract, toggleDoor. Free functions taking world: GameWorld (same shape as systems/*). Handlers are thin shims over ActionResult-returning helpers; walk-to-act handlers (Pickup, Interact, Transfer, Trade, DialogueSelect, UseItemAt) dispatch via scheduleOrExecute from pending-actions.ts.
 pending-actions.ts       Unified walk-to-then-act queue. PendingAction type, scheduleOrExecute dispatch helper, runPendingActions resolver (post-movement tick phase). Detects arrival, target-loss (target_missing), path failure (no_path on retry), and entity re-aim. Replaces the prior parallel pendingPickups + pendingInteracts maps; extends the same shape to transfer, trade, dialogue_select, and use_item_at (placement + cooking).
-action-rejection.ts      RejectionReason discriminated union + formatRejection renderer + ActionResult / ActionResultOf<T> types with Ok/OkValue/Err constructors.
+action-rejection.ts      RejectionReason discriminated union + formatRejection renderer + ActionResult / ActionResultOf<T> types with Ok/OkValue/Err constructors. ObstacleSpan (water | door) hangs off tile_blocked / no_path so movement rejections carry route-aware hints.
 action-helpers.ts        requireAdjacentTarget(actorId, targetId, world, opts?) — vestigial. Was the shared target_missing | wrong_target_kind | not_adjacent preamble for Transfer / DialogueSelect / Trade before they migrated to scheduleOrExecute. No live callers; kept until next cleanup pass.
+path-diagnose.ts         diagnoseBlockage — runs a permissive findPath that drops unbridged-water + closed-WoodenDoor occupancy from the blocker predicate, then walks the resulting path to emit ObstacleSpans (water grouped, doors per-tile). Called from setMoveTarget's three Err branches; returns [] when the permissive search also fails.
 system-state.ts          SystemState interface + MovementState/HarvestState/CombatState/ConsumableState/CritterState
 player-connection.ts     PlayerConnection interface (10 methods incl onGameEvent point-to-point + onBroadcastEvent spectator-range) + TickDelta + GameWorldView
 events.ts                18 GameEvent types, EventPriority, EventBuffer with priority decay + age-out. Details for combat_hit_dealt / harvest_yield / craft_complete carry actor id (attackerEntityId / harvesterEntityId / crafterEntityId) so broadcast wire events can identify the actor.
@@ -49,9 +50,10 @@ dashboard.ts             ANSI telemetry dashboard rendering; shows in-game time 
 world-persistence.ts     saveWorld/loadWorld/createNewWorld; tickOffset on meta, createNewWorld seeds TWILIGHT_TICK_OFFSET
 npc-dialogues.ts         Static dialogue trees + trade offers for Hermit, Trader, Wanderer
 server-commands.ts       Slash-command registry + dispatcher; built-in /nick /name → handleNick
-mcp-tools.ts             21 MCP tool registrations (identify + 16 action + 4 query); all but identify wrapped by guarded(...) that rejects pre-identify with isError:true
-mcp-session.ts           MCP session lifecycle (create/destroy/lookup, session Map); per-session 15s ping keepalive timer; setSessionEntity promotes entityId after identify
-mcp-formatters.ts        Text formatters: self, map, entities, terrain, events, inventory, recipes, container, envelopes
+mcp/tools.ts             21 MCP tool registrations (identify + 16 action + 4 query); all but identify wrapped by guarded(...) that rejects pre-identify with isError:true. Rejections route through ResponseShape.Rejected (action+events only) — no snapshot replay.
+mcp/session.ts           MCP session lifecycle (create/destroy/lookup, session Map); per-session 15s ping keepalive timer; setSessionEntity promotes entityId after identify
+mcp/formatters.ts        Text formatters: self, map, entities, terrain, events, inventory, recipes, container, envelopes. formatEvents returns '' on empty buffer (omitted by formatEnvelope's part-filter); ResponseShape adds Rejected (events-only).
+mcp/config.ts            MCP-side rendering config (e.g. mapLinePrefix).
 ecs/component-store.ts   ComponentStore<T> — generic Map with auto-dirty
 ecs/entity-manager.ts    EntityManager — entity lifecycle, 7 component stores, dirty/destroyed tracking
 ecs/game-loop.ts         GameLoop — setTimeout with drift compensation

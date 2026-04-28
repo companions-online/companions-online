@@ -7,10 +7,25 @@
  *
  * Grow the union as new rejection sites appear — no catch-all "other" variant.
  */
+/**
+ * Path-aware obstacle hints attached to movement rejections. Populated by
+ * `diagnoseBlockage` (server/src/path-diagnose.ts) when a permissive
+ * pathfind succeeds — i.e. the route would work if the actor could cross
+ * water or pass closed doors. Empty / undefined = no actionable hint.
+ *
+ * - `water` spans group contiguous unbridged river/water tiles on the path.
+ * - `door` spans name a single closed WoodenDoor entity on the path.
+ */
+export type ObstacleSpan =
+  | { kind: 'water'; tiles: { x: number; y: number }[] }
+  | { kind: 'door';  entityId: number; x: number; y: number };
+
 export type RejectionReason =
-  | { code: 'tile_blocked'; tileX: number; tileY: number; by: 'wall' | 'door' | 'water' | 'rock' | 'entity' }
+  | { code: 'tile_blocked'; tileX: number; tileY: number;
+      by: 'wall' | 'door' | 'water' | 'rock' | 'entity';
+      obstacles?: ObstacleSpan[]; }
   | { code: 'tile_out_of_bounds'; tileX: number; tileY: number }
-  | { code: 'no_path'; tileX: number; tileY: number }
+  | { code: 'no_path'; tileX: number; tileY: number; obstacles?: ObstacleSpan[]; }
   | { code: 'not_adjacent'; targetEntityId: number; dist: number }
   | { code: 'target_missing'; targetEntityId: number }
   | { code: 'wrong_target_kind'; targetEntityId: number; expected: string; got: string }
@@ -39,14 +54,36 @@ export function Err(reason: RejectionReason): { ok: false; reason: RejectionReas
   return { ok: false, reason };
 }
 
+function formatObstacles(spans?: ObstacleSpan[]): string {
+  if (!spans || spans.length === 0) return '';
+  const parts: string[] = [];
+  for (const s of spans) {
+    if (s.kind === 'door') {
+      parts.push(`closed wooden door#${s.entityId} at (${s.x},${s.y}) — interact to open`);
+    }
+  }
+  const waterTiles = spans.flatMap(s => s.kind === 'water' ? s.tiles : []);
+  if (waterTiles.length > 0) {
+    const tileStr = waterTiles.map(t => `(${t.x},${t.y})`).join(', ');
+    parts.push(`water blocks at ${tileStr} — build a wooden floor to cross`);
+  }
+  return parts.join('; ');
+}
+
 export function formatRejection(r: RejectionReason): string {
   switch (r.code) {
-    case 'tile_blocked':
-      return `tile (${r.tileX},${r.tileY}) blocked by ${r.by}`;
+    case 'tile_blocked': {
+      const base = `tile (${r.tileX},${r.tileY}) blocked by ${r.by}`;
+      const tail = formatObstacles(r.obstacles);
+      return tail ? `${base}; ${tail}` : base;
+    }
     case 'tile_out_of_bounds':
       return `tile (${r.tileX},${r.tileY}) out of bounds`;
-    case 'no_path':
-      return `no path to (${r.tileX},${r.tileY})`;
+    case 'no_path': {
+      const base = `no path to (${r.tileX},${r.tileY})`;
+      const tail = formatObstacles(r.obstacles);
+      return tail ? `${base}; ${tail}` : base;
+    }
     case 'not_adjacent':
       return `#${r.targetEntityId} is ${r.dist} tiles away — move adjacent first`;
     case 'target_missing':

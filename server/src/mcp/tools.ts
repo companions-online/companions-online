@@ -50,7 +50,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     const result = await conn.awaitAction();
     if (result.status === 'rejected') {
       return text(
-        formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] ${summary}`, shape),
+        formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] ${summary}`, ResponseShape.Rejected),
         { isError: true },
       );
     }
@@ -107,7 +107,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       const shape = moved ? ResponseShape.FullInv : ResponseShape.SelfInv;
       if (result.status === 'rejected') {
         return text(
-          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Harvest at (${x},${y})`, shape),
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Harvest at (${x},${y})`, ResponseShape.Rejected),
           { isError: true },
         );
       }
@@ -127,7 +127,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       const shape = moved ? ResponseShape.FullInv : ResponseShape.SelfInv;
       if (result.status === 'rejected') {
         return text(
-          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Pickup #${entity_id}`, shape),
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Pickup #${entity_id}`, ResponseShape.Rejected),
           { isError: true },
         );
       }
@@ -149,7 +149,7 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       else shape = ResponseShape.Full;
       if (result.status === 'rejected') {
         return text(
-          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Interact #${entity_id}`, shape),
+          formatEnvelope(conn, `[rejected: ${formatRejection(result.reason)}] Interact #${entity_id}`, ResponseShape.Rejected),
           { isError: true },
         );
       }
@@ -247,18 +247,20 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     async () => text(formatEnvelope(conn, null, ResponseShape.Full)),
   );
 
+  const join = (...parts: string[]) => parts.filter(p => p.length > 0).join('\n\n');
+
   guarded('get_inventory', 'View inventory with item IDs, equipment slots, and weight.',
     {},
-    async () => text(formatInventory(conn) + '\n\n' + formatEvents(conn)),
+    async () => text(join(formatInventory(conn), formatEvents(conn))),
   );
 
   guarded('get_recipes', 'List craftable recipes (only those you have materials for).',
     {},
-    async () => text(formatRecipes(conn) + '\n\n' + formatEvents(conn)),
+    async () => text(join(formatRecipes(conn), formatEvents(conn))),
   );
 
   guarded('get_container', 'View contents of the last opened container.',
     {},
-    async () => text(formatContainer(conn) + '\n\n' + formatEvents(conn)),
+    async () => text(join(formatContainer(conn), formatEvents(conn))),
   );
 }

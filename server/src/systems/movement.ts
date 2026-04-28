@@ -7,6 +7,7 @@ import { Terrain, Building } from '@shared/terrain.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import type { SystemState, MovementState } from '../system-state.js';
 import { Ok, Err, type ActionResult } from '../action-rejection.js';
+import { diagnoseBlockage } from '../path-diagnose.js';
 
 const WAIT_PATIENCE = 10;
 
@@ -52,17 +53,27 @@ export function setMoveTarget(
     !world.map.isWalkable(px, py) ||
     (world.occupancy.isOccupied(px, py) && world.occupancy.get(px, py) !== entityId);
 
+  const diagnose = () => diagnoseBlockage(world, pos.tileX, pos.tileY, x, y, entityId);
+
   if (mode === 'exact' && isBlocked(x, y)) {
-    return Err({ code: 'tile_blocked', tileX: x, tileY: y, by: classifyBlock(world, x, y, entityId) });
+    return Err({
+      code: 'tile_blocked', tileX: x, tileY: y,
+      by: classifyBlock(world, x, y, entityId),
+      obstacles: diagnose(),
+    });
   }
 
   const result = findPath(pos.tileX, pos.tileY, x, y, isBlocked, world.map.width, world.map.height);
 
   if (!result.found || result.path.length === 0) {
     if (isBlocked(x, y)) {
-      return Err({ code: 'tile_blocked', tileX: x, tileY: y, by: classifyBlock(world, x, y, entityId) });
+      return Err({
+        code: 'tile_blocked', tileX: x, tileY: y,
+        by: classifyBlock(world, x, y, entityId),
+        obstacles: diagnose(),
+      });
     }
-    return Err({ code: 'no_path', tileX: x, tileY: y });
+    return Err({ code: 'no_path', tileX: x, tileY: y, obstacles: diagnose() });
   }
 
   world.moveStates.set(entityId, {

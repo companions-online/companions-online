@@ -148,8 +148,6 @@ describe('MCP E2E', () => {
     expect(text).toContain('</entities>');
     expect(text).toContain('<terrain>');
     expect(text).toContain('</terrain>');
-    expect(text).toContain('<events>');
-    expect(text).toContain('</events>');
     // Self section should have position and hp
     expect(text).toMatch(/pos:\(\d+,\d+\)/);
     expect(text).toMatch(/hp:\d+\/\d+/);
@@ -297,7 +295,6 @@ describe('MCP E2E', () => {
     expect(text).toContain('<self>');
     expect(text).toContain('<container');
     expect(text).toContain(`#${chestEid}`);
-    expect(text).toContain('<events>');
     expect(text).not.toContain('<map>');
     expect(text).not.toContain('<entities>');
 
@@ -322,7 +319,6 @@ describe('MCP E2E', () => {
     expect(text).toContain('<action');
     expect(text).toContain('<self>');
     expect(text).toContain('<inventory>');
-    expect(text).toContain('<events>');
     expect(text).not.toContain('<map>');
     expect(text).not.toContain('<entities>');
     expect(text).toContain('hand:Axe');
@@ -350,11 +346,139 @@ describe('MCP E2E', () => {
     expect(text).toContain('[rejected:');
     expect(text).toContain(`tile (${wallX},${wallY})`);
     expect(text).toContain('blocked by wall');
-    // Envelope still shows current state so the LLM can recover.
-    expect(text).toContain('<self>');
-    expect(text).toContain('<map>');
+    // Rejected envelope is minimal: action + (optional) events only —
+    // no snapshot sections. The LLM calls get_surroundings if it wants state.
+    expect(text).toMatch(/^<action /);
+    expect(text).not.toContain('<self>');
+    expect(text).not.toContain('<map>');
+    expect(text).not.toContain('<entities>');
+    expect(text).not.toContain('<terrain>');
+    expect(text).not.toContain('<inventory>');
 
     world.map.setBuilding(wallX, wallY, 0 /* Building.None */);
+    await client.close();
+  });
+
+  it('move_to across an unbridged river surfaces water hint with route tiles', async () => {
+    const client = await createIdentifiedMcpClient();
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+
+    // Move player to a known scratch tile, then carve a long N-S river
+    // separating it from the goal. Long enough to fence-off any detour.
+    const px = 90, py = 90, riverX = 92, goalX = 94, goalY = 90;
+    const old = world.entities.position.get(playerId)!;
+    world.occupancy.clear(old.tileX, old.tileY, playerId);
+    // Clear anything occupying the work area first.
+    for (let x = px - 1; x <= goalX + 1; x++) {
+      for (let y = py - 20; y <= py + 20; y++) {
+        if (x < 0 || x >= world.map.width || y < 0 || y >= world.map.height) continue;
+        const occ = world.occupancy.get(x, y);
+        if (occ) { world.occupancy.clear(x, y, occ); world.entities.destroy(occ); }
+      }
+    }
+    world.entities.position.set(playerId, { tileX: px, tileY: py });
+    world.occupancy.set(px, py, playerId);
+
+    // Save and overwrite terrain in the work area: grass everywhere except
+    // a vertical river column at x=riverX from y=0 to map height.
+    const savedTerrain: { x: number; y: number; t: number }[] = [];
+    for (let x = px - 1; x <= goalX + 1; x++) {
+      for (let y = 0; y < world.map.height; y++) {
+        savedTerrain.push({ x, y, t: world.map.getTerrain(x, y) });
+        const isRiver = x === riverX;
+        world.map.setTerrain(x, y, isRiver ? 5 /* River */ : 0 /* Grass */);
+      }
+    }
+
+    const result = await client.callTool({ name: 'move_to', arguments: { x: goalX, y: goalY } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[rejected:');
+    expect(text).toContain('water blocks at');
+    expect(text).toContain(`(${riverX},`);
+    expect(text).toContain('build a wooden floor to cross');
+
+    for (const s of savedTerrain) world.map.setTerrain(s.x, s.y, s.t);
+    // Move player back to its original spawn tile so we don't leak state.
+    world.occupancy.clear(px, py, playerId);
+    world.entities.position.set(playerId, old);
+    world.occupancy.set(old.tileX, old.tileY, playerId);
+    await client.close();
+  });
+
+  it('move_to past a closed wooden door surfaces door hint with entity id', async () => {
+    const client = await createIdentifiedMcpClient();
+    const playerIds = [...world.players.keys()];
+    const playerId = playerIds[playerIds.length - 1];
+
+    // Sealed rectangle x∈[100..107], y∈[99..101] with a closed door at (103,100).
+    const ROOM_X0 = 100, ROOM_X1 = 107;
+    const ROOM_Y0 = 99,  ROOM_Y1 = 101;
+    const px = 101, py = 100;
+    const doorX = 103, doorY = 100;
+    const goalX = 105, goalY = 100;
+
+    // Clear and move the player.
+    const old = world.entities.position.get(playerId)!;
+    world.occupancy.clear(old.tileX, old.tileY, playerId);
+    for (let x = ROOM_X0 - 1; x <= ROOM_X1 + 1; x++) {
+      for (let y = ROOM_Y0 - 1; y <= ROOM_Y1 + 1; y++) {
+        const occ = world.occupancy.get(x, y);
+        if (occ && occ !== playerId) { world.occupancy.clear(x, y, occ); world.entities.destroy(occ); }
+      }
+    }
+    world.entities.position.set(playerId, { tileX: px, tileY: py });
+    world.occupancy.set(px, py, playerId);
+
+    // Force the work area to plain grass — the seeded worldgen here happens
+    // to be a river patch, which would block the path before the door does.
+    const savedTerrain: { x: number; y: number; t: number }[] = [];
+    for (let x = ROOM_X0 - 1; x <= ROOM_X1 + 1; x++) {
+      for (let y = ROOM_Y0 - 1; y <= ROOM_Y1 + 1; y++) {
+        savedTerrain.push({ x, y, t: world.map.getTerrain(x, y) });
+        world.map.setTerrain(x, y, 0 /* Grass */);
+      }
+    }
+
+    // Build the sealed walls.
+    const wallTiles: { x: number; y: number }[] = [];
+    const setWall = (x: number, y: number) => {
+      if (world.map.getBuilding(x, y) === 0) {
+        world.map.setBuilding(x, y, 1 /* Building.Wall */);
+        wallTiles.push({ x, y });
+      }
+    };
+    for (let x = ROOM_X0; x <= ROOM_X1; x++) {
+      setWall(x, ROOM_Y0);
+      setWall(x, ROOM_Y1);
+    }
+    setWall(ROOM_X0, py);
+    setWall(ROOM_X1, py);
+
+    // Place the closed door.
+    const doorEid = world.entities.create();
+    world.entities.position.set(doorEid, { tileX: doorX, tileY: doorY });
+    world.entities.blueprint.set(doorEid, { blueprintId: BlueprintType.WoodenDoor, variant: 0 });
+    world.entities.statusEffects.set(doorEid, { effects: StatusEffect.Placed });
+    world.entities.health.set(doorEid, { currentHp: 30, maxHp: 30 });
+    world.occupancy.set(doorX, doorY, doorEid);
+
+    const result = await client.callTool({ name: 'move_to', arguments: { x: goalX, y: goalY } });
+    expect(result.isError).toBe(true);
+    const text = (result.content as any[])[0].text as string;
+    expect(text).toContain('[rejected:');
+    expect(text).toContain(`closed wooden door#${doorEid} at (${doorX},${doorY})`);
+    expect(text).toContain('interact to open');
+
+    // Cleanup.
+    world.occupancy.clear(doorX, doorY, doorEid);
+    world.entities.destroy(doorEid);
+    for (const t of wallTiles) world.map.setBuilding(t.x, t.y, 0 /* Building.None */);
+    for (const s of savedTerrain) world.map.setTerrain(s.x, s.y, s.t);
+    world.occupancy.clear(px, py, playerId);
+    world.entities.position.set(playerId, old);
+    world.occupancy.set(old.tileX, old.tileY, playerId);
     await client.close();
   });
 

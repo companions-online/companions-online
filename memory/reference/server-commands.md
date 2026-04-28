@@ -91,7 +91,7 @@ its player:
 - **Test helper** (`test/e2e/helpers.ts::addTestPlayer`) sets `'Player'`
   the same way, then clears spawn-time event buffers so tests see a
   clean slate.
-- **MCP identify** tool (`mcp-tools.ts`) sets the client-supplied name
+- **MCP identify** tool (`mcp/tools.ts`) sets the client-supplied name
   after validating it via the shared `validateName` helper.
 
 Reason for the flip: previously `addPlayer` used direct
@@ -330,12 +330,12 @@ person doesn't have to re-derive it.
   `sendMetaFor` replay on initial state / `delta.entered`.
 - `server/src/connections/{headless,mcp}-connection.ts` — capture /
   stub.
-- `server/src/mcp-tools.ts` — `identify` tool, `server_command` tool,
+- `server/src/mcp/tools.ts` — `identify` tool, `server_command` tool,
   `guarded(...)` wrapper that enforces pre-identify rejection for every
   other tool.
-- `server/src/mcp-session.ts` — `setSessionEntity` used by `identify`
+- `server/src/mcp/session.ts` — `setSessionEntity` used by `identify`
   to upgrade the session once the player is spawned.
-- `server/src/mcp-formatters.ts` — `<self>` includes name; `<events>`
+- `server/src/mcp/formatters.ts` — `<self>` includes name; `<events>`
   renders `entity_meta_changed`.
 - `server/src/events.ts` — `entity_meta_changed` event type.
 - `client-webgl/src/scene.ts` — `entityMeta`, `nameplateCache`,

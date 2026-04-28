@@ -482,7 +482,7 @@ function formatEventText(event: GameEvent, currentTick: number, conn: McpConnect
 export function formatEvents(conn: McpConnection): string {
   const currentTick = conn.world ? (conn.world as any).currentTick ?? 0 : 0;
   const events = conn.eventBuffer.flush();
-  if (events.length === 0) return '<events>\n</events>';
+  if (events.length === 0) return '';
 
   const lines = events.map(e => formatEventText(e, currentTick, conn));
   return `<events>\n${lines.join('\n')}\n</events>`;
@@ -603,6 +603,8 @@ export enum ResponseShape {
   Social = 'social',
   /** self + events */
   Meta = 'meta',
+  /** action + events (events omitted when empty) — used for rejected actions */
+  Rejected = 'rejected',
 }
 
 export function formatEnvelope(
@@ -640,7 +642,10 @@ export function formatEnvelope(
     case ResponseShape.Meta:
       parts.push(formatSelf(conn), formatEvents(conn));
       break;
+    case ResponseShape.Rejected:
+      parts.push(formatEvents(conn));
+      break;
   }
-  return parts.join('\n\n');
+  return parts.filter(p => p.length > 0).join('\n\n');
 }
 

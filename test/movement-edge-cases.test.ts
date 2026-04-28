@@ -148,6 +148,51 @@ describe('Movement edge cases — MCP rejection plumbing', () => {
     expect(conn.rejections[0]).toMatchObject({ code: 'no_path', tileX: 20, tileY: 20 });
     expect(hasMoveTarget(pid, w)).toBe(false);
   });
+
+  it('attaches water obstacles when the path is blocked only by an unbridged river', () => {
+    // Vertical river at x=15 separates player (10,10) from goal (20,10).
+    for (let y = 0; y < MAP_SIZE; y++) w.map.setTerrain(15, y, 5 /* Terrain.River */);
+    w.setAction(pid, { action: ClientAction.MoveTo, tileX: 20, tileY: 10 } as any);
+    w.runTick();
+
+    expect(conn.rejections).toHaveLength(1);
+    const r = conn.rejections[0] as any;
+    expect(r.code).toBe('no_path');
+    expect(r.obstacles).toBeDefined();
+    expect(r.obstacles.length).toBeGreaterThan(0);
+    expect(r.obstacles.some((s: any) => s.kind === 'water')).toBe(true);
+  });
+
+  it('attaches door obstacle when the path passes through a closed wooden door', () => {
+    // Sealed rectangle x∈[10..25], y∈[9..11] with the only ingress through
+    // a closed door at (15,10). Strictly the player at (11,10) can't reach
+    // (20,10); permissively (door treated as bypassable) the route exists.
+    for (let x = 10; x <= 25; x++) {
+      w.map.setBuilding(x, 9, Building.Wall);
+      w.map.setBuilding(x, 11, Building.Wall);
+    }
+    w.map.setBuilding(10, 10, Building.Wall);
+    w.map.setBuilding(25, 10, Building.Wall);
+    // Re-place the player inside the sealed rectangle.
+    const old = w.entities.position.get(pid)!;
+    w.occupancy.clear(old.tileX, old.tileY, pid);
+    w.entities.position.set(pid, { tileX: 11, tileY: 10 });
+    w.occupancy.set(11, 10, pid);
+
+    const doorEid = placeClosedDoor(w, 15, 10);
+    w.setAction(pid, { action: ClientAction.MoveTo, tileX: 20, tileY: 10 } as any);
+    w.runTick();
+
+    expect(conn.rejections).toHaveLength(1);
+    const r = conn.rejections[0] as any;
+    expect(r.code).toBe('no_path');
+    expect(r.obstacles).toBeDefined();
+    const door = r.obstacles.find((s: any) => s.kind === 'door');
+    expect(door).toBeDefined();
+    expect(door.entityId).toBe(doorEid);
+    expect(door.x).toBe(15);
+    expect(door.y).toBe(10);
+  });
 });
 
 describe('Movement edge cases — critter stuck animation', () => {
