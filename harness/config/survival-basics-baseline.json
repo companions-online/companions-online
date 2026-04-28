@@ -3,8 +3,8 @@
   "name": "survival-basics",
   "harness": "baseline",
   "worldSeed": 42,
-  "maxTurns": 100,
-  "maxTokens": 200000,
+  "maxTurns": 150,
+  "maxTokens": 500000,
   "checkpoints": [
     { "id": "harvest_tree",  "event": "harvest_yield",  "match": { "resourceName": "Wood" } },
     { "id": "harvest_stone", "event": "harvest_yield",  "match": { "resourceName": "Stone" } },

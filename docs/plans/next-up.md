@@ -1,27 +1,22 @@
-harness:
+next stage of game design:
+* in-house elements to build/craft: internal decor (fireplace, table, chair, etc)
+* palm trees
+
+* environmental effects: rain / sunshine
+** rain doesn't fall inside of buildings
+
+
+* bow/arrows / projectiles
+* new biome: desert  (< -scorpions, always stay in desert biome)
+
+* town generator: find an empty place, put 3-4 houses in there
+
+
+---
+bug: can't place a chest on wooden floor?
+mcp: multiple pickups / quantity for craft
 
 ----
- we're going to make a bunch of smallish changes:
-  * harness: npx harness human *does not takes* a model .conf, but _does_ takes a variant, so we
-  flip it out: npx harness compact human    <- uses the compact variant, starts human UI.
-  Explicitly: if model-config === "human" -> launch ui.
-  * rename "truncated" variant to "shortened"
-  * ctrl+c on eval, or exit of any kind -> print out input + output token usage totals
-  * shortened variant: compactOldTurn -> all chatMessages are marked from assistant (not user);
-  compactTurnLine: extracted messages (chatresponse or thinking) are _never_ truncated, added as-is;
-  additionally, extract reasoning, and add that back into message as well;
-  ---
-
-
-
-* human harness to use strategies/variants
-* Y coords on map (w/ max width clamping)
-* player's name on entity rendering
-* player's name in say
-* assistant-says
-
-
-
 
 
 * health+: when user heals, we currently have a short animation that plays -additionally, we want to show a green "+5" bubbling up -similar to damage, but no star background
@@ -48,20 +43,9 @@ harness:
   shown on the map; for example, by collecting the characters printed out along with their descriptions
 ** dynamically-generated legend, to show all the things currently on the map
 
-** player entities -> show names in MCP response
-
-* skill.md update
 
 
 
-* environmental effects: sunshine, rain
-** rain doesn't fall inside of buildings
-
-
--town generator: find an empty place, put 3-4 houses in there
-
-
--in-house elements to build/craft
 
 
 -----
@@ -165,3 +149,34 @@ pathfinding vs closed doors; pathfinding vs water
 Specific issue:
 * when attempting to scale up the map (MAP_SIZE => eg 2048), world-gen makes everything larger as well -rivers larger, fields larger, forests larger, etc. We want to maintain the current density of stuff, but make it possible to run an infinitely large map -and entities / environment / trees etc to be generated at current density.
 
+
+----
+----
+harness:
+
+ we're going to make a bunch of smallish changes:
+  * harness: npx harness human *does not takes* a model .conf, but _does_ takes a variant, so we
+  flip it out: npx harness compact human    <- uses the compact variant, starts human UI.
+  Explicitly: if model-config === "human" -> launch ui.
+  * rename "truncated" variant to "shortened"
+  * ctrl+c on eval, or exit of any kind -> print out input + output token usage totals
+  * shortened variant: compactOldTurn -> all chatMessages are marked from assistant (not user);
+  compactTurnLine: extracted messages (chatresponse or thinking) are _never_ truncated, added as-is;
+  additionally, extract reasoning, and add that back into message as well;
+  ---
+
+
+
+* human harness to use strategies/variants
+* Y coords on map (w/ max width clamping)
+* player's name on entity rendering
+* player's name in say
+* assistant-says
+
+---
+also did: pathway -> water -> hints where to build a bridge;
+in general, being intelligent about error handling is Very Good -> improves eval scores
+
+---
+** player entities -> show names in MCP response
+* skill.md update

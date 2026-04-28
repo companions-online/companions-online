@@ -208,6 +208,7 @@ Free reads are free. Use them at genuine phase transitions, not as a nervous tic
 
 notes:
 always comment here in-line what you're doing between tool calls, so on next conversation turn you can see where you were. Specifically: what you're planning to do -thinking- then the things you've done. On next conversation turn, you can only see these thinking content, so use this as your diary.
+* in this session, we want to gear up, and go hunting
 * play continuously, no need to stop! be resilient, but unstoppable
 * if you encounter a river, or an area you can't go into, build a wooden floor over the river to get across
 go for it!

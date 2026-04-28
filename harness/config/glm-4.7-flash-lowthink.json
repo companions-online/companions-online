@@ -1,0 +1,6 @@
+{
+  "type": "model",
+  "model": "z-ai/glm-4.7-flash",
+  "temperature": 1,
+  "reasoning": { "effort": "low" }
+}

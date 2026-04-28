@@ -1,0 +1,6 @@
+{
+  "type": "model",
+  "model": "qwen/qwen3.6-flash",
+  "temperature": 1,
+  "reasoning": { "effort": "none" }
+}
