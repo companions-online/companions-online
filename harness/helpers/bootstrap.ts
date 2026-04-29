@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { CONFIG_DIR } from './paths.js';
+import { CONFIG_DIR, CHARACTERS_DIR } from './paths.js';
 import { loadConfig, type ModelConfig } from './config.js';
 import { loadEnv } from './env.js';
 import { createLogger, type Logger } from './logger.js';
@@ -17,6 +17,12 @@ export type { ModelConfig } from './config.js';
 export interface BootstrapOpts {
   configName: string;
   configDir?: string;
+  /**
+   * Optional named prompt. When set, resolves to `<CHARACTERS_DIR>/<name>.md`
+   * (preferred) or `<CONFIG_DIR>/<name>.md`. When unset, the default
+   * `<CONFIG_DIR>/prompt.md` is used. A trailing `.md` is stripped.
+   */
+  promptName?: string;
   logger?: Logger;
   decider?: Decider;
   memory?: Scratchpad;
@@ -35,8 +41,19 @@ export interface Bootstrap {
   sessionId: string;
 }
 
-function loadPrompt(configDir: string): { system: string; first: string } {
-  const raw = readFileSync(join(configDir, 'prompt.md'), 'utf8');
+function resolvePromptPath(configDir: string, promptName?: string): string {
+  if (!promptName) return join(configDir, 'prompt.md');
+  const bare = promptName.replace(/\.md$/, '');
+  const candidates = [
+    join(CHARACTERS_DIR, `${bare}.md`),
+    join(configDir, `${bare}.md`),
+  ];
+  for (const p of candidates) if (existsSync(p)) return p;
+  throw new Error(`prompt not found: tried ${candidates.join(', ')}`);
+}
+
+function loadPrompt(configDir: string, promptName?: string): { system: string; first: string } {
+  const raw = readFileSync(resolvePromptPath(configDir, promptName), 'utf8');
   const idx = raw.indexOf('\n---\n');
   if (idx === -1) return { system: raw.trim(), first: '' };
   return { system: raw.slice(0, idx).trim(), first: raw.slice(idx + 5).trim() };
@@ -54,7 +71,7 @@ export async function bootstrapHarness(opts: BootstrapOpts): Promise<Bootstrap> 
   const config = opts.configName === 'human'
     ? HUMAN_STUB_CONFIG
     : loadConfig<ModelConfig>(opts.configName, 'model', configDir);
-  const { system, first } = loadPrompt(configDir);
+  const { system, first } = loadPrompt(configDir, opts.promptName);
 
   const sessionId = opts.sessionId ?? randomUUID();
   const log = opts.logger ?? createLogger(sessionId);

@@ -11,12 +11,13 @@ const VARIANTS = ['baseline', 'compact', 'shortened'] as const;
 type Variant = typeof VARIANTS[number];
 
 function usage(): never {
-  console.error('usage: harness <baseline|compact|shortened> <model-config|human>');
+  console.error('usage: harness <baseline|compact|shortened> <model-config|human> [prompt]');
   process.exit(2);
 }
 
 const variant = process.argv[2] as Variant | undefined;
 const modelConfig = process.argv[3];
+const promptName = process.argv[4];
 if (!variant || !modelConfig || !VARIANTS.includes(variant)) usage();
 
 const RUN_FNS: Record<Variant, (opts: RunVariantOpts) => Promise<VariantResult>> = {
@@ -32,9 +33,10 @@ await runCli(`harness:${variant}`, async (ac, usage) => {
     return run({
       configName: 'human',
       decider: new HumanDecider(ui),
+      promptName,
       abortSignal: ac.signal,
       usage,
     });
   }
-  return run({ configName: modelConfig, abortSignal: ac.signal, usage });
+  return run({ configName: modelConfig, promptName, abortSignal: ac.signal, usage });
 });

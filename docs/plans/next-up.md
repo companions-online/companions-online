@@ -25,6 +25,14 @@ product:
 * website rest: mcp prompt
 * stand-alone demo maybe
 
+------
+companion economy:
+characters:
+** peon -builds buildings
+* merchant / trader -trades items
+* hunter -goes out & hunts animals
+* princess -high&mighty
+
 
 
 
