@@ -70,7 +70,8 @@ describe('MCP E2E', () => {
     expect(toolNames).toContain('get_inventory');
     expect(toolNames).toContain('craft');
     expect(toolNames).toContain('server_command');
-    expect(tools.tools.length).toBe(21);
+    expect(toolNames).toContain('wait');
+    expect(tools.tools.length).toBe(22);
 
     await client.close();
   });

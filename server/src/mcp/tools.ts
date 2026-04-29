@@ -227,6 +227,15 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
     async ({ message }) => doAction({ action: ClientAction.Say, message }, `Say: "${message}"`, ResponseShape.Social),
   );
 
+  guarded('wait',
+    'Pause without acting; world keeps ticking. Use to pace action (conversation reading before replying etc) or to observe.',
+    { seconds: z.number().min(0.1).max(30) },
+    async ({ seconds }) => {
+      await new Promise<void>(resolve => setTimeout(resolve, seconds * 1000));
+      return text(formatEnvelope(conn, `Wait ${seconds}s`, ResponseShape.Full));
+    },
+  );
+
   guarded('server_command',
     'Run a server command. Available: nick/name <displayName>.',
     { command: z.string(), parameter: z.string() },
