@@ -236,6 +236,27 @@ describe('E2E: Door toggle', () => {
     expect(effects2.effects & StatusEffect.Open).toBeFalsy();
   });
 
+  it('places door on a wooden floor between two walls', () => {
+    const world = createTestWorld();
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    // House gap: floor at (11,10), walls N and S of it.
+    world.map.setBuilding(11, 10, Building.WoodenFloor);
+    world.map.setBuilding(11, 9, Building.Wall);
+    world.map.setBuilding(11, 11, Building.Wall);
+    world.inventoryMgr.addItem(player, BlueprintType.WoodenDoor, 1);
+    const item = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.WoodenDoor)!;
+    world.entities.clearDirty();
+
+    world.setAction(player, { action: ClientAction.UseItemAt, itemId: item.itemId, tileX: 11, tileY: 10 });
+    world.runTicks(1);
+
+    expect(connection.rejections).toEqual([]);
+    expect(world.map.getBuilding(11, 10)).toBe(Building.WoodenFloor);
+    expect(world.occupancy.isOccupied(11, 10)).toBe(true);
+    const placedEid = world.occupancy.get(11, 10)!;
+    expect(world.entities.blueprint.get(placedEid)?.blueprintId).toBe(BlueprintType.WoodenDoor);
+  });
+
   it('pathfinding routes through open door, blocked by closed door', () => {
     const world = createTestWorld();
     const { entityId: player } = addTestPlayer(world, 10, 10);
@@ -323,6 +344,24 @@ describe('E2E: Container system', () => {
 
     // Chest should be empty, player should have it back
     expect(world.inventoryMgr.get(chestEid)!.items.find(i => i.blueprintId === BlueprintType.Wood)).toBeUndefined();
+  });
+
+  it('places chest on a wooden floor (furnishing a house)', () => {
+    const world = createTestWorld();
+    const { entityId: player, connection } = addTestPlayer(world, 10, 10);
+    world.map.setBuilding(11, 10, Building.WoodenFloor);
+    world.inventoryMgr.addItem(player, BlueprintType.StorageChest, 1);
+    const item = world.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.StorageChest)!;
+    world.entities.clearDirty();
+
+    world.setAction(player, { action: ClientAction.UseItemAt, itemId: item.itemId, tileX: 11, tileY: 10 });
+    world.runTicks(1);
+
+    expect(connection.rejections).toEqual([]);
+    expect(world.occupancy.isOccupied(11, 10)).toBe(true);
+    expect(world.map.getBuilding(11, 10)).toBe(Building.WoodenFloor);
+    const placedEid = world.occupancy.get(11, 10)!;
+    expect(world.entities.blueprint.get(placedEid)?.blueprintId).toBe(BlueprintType.StorageChest);
   });
 
   it('transfer rejected when not adjacent to chest', () => {

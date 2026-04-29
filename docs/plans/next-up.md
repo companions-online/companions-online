@@ -17,6 +17,15 @@ bug: can't place a chest on wooden floor?
 mcp: multiple pickups / quantity for craft
 
 ----
+product:
+* logo
+* music into S3 bucket
+* bottom buttons: inventory / options
+* main menu: world select / create world + get API key
+* website rest: mcp prompt
+* stand-alone demo maybe
+
+
 
 
 * health+: when user heals, we currently have a short animation that plays -additionally, we want to show a green "+5" bubbling up -similar to damage, but no star background

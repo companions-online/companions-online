@@ -35,15 +35,23 @@ export function isWalkable(terrain: Terrain, building: Building): boolean {
 
 /** Is this tile a valid surface for placing `newBuilding` (or `null` for an
  *  entity placement like Door / Chest / Campfire)?
- *  - No existing building on the tile (can't stack).
- *  - Water / Rock: never placeable on.
- *  - River: placeable only when the new building is a floor (bridging).
- *  - Other terrain: placeable. */
+ *
+ *  Entity placement (`newBuilding === null`): legal anywhere a player can
+ *  stand. Floors are fine (furnish-the-house case); walls/fences are not;
+ *  water/rock are not; bridged river is fine. Reuses `isWalkable` so the
+ *  rule stays in lockstep.
+ *
+ *  Building-tile placement (`newBuilding !== null`): no stacking — existing
+ *  building must be `None`. Water/rock never accept buildings. River only
+ *  accepts floors (bridging). */
 export function isPlaceable(
   terrain: Terrain,
   current: Building,
   newBuilding: Building | null,
 ): boolean {
+  if (newBuilding === null) {
+    return isWalkable(terrain, current);
+  }
   if (current !== Building.None) return false;
   if (terrain === Terrain.Water || terrain === Terrain.Rock) return false;
   if (terrain === Terrain.River) {
