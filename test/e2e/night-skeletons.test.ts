@@ -8,6 +8,7 @@ import {
   SKELETON_SUN_DAMAGE,
   SKELETON_SUN_DAMAGE_TICKS,
 } from '../../server/src/systems/creature-lifecycle.js';
+import { spawnCreatureEntity } from '../../server/src/entity-spawn.js';
 
 function countSkeletons(world: ReturnType<typeof createTestWorld>): number {
   let n = 0;
@@ -82,7 +83,7 @@ describe('E2E: Night skeletons', () => {
         const x = 64 + dx;
         const y = 64 + dy;
         if (x === 64 && y === 64) continue; // don't clobber player
-        world.spawnCreatureEntity(BlueprintType.Campfire, x, y);
+        spawnCreatureEntity(world,BlueprintType.Campfire, x, y);
       }
     }
     const baseline = countSkeletons(world);
@@ -97,7 +98,7 @@ describe('E2E: Night skeletons', () => {
     addTestPlayer(world, 64, 64);
     setHour(world, 12);
 
-    const skelEid = world.spawnCreatureEntity(BlueprintType.Skeleton, 80, 64);
+    const skelEid = spawnCreatureEntity(world,BlueprintType.Skeleton, 80, 64);
     const maxHp = world.entities.health.get(skelEid)!.maxHp;
     const pulsesToKill = Math.ceil(maxHp / SKELETON_SUN_DAMAGE);
 
@@ -113,7 +114,7 @@ describe('E2E: Night skeletons', () => {
     addTestPlayer(world, 64, 64);
     setHour(world, 1);
 
-    const skelEid = world.spawnCreatureEntity(BlueprintType.Skeleton, 80, 64);
+    const skelEid = spawnCreatureEntity(world,BlueprintType.Skeleton, 80, 64);
     const startHp = world.entities.health.get(skelEid)!.currentHp;
 
     world.runTicks(10 * SKELETON_SUN_DAMAGE_TICKS);

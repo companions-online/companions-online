@@ -32,6 +32,7 @@ import { Ok, Err, type RejectionReason, type ActionResult } from './action-rejec
 import { dispatchServerCommand } from './server-commands.js';
 import { getDialogue } from './npc-dialogues.js';
 import { scheduleOrExecute, actionKindLabel } from './pending-actions.js';
+import { spawnGroundItem } from './entity-spawn.js';
 
 import { setMoveTarget, clearMoveTarget } from './systems/movement.js';
 import { startHarvest, cancelHarvest, isHarvesting } from './systems/harvest.js';
@@ -216,9 +217,7 @@ function handleDrop(world: GameWorld, eid: number, slot: PlayerSlot, action: Dec
   if (!r.ok) { rejectAction(world, eid, r.reason); return; }
   const playerPos = world.entities.position.get(eid);
   if (playerPos) {
-    const groundEid = world.entities.create();
-    world.entities.position.set(groundEid, { tileX: playerPos.tileX, tileY: playerPos.tileY });
-    world.entities.blueprint.set(groundEid, { blueprintId: r.value.blueprintId, variant: 0 });
+    spawnGroundItem(world, r.value.blueprintId, playerPos.tileX, playerPos.tileY);
   }
   slot.connection.onInventoryChanged(eid, world);
 }

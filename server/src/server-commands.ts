@@ -3,6 +3,7 @@ import { BlueprintType, getBlueprintByName } from '@shared/blueprints.js';
 import { TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_DAY } from '@shared/constants.js';
 import type { GameWorld, PlayerSlot } from './game-world.js';
 import { initCritterForEntity } from './systems/critter-ai.js';
+import { spawnCreatureEntity, spawnGroundItem } from './entity-spawn.js';
 
 export type ServerCommandResult = { ok: true } | { ok: false; error: string };
 
@@ -90,10 +91,10 @@ const handleSpawn: ServerCommandHandler = (world, eid, _slot, parameter) => {
   if (!tile) return { ok: false, error: `no open tile within ${SPAWN_RADIUS}` };
 
   if (bp.category === 'creature') {
-    const newEid = world.spawnCreatureEntity(bp.id, tile.x, tile.y);
+    const newEid = spawnCreatureEntity(world, bp.id, tile.x, tile.y);
     initCritterForEntity(newEid, world);
   } else {
-    world.spawnGroundItem(bp.id, tile.x, tile.y);
+    spawnGroundItem(world, bp.id, tile.x, tile.y);
   }
   return { ok: true };
 };

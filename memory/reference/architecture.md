@@ -207,6 +207,22 @@ Perlin noise, auto-scales with `MAP_SIZE / 128` ratio. Noise frequencies, spawn 
 
 NPCs spawned: Hermit (near spawn), Trader (near spawn), Wanderer (far, roams with critter AI).
 
+## Entity Spawn Primitives
+
+`server/src/entity-spawn.ts` — single source of truth for "what components does an entity have". Two helpers, both taking `SystemState`:
+
+- **`spawnCreatureEntity(world, bp, x, y, overrides?)`** — full creature/structure shape: position, direction, waypoint, action, health (from `bp.maxHp`), blueprint+variant, statusEffects (`Placed` for placeable+Tree, else 0), speed, occupancy. Optional `CreatureOverrides` lets the load path supply saved values for direction/waypoint/action/health/statusEffects/speed and a pre-supplied `id` (passed to `entities.createWithId`). The helper carries the **Open-bit occupancy gate**: if the resolved `statusEffects` has `StatusEffect.Open` set, the entity is NOT registered in the occupancy grid — open doors are walk-through, and a saved open door must reload that way (otherwise it phases back into a blocker). Fresh spawns never have the Open bit so the gate is a no-op for them.
+- **`spawnGroundItem(world, bp, x, y, id?)`** — position + blueprint only. No statusEffects component, no occupancy. The absence of `StatusEffect.Placed` is what distinguishes ground items from placed structures (per `status-effects.ts::isPlaced`).
+
+Two classifiers:
+
+- **`isGroundItemBlueprint(bp)`** — worldgen / `/spawn` classifier. Returns true for resource/item categories (excluding Tree). Placeables → false (worldgen places them as installed structures; `/spawn` rejects placeable category). Used by `createDefaultWorld` and `createNewWorld`'s spawn loop.
+- **`shouldRestoreAsGround(bp, statusEffects)`** — load classifier. Pickup-categorical (resource/item/placeable, not Tree) AND no Placed bit → ground. Placeables saved without Placed (dropped from inventory) reload as ground items; same blueprints saved with Placed (installed via `UseItemAt`) reload as structures. Used by `loadWorld`.
+
+The same primitives back: fresh worldgen (`createDefaultWorld` / `createNewWorld`), tree respawn (`systems/resources.ts`), night skeleton spawn (`systems/creature-lifecycle.ts`), `/spawn` server command, save-load restore (`loadWorld`), inventory drop (`world-actions.ts::handleDrop`), and creature death loot drops + player death equipped drops (`game-world.ts`).
+
+The `world-actions.ts::handleUseItemAt` placement path is intentionally NOT routed through these — it has bespoke shape (sets `Placed` always, conditionally creates a chest inventory, gates occupancy on `bp.collides`, removes the source item) and isn't drift-prone in practice.
+
 ## Building Layer vs Entities
 
 Static structures (WoodenWall, WoodenFloor, StoneFloor) → building tile layer (`map.setBuilding()`), synced via chunk/tile deltas. `blueprintToBuilding()` in `shared/src/blueprints.ts` is the single source of truth: a non-null return routes the placement through the building-tile branch in `handleUseItemAt`. Walls block movement; floors are walkable and can bridge rivers (see `isWalkable` / `isPlaceable` below).

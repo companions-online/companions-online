@@ -1,10 +1,8 @@
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
-import { ActionType } from '@shared/actions.js';
-import { Direction } from '@shared/direction.js';
-import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import { Terrain } from '@shared/terrain.js';
 import type { SystemState } from '../system-state.js';
+import { spawnCreatureEntity } from '../entity-spawn.js';
 
 const TREE_WOOD_AMOUNT = 5;
 const TREE_RESPAWN_TICKS = 600;
@@ -55,17 +53,9 @@ export function runResourceRespawns(world: SystemState): void {
       const bp = getBlueprint(entry.blueprintType);
       if (!bp) break;
 
-      const eid = world.entities.create();
-      world.entities.position.set(eid, { tileX: rx, tileY: ry });
-      world.entities.direction.set(eid, { dir: Direction.S });
-      world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-      world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-      if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
       const variantCount = bp.variantCount ?? 1;
       const variant = variantCount > 1 ? Math.floor(rand(world) * variantCount) : 0;
-      world.entities.blueprint.set(eid, { blueprintId: entry.blueprintType, variant });
-      world.entities.statusEffects.set(eid, { effects: 0 });
-      world.occupancy.set(rx, ry, eid);
+      const eid = spawnCreatureEntity(world, entry.blueprintType, rx, ry, { variant });
 
       if (entry.blueprintType === BlueprintType.Tree) {
         initTreeResource(eid, world);

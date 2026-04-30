@@ -6,7 +6,6 @@ import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
-import { StatusEffect } from '@shared/status-effects.js';
 import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import { getLootTable } from '@shared/loot-tables.js';
@@ -27,6 +26,7 @@ import { EVENT_PRIORITY, type GameEvent } from './events.js';
 import { processAction } from './world-actions.js';
 import { runPendingActions, type PendingAction } from './pending-actions.js';
 import { createMemoryLogger, type WorldLogger } from './world-logger.js';
+import { isGroundItemBlueprint, spawnCreatureEntity, spawnGroundItem } from './entity-spawn.js';
 
 const chunksPerSide = MAP_SIZE / CHUNK_SIZE;
 
@@ -515,9 +515,7 @@ export class GameWorld implements SystemState {
       }
       actualDrops.push({ blueprintId: drop.blueprintId, name: this.bpName(drop.blueprintId), quantity: drop.quantity });
       for (let q = 0; q < drop.quantity; q++) {
-        const groundEid = this.entities.create();
-        this.entities.position.set(groundEid, { tileX: pos.tileX, tileY: pos.tileY });
-        this.entities.blueprint.set(groundEid, { blueprintId: drop.blueprintId, variant: 0 });
+        spawnGroundItem(this, drop.blueprintId, pos.tileX, pos.tileY);
       }
     }
 
@@ -576,9 +574,7 @@ export class GameWorld implements SystemState {
         if (item.equippedSlot) {
           this.inventoryMgr.unequip(entityId, item.equippedSlot);
           for (let q = 0; q < item.quantity; q++) {
-            const groundEid = this.entities.create();
-            this.entities.position.set(groundEid, { tileX: pos.tileX, tileY: pos.tileY });
-            this.entities.blueprint.set(groundEid, { blueprintId: item.blueprintId, variant: 0 });
+            spawnGroundItem(this, item.blueprintId, pos.tileX, pos.tileY);
           }
           this.inventoryMgr.removeItem(entityId, item.itemId, item.quantity);
         }
@@ -752,46 +748,6 @@ export class GameWorld implements SystemState {
     return (this.spawnRng % 5) - 2;
   }
 
-  // --- Generic entity spawn helpers (used by worldgen + /spawn command) ---
-
-  /** Spawn a creature/NPC/tree entity with the full component shape used by
-   *  `createDefaultWorld`. Sets occupancy unconditionally (callers ensure the
-   *  tile is free). Does NOT init critter-AI state — call
-   *  `initCritterForEntity` separately when appropriate. */
-  spawnCreatureEntity(blueprintType: BlueprintType, tileX: number, tileY: number, variant = 0): number {
-    const bp = getBlueprint(blueprintType);
-    if (!bp) throw new Error(`unknown blueprint ${blueprintType}`);
-    const eid = this.entities.create();
-    this.entities.position.set(eid, { tileX, tileY });
-    this.entities.direction.set(eid, { dir: Direction.S });
-    this.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-    this.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-    if (bp.maxHp) this.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-    this.entities.blueprint.set(eid, { blueprintId: blueprintType, variant });
-    // Placeables (campfires/doors/chests) and Trees are installed world
-    // structures — mark them with StatusEffect.Placed so MCP/client
-    // classifiers distinguish them from pickupable ground items.
-    // NPCs/creatures are disambiguated by category upstream of the Placed
-    // check, so they stay at effects=0.
-    const isStructure = bp.category === 'placeable' || blueprintType === BlueprintType.Tree;
-    const initialEffects = isStructure ? StatusEffect.Placed : 0;
-    this.entities.statusEffects.set(eid, { effects: initialEffects });
-    if (bp.speed) this.entities.speed.set(eid, bp.speed);
-    this.occupancy.set(tileX, tileY, eid);
-    return eid;
-  }
-
-  /** Spawn a ground-item entity: position + blueprint only, no statusEffects
-   *  component and no occupancy. `StatusEffect.Placed` absence is what
-   *  distinguishes ground items from placed structures. Mirrors the drop
-   *  handler's shape. */
-  spawnGroundItem(blueprintType: BlueprintType, tileX: number, tileY: number): number {
-    const eid = this.entities.create();
-    this.entities.position.set(eid, { tileX, tileY });
-    this.entities.blueprint.set(eid, { blueprintId: blueprintType, variant: 0 });
-    return eid;
-  }
-
   /** Chebyshev-ring search outward from (cx,cy) up to `radius`, returning the
    *  first walkable tile (optionally also unoccupied). Deterministic iteration
    *  order. Returns null if no tile qualifies within range. */
@@ -821,19 +777,10 @@ export function createDefaultWorld(seed: number): GameWorld {
   world.tickOffset = MORNING_TICK_OFFSET;
 
   for (const spawn of entitySpawns) {
-    const bp = getBlueprint(spawn.blueprint);
-    if (!bp) continue;
-    // Resource/item spawns (e.g. the worldgen test base's Wood/Rock/Iron/Hide/
-    // RawMeat/RawFish piles) are ground items — route through spawnGroundItem
-    // so they don't acquire a statusEffects component or occupancy. Tree is
-    // category=resource but a full-entity structure, so keep it on the
-    // creature path.
-    const isGroundItem = (bp.category === 'resource' || bp.category === 'item')
-      && spawn.blueprint !== BlueprintType.Tree;
-    if (isGroundItem) {
-      world.spawnGroundItem(spawn.blueprint, spawn.x, spawn.y);
+    if (isGroundItemBlueprint(spawn.blueprint)) {
+      spawnGroundItem(world, spawn.blueprint, spawn.x, spawn.y);
     } else {
-      const eid = world.spawnCreatureEntity(spawn.blueprint, spawn.x, spawn.y, spawn.variant);
+      const eid = spawnCreatureEntity(world, spawn.blueprint, spawn.x, spawn.y, { variant: spawn.variant });
       if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
     }
   }

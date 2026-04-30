@@ -4,11 +4,9 @@
 import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
 import { MAP_SIZE, TICKS_PER_GAME_HOUR } from '@shared/constants.js';
 import { gameHourFromTick } from '@shared/lighting.js';
-import { Direction } from '@shared/direction.js';
-import { ActionType } from '@shared/actions.js';
-import { WAYPOINT_NONE } from '@shared/components.js';
 import type { SystemState } from '../system-state.js';
 import { initCritterForEntity } from './critter-ai.js';
+import { spawnCreatureEntity } from '../entity-spawn.js';
 
 export const SKELETON_NIGHT_SPAWN_PER_HOUR = 1;
 export const SKELETON_MIN_PLAYER_DISTANCE = 10;
@@ -89,27 +87,10 @@ export function runCreatureRespawns(world: SystemState): void {
 
     if (tileLitByEmitter(tx, ty, world)) continue;
 
-    const eid = spawnSkeleton(tx, ty, world);
+    const eid = spawnCreatureEntity(world, BlueprintType.Skeleton, tx, ty);
     initCritterForEntity(eid, world);
     return;
   }
-}
-
-/** Inline skeleton spawn — mirrors game-world's spawnCreatureEntity so this
- *  file can stay system-state-only without importing GameWorld. */
-function spawnSkeleton(tileX: number, tileY: number, world: SystemState): number {
-  const bp = getBlueprint(BlueprintType.Skeleton)!;
-  const eid = world.entities.create();
-  world.entities.position.set(eid, { tileX, tileY });
-  world.entities.direction.set(eid, { dir: Direction.S });
-  world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-  world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-  world.entities.health.set(eid, { currentHp: bp.maxHp!, maxHp: bp.maxHp! });
-  world.entities.blueprint.set(eid, { blueprintId: BlueprintType.Skeleton, variant: 0 });
-  world.entities.statusEffects.set(eid, { effects: 0 });
-  if (bp.speed) world.entities.speed.set(eid, bp.speed);
-  world.occupancy.set(tileX, tileY, eid);
-  return eid;
 }
 
 export interface CreatureDeath {

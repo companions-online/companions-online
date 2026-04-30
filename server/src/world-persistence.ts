@@ -1,18 +1,18 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
+import { BlueprintType } from '@shared/blueprints.js';
 import { Direction } from '@shared/direction.js';
 import { ActionType } from '@shared/actions.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
-import { StatusEffect } from '@shared/status-effects.js';
 import { generateWorld } from '@shared/world/world-gen.js';
 import { WorldMap } from '@shared/world/world-map.js';
-import { MORNING_TICK_OFFSET, TWILIGHT_TICK_OFFSET } from '@shared/lighting.js';
+import { MORNING_TICK_OFFSET } from '@shared/lighting.js';
 import { GameWorld } from './game-world.js';
 import { createFileLogger } from './world-logger.js';
 import { initTreeResource } from './systems/resources.js';
 import { initCritterAI } from './systems/critter-ai.js';
+import { isGroundItemBlueprint, shouldRestoreAsGround, spawnCreatureEntity, spawnGroundItem } from './entity-spawn.js';
 import type { MovementState, HarvestState, CombatState, CritterState } from './system-state.js';
 import type { ConsumableState } from './systems/consumable.js';
 import type { Inventory } from '@shared/inventory.js';
@@ -186,20 +186,29 @@ export async function loadWorld(worldDir: string): Promise<{ world: GameWorld; m
     });
   }
 
-  // Restore entities
+  // Restore entities — Placed-bit-aware dispatch. The Placed bit is the
+  // canonical ground-item-vs-structure signal (memory: status-effects.ts).
+  // Ground items reload as position+blueprint only (no statusEffects, no
+  // occupancy); creatures/structures reload via spawnCreatureEntity with
+  // saved overrides, and an open door reloads with cleared occupancy via
+  // the helper's Open-bit gate. A placeable (Campfire/Wall/Door/Chest/Floor)
+  // saved without Placed reloads as ground item — that's the dropped-from-
+  // inventory case; saved with Placed reloads as installed structure.
   for (const ent of data.entities) {
-    world.entities.createWithId(ent.id);
-    world.entities.position.set(ent.id, ent.position);
-    world.entities.direction.set(ent.id, { dir: ent.direction });
-    world.entities.nextWaypoint.set(ent.id, ent.waypoint);
-    world.entities.currentAction.set(ent.id, ent.action);
-    if (ent.health) world.entities.health.set(ent.id, ent.health);
-    world.entities.blueprint.set(ent.id, { blueprintId: ent.blueprintId, variant: ent.variant ?? 0 });
-    world.entities.statusEffects.set(ent.id, { effects: ent.statusEffects });
-    if (ent.speed !== undefined) world.entities.speed.set(ent.id, ent.speed);
-
-    // Rebuild occupancy from positions
-    world.occupancy.set(ent.position.tileX, ent.position.tileY, ent.id);
+    if (shouldRestoreAsGround(ent.blueprintId, ent.statusEffects)) {
+      spawnGroundItem(world, ent.blueprintId, ent.position.tileX, ent.position.tileY, ent.id);
+    } else {
+      spawnCreatureEntity(world, ent.blueprintId, ent.position.tileX, ent.position.tileY, {
+        id: ent.id,
+        variant: ent.variant ?? 0,
+        direction: ent.direction,
+        waypoint: ent.waypoint,
+        action: ent.action,
+        health: ent.health,
+        statusEffects: ent.statusEffects,
+        speed: ent.speed,
+      });
+    }
   }
 
   // Restore system states
@@ -239,30 +248,12 @@ export async function createNewWorld(
   world.log.info('world created', { worldId, seed });
 
   for (const spawn of entitySpawns) {
-    const bp = getBlueprint(spawn.blueprint);
-    if (!bp) continue;
-    // Match createDefaultWorld's dispatch: ground-item resources/items go
-    // through spawnGroundItem (no statusEffects, no occupancy). Everything
-    // else gets the full creature/structure shape — placeables get Placed.
-    const isGroundItem = (bp.category === 'resource' || bp.category === 'item')
-      && spawn.blueprint !== BlueprintType.Tree;
-    if (isGroundItem) {
-      world.spawnGroundItem(spawn.blueprint, spawn.x, spawn.y);
-      continue;
+    if (isGroundItemBlueprint(spawn.blueprint)) {
+      spawnGroundItem(world, spawn.blueprint, spawn.x, spawn.y);
+    } else {
+      const eid = spawnCreatureEntity(world, spawn.blueprint, spawn.x, spawn.y, { variant: spawn.variant });
+      if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
     }
-    const eid = world.entities.create();
-    world.entities.position.set(eid, { tileX: spawn.x, tileY: spawn.y });
-    world.entities.direction.set(eid, { dir: Direction.S });
-    world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-    world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-    if (bp.maxHp) world.entities.health.set(eid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
-    world.entities.blueprint.set(eid, { blueprintId: spawn.blueprint, variant: spawn.variant });
-    const isStructure = bp.category === 'placeable' || spawn.blueprint === BlueprintType.Tree;
-    const initialEffects = isStructure ? StatusEffect.Placed : 0;
-    world.entities.statusEffects.set(eid, { effects: initialEffects });
-    if (bp.speed) world.entities.speed.set(eid, bp.speed);
-    world.occupancy.set(spawn.x, spawn.y, eid);
-    if (spawn.blueprint === BlueprintType.Tree) initTreeResource(eid, world);
   }
   world.entities.clearDirty();
   initCritterAI(world);
