@@ -15,8 +15,14 @@ import { OpenRouterDecider, type Decider } from './decider.js';
 export type { ModelConfig } from './config.js';
 
 export interface BootstrapOpts {
-  configName: string;
+  /** Name of a JSON file in `configDir` (typically `harness/config/`). Mutually exclusive with `config`. */
+  configName?: string;
   configDir?: string;
+  /**
+   * Pre-resolved model config, e.g. inlined in `harness/characters/config.json`.
+   * Wins over `configName` when both are set; one of the two must be present.
+   */
+  config?: ModelConfig;
   /**
    * Optional named prompt. When set, resolves to `<CHARACTERS_DIR>/<name>.md`
    * (preferred) or `<CONFIG_DIR>/<name>.md`. When unset, the default
@@ -27,6 +33,8 @@ export interface BootstrapOpts {
   decider?: Decider;
   memory?: Scratchpad;
   sessionId?: string;
+  /** Suppress `log.stdout` output (event JSONL still writes). Used by the multi-character TUI. */
+  quiet?: boolean;
 }
 
 export interface Bootstrap {
@@ -64,17 +72,22 @@ function loadPrompt(configDir: string, promptName?: string): { system: string; f
 // branch is never taken, so the model field is never read off this stub.
 const HUMAN_STUB_CONFIG: ModelConfig = { type: 'model', model: 'human', actionWindowSize: 20 };
 
+function resolveConfig(opts: BootstrapOpts, configDir: string): ModelConfig {
+  if (opts.config) return opts.config;
+  if (!opts.configName) throw new Error('bootstrap: must supply `configName` or `config`');
+  if (opts.configName === 'human') return HUMAN_STUB_CONFIG;
+  return loadConfig<ModelConfig>(opts.configName, 'model', configDir);
+}
+
 export async function bootstrapHarness(opts: BootstrapOpts): Promise<Bootstrap> {
   loadEnv();
 
   const configDir = opts.configDir ?? CONFIG_DIR;
-  const config = opts.configName === 'human'
-    ? HUMAN_STUB_CONFIG
-    : loadConfig<ModelConfig>(opts.configName, 'model', configDir);
+  const config = resolveConfig(opts, configDir);
   const { system, first } = loadPrompt(configDir, opts.promptName);
 
   const sessionId = opts.sessionId ?? randomUUID();
-  const log = opts.logger ?? createLogger(sessionId);
+  const log = opts.logger ?? createLogger(sessionId, { quiet: opts.quiet });
   const memory = opts.memory ?? openScratchpad(sessionId);
   const mcpUrl = process.env.MCP_URL ?? 'http://localhost:3001/mcp';
   const mcp = new ReconnectingMcpClient(mcpUrl, log);

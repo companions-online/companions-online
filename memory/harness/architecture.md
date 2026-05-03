@@ -31,7 +31,7 @@ interface VariantStrategy<S> {
 }
 ```
 
-The runner owns the loop, the abort/maxSteps gates, the decider call (with error logging), the dispatcher call, all `log.event` / `log.stdout` lines, the `onTurnComplete` verdict, and `mcp.close + log.close` on exit. A variant only describes:
+The runner owns the loop, the abort/maxSteps gates, the decider call (with error logging), the dispatcher call, all `log.event` / `log.stdout` lines, the `onTurnComplete` verdict, and `mcp.close + log.close` on exit. The post-turn hook receives a `TurnCompleteCtx` object — `{ step, usage, lastToolName?, lastInlineText? }` — so observers (eval-runner, multi-character dashboard) don't need to tail the JSONL log to know what just happened. A variant only describes:
 
 1. What messages to send this turn (a transformation of state + current scratchpad text).
 2. What to remember after the assistant responds (with or without a tool call).
@@ -73,18 +73,26 @@ loop:
   log.event('request', { step, messages, tools })
   result = decider.decide({ messages, tools })          ← throws → log + rethrow
   log.event('response', { step, assistantMsg, usage })
+  if opts.usage:  +prompt/completion/total/costUsd      ← cumulative dollar spend
+  opts.rate?.push(usage.completion_tokens)              ← trailing-window TPS for live UIs
   if assistantMsg has tool_calls:
     dispatched = dispatcher.dispatch(call)              ← throws → caught, logged, becomes ERROR text
     log.event('tool_call' / 'tool_result')
     strategy.onToolResult(state, ...)
   else:
     strategy.onNoToolCall(state, ...)
-  verdict = await opts.onTurnComplete?(step, usage)     ← eval uses this for early stop
+  verdict = await opts.onTurnComplete?({ step, usage, lastToolName, lastInlineText })
   if verdict === 'stop': break
 mcp.close(); log.close()
 ```
 
-`onTurnComplete` is the eval hook. The eval-runner passes a callback that returns `'stop'` when checkpoints are all hit or token budget is exhausted; the runner reports that back as `stopReason: 'host_stop'` which the eval-runner re-labels.
+`onTurnComplete` is the eval / dashboard hook. The eval-runner returns `'stop'` when checkpoints are all hit or token budget is exhausted; the runner reports that back as `stopReason: 'host_stop'` which the eval-runner re-labels. The multi-character CLI uses the same hook to push `lastToolName`/step into the dashboard row state.
+
+## Cost + rate tracking
+
+`UsageAccumulator` carries a fourth field, `costUsd: number`. `OpenRouterDecider.decide` sets `usage: { include: true }` (after the model-body spread, so a stray `usage` in a model JSON can't shadow it), which makes OpenRouter return billed dollar cost on each response (`TokenUsage.cost?: number`). The runner sums it into `costUsd` per turn; missing values count as zero (BYOK / providers that don't report cost).
+
+Sibling `RateTracker` (`helpers/rate-tracker.ts`) is a pure trailing-window struct — `push(completion, tMs?)` per turn, `rate(windowMs=10_000, nowMs?)` returns tokens/sec. Stays out of `UsageAccumulator` deliberately: the accumulator is a 3+1 cumulative-counter contract, the tracker is an event log. The single-character CLI doesn't use `RateTracker`; the multi-character dashboard does.
 
 ## Single-sessionId convention
 
@@ -92,4 +100,8 @@ Every run has one UUID. The harness logger writes `<id>-log.jsonl`, the scratchp
 
 ## Path resolution
 
-`helpers/paths.ts` derives `HARNESS_ROOT` from `import.meta.url`, so `LOGS_DIR` and `CONFIG_DIR` resolve correctly regardless of cwd. Don't introduce relative `'harness/...'` strings — that breaks running scripts from any other directory.
+`helpers/paths.ts` derives `HARNESS_ROOT` from `import.meta.url`, so `LOGS_DIR`, `CONFIG_DIR`, and `CHARACTERS_DIR` resolve correctly regardless of cwd. Don't introduce relative `'harness/...'` strings — that breaks running scripts from any other directory.
+
+## Inline configs + quiet logger
+
+`BootstrapOpts` accepts either `configName` (load `harness/config/<name>.json` from disk) or a pre-resolved inline `config: ModelConfig`. The multi-character roster inlines models, so its CLI passes `config` and skips the file load. `BootstrapOpts.quiet` propagates to `createLogger(sessionId, { quiet })`, which silences `log.stdout` (event JSONL keeps writing). The multi-character CLI sets `quiet: true` for every character so per-turn log lines don't trample the TUI; single-character CLIs leave it off.

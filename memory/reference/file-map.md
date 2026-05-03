@@ -133,35 +133,81 @@ movement-edge-cases.test.ts   Regression file for movement/pathfinding/combat-ch
 pending-actions.test.ts       Coverage for the unified pendingActions queue. Base cases: pickup, interact (door/chest), transfer, dialogue_select, trade, use_item_at on walkable tile, use_item_at on river (river-floor case), cooking, plus already-adjacent zero-tick fast path. Interrupt cases: target destroyed mid-walk → target_missing, path becomes unreachable mid-walk → no_path, new action mid-walk → action_interrupted event, player dies mid-walk → entry cleared, mobile entity target moves → resolver re-aims, inventory fills mid-walk → inventory_full on arrival.
 ```
 
-## harness/
+## harness/cli/
 ```
-bootstrap.ts             Shared setup: loadEnv + config + prompt + MCP connect + decider + memory + logger
-compact.ts               Rolling-window harness (system + assistant + tool, 3 messages/turn) + CLI; folds in old state/prompt-builder
-baseline.ts              Full-history harness, "continue" ping after each tool, no truncation + CLI
+harness.ts               `npx harness <variant> <model> [prompt]` — single-character free-running play; `human` model swaps in HumanDecider + TTY UI
+eval.ts                  `npx eval <eval-config> <model>` — boot ephemeral server + score against checkpoints
+characters.ts            `npx characters` — multi-character CLI: load roster + mount dashboard + run all concurrently
+run-cli.ts               Shared SIGINT/abort plumbing + UsageAccumulator init + final tokens/cost line for harness + eval entries (NOT used by characters — that registers SIGINT itself to avoid stacking handlers)
+```
+
+## harness/variants/
+```
+baseline.ts              Full-history harness, "continue" ping after each tool, no truncation
+compact.ts               Rolling-window harness (system + assistant + tool, 3 messages/turn); folds in old state/prompt-builder
 shortened.ts             Full-history harness, but turns older than last 2 collapse to one assistant message (inline content + <thinking> reasoning + tool summary, all verbatim); exports compactOldTurns/extractActionTag
-decider.ts               Decider interface + OpenRouterDecider (returns { message, usage })
-openrouter.ts            ChatResponse + TokenUsage types + thin fetch wrapper
+```
+
+## harness/helpers/
+```
+runner.ts                The single per-turn loop (runHarness). Owns abort/maxSteps gates, decider call, dispatcher call, all log lines, TurnCompleteCtx-shaped onTurnComplete hook, UsageAccumulator (incl costUsd) + RateTracker push.
+bootstrap.ts             Shared setup: loadEnv + config (configName from disk OR inline `config: ModelConfig`) + prompt resolve (CHARACTERS_DIR before CONFIG_DIR) + MCP connect + decider + memory + logger. `quiet?: boolean` propagates to createLogger.
+decider.ts               Decider interface + OpenRouterDecider (returns { message, usage }). Injects `usage: { include: true }` after the model-body spread so OpenRouter returns billed dollar cost.
+openrouter.ts            ChatResponse + TokenUsage types (incl optional `cost?: number`) + thin fetch wrapper
 mcp-client.ts            ReconnectingMcpClient with backoff
-tools.ts                 createDispatcher (merges MCP + harness tools, OpenAI-format conversion)
+dispatcher.ts            createDispatcher (merges MCP + harness tools, OpenAI-format conversion). Tags results `kind: 'mcp' | 'harness'`.
 harness-tools.ts         Local harness tools (currently: memory_update)
-memory-file.ts           Per-session markdown file (one per sessionId)
-logger.ts                JSONL session log + stdout
-human-harness.ts         Human-driven decider (terminal UI) for debugging variants
-human-ui.ts              Terminal UI primitives for human-harness
+scratchpad.ts            Per-session markdown file (one per sessionId), LLM-facing as `memory_update`
+logger.ts                JSONL session log + stdout. `createLogger(sessionId, { quiet })` — quiet no-ops stdout but keeps event JSONL writes (used by multi-character TUI).
+rate-tracker.ts          Pure trailing-window completion-token tracker. createRateTracker → { push(completion, tMs?), rate(windowMs=10_000, nowMs?) }. Pushed once per turn from the runner; the multi-character dashboard reads `rate(10_000)` for live tps.
+characters-config.ts     loadCharactersConfig(path?) → Character[]. Validates `harness/characters/config.json` shape: prompt + harness∈{baseline|compact|shortened} + inlined `model: ModelConfig`.
+run-characters.ts        Orchestrator. `createCharacterRows(chars)` builds row state synchronously (so callers can mount a dashboard before the runners start). `runCharacters(chars, rows, opts?)` fans out via Promise.allSettled — each character gets its own bootstrap + sessionId + MCP client + UsageAccumulator + RateTracker, all wired into the same row.
+characters-dashboard.ts  Live ANSI TUI for the multi-character CLI. setInterval ~250ms, raw \x1b[H redraw. Reads CharacterRow[] directly. printFinalSummary writes one summary line per character after dashboard tear-down.
+human-decider.ts         Human-driven decider (terminal UI) for debugging variants
+human-ui.ts              Terminal UI primitives for human-decider
+config.ts                loadConfig<T>(name, kind, dir?) — discriminator-typed JSON loader for model/eval configs
 env.ts                   loadEnv (.env loading)
-config/<name>.json       LLM config (model + extra OpenRouter body fields + actionWindowSize)
-config/prompt.md         System / first-user prompt split on \n---\n
+paths.ts                 HARNESS_ROOT (from import.meta.url) + LOGS_DIR + CONFIG_DIR + CHARACTERS_DIR + log/memory/run path helpers
+```
+
+## harness/config/
+```
+<name>.json              LLM model config (type:"model", model, temperature?, reasoning?, actionWindowSize?, ...openrouter passthrough)
+prompt.md                Default system / first-user prompt split on \n---\n
+survival-basics-*.json   Eval configs (type:"eval")
+```
+
+## harness/characters/
+```
+config.json              Roster: array of { prompt, harness, model } — prompt resolves to <name>.md here, model is inlined ModelConfig
+princess.md              Per-character prompt (system / first-user split on \n---\n). Resolved before harness/config when promptName is set.
+hunter.md                ditto
+peon.md                  ditto
 ```
 
 ## harness/eval/
 ```
 match.ts                 matches(checkpoint, event): shallow-eq on event.details
 scoreboard.ts            Scoreboard: setEventObserver attach + AI-eid resolution + checkpoint hits
-eval-runner.ts           runEval: spin up world+app+loop on ephemeral port + run variant + per-run JSON result
-cli.ts                   tsx harness/eval/cli.ts <llm-config> <eval-config-path>
-configs/<name>.json      Eval config (harness variant, worldSeed, maxTurns, maxTokens, checkpoints[])
-runs/<runId>.json        Per-run output (score, hits, turns, tokens, stopReason)
-test/match.test.ts       matches() unit tests
-test/scoreboard.test.ts  AI-eid resolution + emit/broadcast filtering on real harvest
-test/eval-runner.test.ts End-to-end: stub decider drives identify+harvest, plus max_turns/max_tokens stop
+eval-runner.ts           runEval: spin up world+app+loop on ephemeral port + run variant + per-run JSON result. onTurnComplete uses the new TurnCompleteCtx shape.
+```
+
+## harness/test/
+```
+helpers/rate-tracker.test.ts        Windowed rate calc, empty/one/old-entry edge cases
+helpers/characters-config.test.ts   Happy path + each validation failure (missing field, bad harness, model.type wrong)
+helpers/run-characters.test.ts      Orchestrator integration with ScriptedDecider per character against startTestMcpServer
+helpers/{mcp-server,openrouter-mock,noop-logger}.ts  Test infra (in-process MCP, replay-based OpenRouter mock, silent logger)
+variants/{baseline,compact-prompt,compact-state,shortened}.test.ts  Per-variant message-shape tests
+eval/{match,scoreboard,eval-runner}.test.ts        Eval-side tests
+human-decider.test.ts               TTY UI behaviors
+helpers/scratchpad.test.ts          Memory file round-trip
+fixtures/                           openrouter response fixtures + config/{test-model.json,prompt.md}
+```
+
+## harness/logs/ (gitignored)
+```
+<sessionId>-log.jsonl    Per-session JSONL event stream
+<sessionId>-memory.md    Per-session scratchpad (LLM-facing as `memory`)
+<sessionId>-run.json     Eval-only: score + hits + turns + tokens + stopReason
 ```
