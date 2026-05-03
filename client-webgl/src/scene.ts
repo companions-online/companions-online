@@ -35,6 +35,7 @@ import { getBlueprint } from '@shared/blueprints.js';
 import type { ClientEntity } from './entities/client-entity.js';
 import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
 import type { Overlay } from './overlay.js';
+import type { ObserverCamera } from './controls/observer-camera.js';
 
 import { generateRawTerrainTiles } from './terrain/texture.js';
 import { generateBlendMasks } from './terrain/blend-masks.js';
@@ -124,6 +125,15 @@ export interface Scene {
    *  getTileCornersLocal, but sprites anchor at draw time. */
   chunkElevation: Map<number, Float32Array>;
   myEntityId: number | null;
+  /** Observer-mode interest center (rounded tile coords). Set when the
+   *  client is acting as an observer (no player entity); drives camera
+   *  follow + chunk eviction + lighting center as the fallback when
+   *  `myEntityId === null`. Mutated by the autopilot camera (or any
+   *  future god-view driver). */
+  observerFocus: { tileX: number; tileY: number } | null;
+  /** Active autopilot driver for observer mode, ticked by the renderer
+   *  each frame. Null in player mode (no observer to drive). */
+  observerCamera: ObserverCamera | null;
   seed: number | null;
   time: number;
   effects: EffectManager;
@@ -191,6 +201,12 @@ export interface Scene {
    *  (sent to server when an equippable is selected) and the context-
    *  sensitive right-click mode (placement / cook / consumable). */
   selectedQuickSlot: number | null;
+
+  // --- Observer-mode mutator ---
+  /** Set the observer's interest center. Pure scene-state set; the
+   *  server-side `setObserverFocus` push is the caller's responsibility
+   *  (the autopilot camera does both). */
+  setObserverFocus(tileX: number, tileY: number): void;
 
   // --- Network mutators ---
   onWelcome(entityId: number, seed: number): void;
@@ -430,6 +446,8 @@ export async function createScene(
     wallDrawablesByChunk,
     chunkElevation,
     myEntityId: null,
+    observerFocus: null,
+    observerCamera: null,
     seed: null,
     time: 0,
     effects,
@@ -453,8 +471,16 @@ export async function createScene(
     selectedQuickSlot: null,
 
     onWelcome(entityId, seed) {
-      this.myEntityId = entityId;
+      // entityId === 0 is the observer-channel sentinel (see GameWorld
+      // addObserver). Leave myEntityId null so the camera + chunk eviction +
+      // lighting fall through to their observerFocus paths; the autopilot
+      // (or any future god-view driver) populates observerFocus.
+      this.myEntityId = entityId === 0 ? null : entityId;
       this.seed = seed;
+    },
+
+    setObserverFocus(tileX, tileY) {
+      this.observerFocus = { tileX, tileY };
     },
 
     onInventorySync(items) {
@@ -726,17 +752,25 @@ export async function createScene(
     },
 
     processDirtyChunks() {
-      // Eviction step: if the player moved into a new chunk, drop anything
-      // outside the interest radius.
+      // Eviction step: if the interest center moved into a new chunk, drop
+      // anything outside the interest radius. Player position takes
+      // precedence; in observer mode we fall back to observerFocus.
+      let pcx: number | null = null;
+      let pcy: number | null = null;
       if (this.myEntityId !== null) {
         const me = entities.get(this.myEntityId);
         if (me?.position) {
-          const pcx = Math.floor(me.position.tileX / CHUNK_SIZE);
-          const pcy = Math.floor(me.position.tileY / CHUNK_SIZE);
-          if (!lastEvictionChunk || lastEvictionChunk.cx !== pcx || lastEvictionChunk.cy !== pcy) {
-            evictOutOfRange(pcx, pcy);
-            lastEvictionChunk = { cx: pcx, cy: pcy };
-          }
+          pcx = Math.floor(me.position.tileX / CHUNK_SIZE);
+          pcy = Math.floor(me.position.tileY / CHUNK_SIZE);
+        }
+      } else if (this.observerFocus) {
+        pcx = Math.floor(this.observerFocus.tileX / CHUNK_SIZE);
+        pcy = Math.floor(this.observerFocus.tileY / CHUNK_SIZE);
+      }
+      if (pcx !== null && pcy !== null) {
+        if (!lastEvictionChunk || lastEvictionChunk.cx !== pcx || lastEvictionChunk.cy !== pcy) {
+          evictOutOfRange(pcx, pcy);
+          lastEvictionChunk = { cx: pcx, cy: pcy };
         }
       }
 
@@ -751,10 +785,11 @@ export async function createScene(
         for (const key of dirtyChunks) {
           const cx = key % 1024;
           const cy = (key - cx) / 1024;
-          // Only rebuild chunks that are in-interest — the player may not
-          // yet be positioned, in which case no eviction has happened and
-          // all received chunks are valid.
-          if (this.myEntityId !== null && lastEvictionChunk) {
+          // Only rebuild chunks that are in-interest. lastEvictionChunk is
+          // set whenever we have an interest center (player position OR
+          // observer focus); when null no eviction has happened and all
+          // received chunks are valid.
+          if (lastEvictionChunk) {
             if (Math.max(Math.abs(cx - lastEvictionChunk.cx),
                          Math.abs(cy - lastEvictionChunk.cy)) > INTEREST_RADIUS_CHUNKS) {
               continue;

@@ -276,6 +276,15 @@ function handleSay(world: GameWorld, eid: number, action: DecodedAction): void {
       }));
     }
   }
+  // Observers near the speaker hear it too — chat is part of the
+  // god-view picture. No player_say emitEvent (point-to-point narration is
+  // player-only); just the chat-message channel so bubbles render.
+  for (const slot of world.observers.values()) {
+    if (Math.abs(pos.tileX - slot.focusX) <= INTEREST_RANGE &&
+        Math.abs(pos.tileY - slot.focusY) <= INTEREST_RANGE) {
+      slot.connection.onChatMessage(0, eid, msg);
+    }
+  }
 }
 
 function handleServerCommand(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {

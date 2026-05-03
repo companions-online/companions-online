@@ -104,7 +104,8 @@ Layout constants in `inventory-panel.ts`:
 - `y = GAME_Y + GAME_H - CELL - 8` — pinned to the bottom of the game area.
 
 Gate: `drawHud` calls `drawQuickbarHud` only when
-`scene.inventoryOpen === false`. When the panel is open, the panel's own
+`!isInventoryShowing(scene.overlay)`. When the panel is open (the
+`'inventory'` or `'container'` overlay variant), the panel's own
 quickbar row takes over (no double-draw).
 
 Keys `1..9` are accepted **in both states** (panel open or closed) —
@@ -179,12 +180,13 @@ silently no-op; the player walks adjacent first.
 
 ## Container
 
-`scene.containerEntityId !== null` triggers two behaviors: the right
-column draws container items (with same icon + quantity badge as the
-grid), and the panel auto-opens (`onContainerOpen` sets
-`inventoryOpen = true`). Closing the panel via I/Esc clears
-`containerEntityId / containerItems` on the client; server's view
-lingers until the player moves away.
+`onContainerOpen` sets `scene.overlay = { kind: 'container', entityId,
+items }`. The container variant is itself "inventory-showing" (per
+`isInventoryShowing` in `overlay.ts`) so the inventory panel renders
+with the chest items pinned to the right column. Closing via I/Esc
+sets `scene.overlay = { kind: 'none' }` — the variant data drops with
+the variant, no stale-fields tracking. Server's view lingers until the
+player moves away.
 
 ## Files
 
@@ -196,7 +198,8 @@ client-webgl/src/ui/cooking-highlight.ts isCookingActive, shouldTintCampfire (co
 client-webgl/src/ui/hud.ts               draws the HUD quickbar when panel closed; draws panel + heldCursor when open
 client-webgl/src/entities/sprite-renderer.ts  setTint(r,g,b,a) — generic red-tint / color-tint hook used by cook highlight
 client-webgl/src/entities/shaders.ts     sprite FS now mixes rgb with u_tint.rgb by u_tint.a after the lightmap multiply
-client-webgl/src/scene.ts                holds heldStack, gridOrder, quickSlots, selectedQuickSlot, pendingItemDecrements, placementHoverTile, inventoryOpen, cursorScreenX/Y
+client-webgl/src/scene.ts                holds heldStack, gridOrder, quickSlots, selectedQuickSlot, pendingItemDecrements, placementHoverTile, overlay (replaces inventoryOpen + container/dialogue fields), cursorScreenX/Y
+client-webgl/src/overlay.ts              Overlay union (none | inventory | container | dialogue | menu) + helpers (isInventoryShowing, isInputCaptured, getContainer)
 client-webgl/src/controls/keyboard.ts    'I' opens; 'Esc' clears quickslot selection (then placement-fallback); 1..9 → selectQuickSlot
 client-webgl/src/controls/mouse.ts       right-click table (consumable/place/cook), left-click falls through to resolveAction
 client-webgl/src/renderer.ts             placement-ghost pass + cooking-highlight pass (both unlit, after effects)

@@ -53,6 +53,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [client-webgl/](client-webgl/overview.md) — WebGL client; also see architecture, file-map, gotchas, testing
 - [client-webgl/lighting](client-webgl/lighting.md) — day/night cycle + tinted point lights + wall-aware shadowcast
 - [client-webgl/inventory-panel](client-webgl/inventory-panel.md) — drag-and-drop inventory UI + placement mode + optimistic-decrement flicker fix
+- [client-webgl/standalone-observer](client-webgl/standalone-observer.md) — boot mode toggle (WS vs in-tab), observer-mode wiring, autopilot camera
 - [harness/overview](harness/overview.md) — what the harness is, the three CLI surfaces, the variants/helpers/cli/eval split
 - [harness/architecture](harness/architecture.md) — runner + VariantStrategy contract, two-tool-source dispatch, decider seam, scratchpad↔memory naming, single-sessionId convention, cost+rate tracking, inline-config + quiet logger
 - [harness/variants](harness/variants.md) — compact/baseline/shortened: state shapes, prompt-build differences, when to use each, why no `continue` after tool results

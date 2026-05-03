@@ -4,10 +4,12 @@
 
 `Scene` (client-webgl/src/scene.ts) holds every piece of replicated
 state: `worldMap`, `entities`, `wallDrawablesByChunk`, `inventory`,
-`containerEntityId/Items`, `dialogueNpcId/dialogue`, `chatLog`,
-`myEntityId`, `seed`. No piece of scene state is generated or simulated
+`overlay` (modal UI state — see Overlay below), `chatLog`,
+`myEntityId`, `seed`, plus observer-mode fields (`observerFocus`,
+`observerCamera`). No piece of scene state is generated or simulated
 locally; every mutator is an `on*()` method invoked by
-`wire-scene.ts` when a server message arrives.
+`wire-scene.ts` (networked path) or `StandaloneConnection`
+(in-tab path) when a server callback fires.
 
 Boot produces an empty scene: empty entity map, empty worldMap
 (`new WorldMap(MAP_SIZE, MAP_SIZE)`), zero-initialized terrain/wall
@@ -18,21 +20,37 @@ stubs (see [testing.md](testing.md)).
 
 ## Network path
 
-`connection.ts`:
+Two transports share one `Connection` interface (`onMessage`, `send`,
+`close`, `isOpen`); `main.ts` picks at boot based on whether
+`window.GAME_SERVER_HOST` was injected by the served HTML.
+
+**Networked (`network/connection.ts`)** — the served HTML
+(`index.html`) sets `window.GAME_SERVER_HOST = window.location.host`,
+so `main.ts` calls `connect()`:
 - Opens `ws://${location.host}/ws`, `binaryType = 'arraybuffer'`.
 - Decodes inbound via shared `decodeServerMessage`, encodes outbound
   via `encodeAction`.
-- Exposes a tiny `Connection` interface: `onMessage(handler)`,
-  `send(action)`, `close()`, `isOpen`.
 - Latency emulator: `?latency=N` query param wraps `setTimeout(..., N)`
   around both inbound delivery and outbound send. Symmetric; clamped
   to `[0, 2000]`.
 - Queues outbound sends before socket open; flushes on open.
 
-`wire-scene.ts` does one thing: a switch on message type routing each
-decoded message into the matching `scene.on*()` mutator. Used by both
-`main.ts` (against the real `Connection`) and tests (against
-`FakeConnection`).
+**Standalone (`network/standalone-connection.ts`)** — `index-standalone.html`
+omits `GAME_SERVER_HOST`, so `main.ts` calls `bootStandaloneObserver(scene, seed)`:
+- Spins up `createDefaultWorld(seed)` + `GameLoop` in the same browser tab.
+- Registers a `StandaloneObserverConnection` (PlayerConnection peer of
+  the WS connection) that forwards GameWorld callbacks straight into
+  `scene.on*()` — no codec round-trip, no WebSocket.
+- Adds an observer (not a player), starts the autopilot camera. See
+  [observer mode](#observer-mode) below.
+- `bootStandalone(scene, seed)` (player path, sibling factory) is
+  available for future menu integration; not used today.
+
+`wire-scene.ts` is the WS-only switch routing decoded messages into
+`scene.on*()` mutators. Used by `main.ts` in networked mode and by
+tests with `FakeConnection`. The standalone bridge bypasses it
+entirely (its `onMessage` is a no-op; PlayerConnection callbacks call
+scene mutators directly).
 
 ## Chunk-sparse rendering
 
@@ -296,6 +314,59 @@ TILE_H/2 - sheet.footY - z*PX_PER_Z`). HP bar sits `OVERLAY_GAP=4px`
 above the sprite top; nameplate stacks another `HP_BAR_H + OVERLAY_GAP`
 above that. A 128px player and a 32px deer get consistent overhead
 overlays without a sprite-specific offset.
+
+## Overlay
+
+Modal UI state lives in a single discriminated union, not parallel
+flags:
+
+```ts
+scene.overlay: Overlay =
+  | { kind: 'none' }
+  | { kind: 'inventory' }
+  | { kind: 'container'; entityId: number; items: SyncedInventoryItem[] }
+  | { kind: 'dialogue';  npcId: number; dialogue: unknown }
+  | { kind: 'menu';      screen: 'landing' | 'create-join' | 'settings' }
+```
+
+Helpers in `overlay.ts`:
+- `isInventoryShowing(o)` — `'inventory'` or `'container'`. Both kinds
+  draw the inventory panel; container pins items to the right column.
+- `isInputCaptured(o)` — `o.kind !== 'none'`. Gates world clicks/keys.
+- `getContainer(o)` — narrow to container variant data.
+
+Container/dialogue data lives inside the variant — closing an overlay
+drops its data atomically (the prior `containerEntityId` /
+`containerItems` parallel fields used to leave stale items lingering).
+The `'menu'` variant is reserved for the upcoming main menu work; no
+code reads it yet.
+
+Out of scope: chat-input focus (`keyboard.chatActive`) and placement
+mode (`scene.placementHoverTile`) stay as their own fields — they're
+input-routing modes, not modal screens.
+
+## Observer mode
+
+The renderer / lighting / chunk eviction support a "no player entity"
+path used by the standalone build's background world. When
+`scene.myEntityId === null`:
+
+- Camera follow falls back to `scene.observerFocus: {tileX, tileY}`.
+- Chunk eviction keys off the same focus tile.
+- Lighting center uses the focus tile (or 0,0 if neither set).
+- HP bars + nameplates draw normally; the "skip self" check is keyed on
+  `myEntityId`, which is null, so nothing is skipped.
+
+The autopilot in `controls/observer-camera.ts` advances `observerFocus`
+along an 8-direction random walk (3-5s segments, edge-buffer biases
+turns inward) and pushes `setObserverFocus(tileX, tileY)` to the
+server only when the rounded tile changes. The renderer ticks the
+autopilot via `scene.observerCamera?.tick(now)` once per frame.
+
+`onWelcome(0, seed)` (entityId 0 = observer sentinel) keeps
+`myEntityId` null — `scene.ts` reads the sentinel and falls through.
+
+Server-side observer concept lives in `memory/reference/architecture.md::Observer Mode`.
 
 ## What doesn't live here (yet)
 

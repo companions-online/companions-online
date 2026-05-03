@@ -11,30 +11,47 @@ them; they only share `shared/src/`.
 ## Boot flow
 
 ```
-index.html loads /dist/main.js
+index{,-standalone}.html loads /dist/main.js
   → main.ts: canvas + WebGL2 context
   → createScene(gl)           — boots renderers + loads sprite + static assets
-  → connect()                 — opens ws://location.host/ws
-  → wireSceneToConnection     — routes decoded messages into scene.on*()
-  → attachMouseControls       — click → resolveAction → send
+  → conn = (window.GAME_SERVER_HOST defined)
+       ? connect()                          — ws://location.host/ws
+       : bootStandaloneObserver(scene, seed)  — in-tab GameWorld + GameLoop +
+                                              StandaloneObserverConnection +
+                                              autopilot camera
+  → wireSceneToConnection(scene, conn)  — WS-only switch; no-op for standalone
+  → attachMouseControls + attachKeyboardControls
   → renderer.start()          — RAF loop
 ```
 
-No client-side world-gen, no local entity simulation — everything
-replicated. The scene starts empty; chunks + entities fill in as the
-server streams them.
+Networked path: the scene starts empty; chunks + entities fill in as
+the server streams them. Standalone path: same wire model, same
+`Scene.on*()` mutators, but the server lives in the same browser tab
+and bypasses the binary protocol via `StandaloneConnection` /
+`StandaloneObserverConnection`. Today the standalone build boots into
+observer mode (no player avatar, autopilot camera) — the upcoming
+main menu will sit on top of this.
 
-## Same-origin serving
+## Same-origin serving + standalone serving
 
-The game server's Hono instance (`server/src/app.ts`) has a catch-all
-static handler that serves `client-webgl/` from the repo. The client
-connects to `ws://${location.host}/ws` — no `?host=` override, no
-separate dev port. Running on `PORT=3002` (e.g.) for a second session
-Just Works.
+**Networked**: the game server's Hono instance (`server/src/app.ts`)
+has a catch-all static handler that serves `client-webgl/` from the
+repo. `index.html` injects `window.GAME_SERVER_HOST = window.location.host`
+so `main.ts` picks the WS path. Running on `PORT=3002` (e.g.) for a
+second session Just Works.
 
-Dev loop: `npm run dev` runs `dev:server` + `dev:client-gl` concurrently.
-`dev:client-gl` is `esbuild --watch` writing to `client-webgl/dist/`;
-the game server serves it.
+**Standalone**: `client-webgl/dev-standalone.ts` runs esbuild's serve
+mode against `client-webgl/` on a separate port (default 3002),
+serving `index-standalone.html` (no `GAME_SERVER_HOST` injected).
+`main.ts` falls through to the standalone boot.
+
+Dev loops:
+- `npm run dev` — game server. Serves `client-webgl/index.html` →
+  networked play.
+- `npm run dev:client-gl` — esbuild watch only (no dev server); use
+  alongside the game server so the bundle rebuilds on change.
+- `npm run dev:standalone` — esbuild serve, no game server. Serves
+  `client-webgl/index-standalone.html` → standalone observer mode.
 
 ## Where to look next
 

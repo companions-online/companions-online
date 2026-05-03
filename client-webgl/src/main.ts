@@ -5,7 +5,7 @@ import { attachMouseControls } from './controls/mouse.js';
 import { attachKeyboardControls } from './controls/keyboard.js';
 import { connect } from './network/connection.js';
 import { wireSceneToConnection } from './network/wire-scene.js';
-import { bootStandalone } from './network/standalone-connection.js';
+import { bootStandaloneObserver } from './network/standalone-connection.js';
 import type { Connection } from './network/connection.js';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -25,13 +25,17 @@ checkGLError(gl, 'after scene init');
 const host = (window as unknown as { GAME_SERVER_HOST?: string }).GAME_SERVER_HOST;
 
 let conn: Connection;
-let standaloneRefs: ReturnType<typeof bootStandalone> | null = null;
+let standaloneRefs: ReturnType<typeof bootStandaloneObserver> | null = null;
 if (host !== undefined) {
   conn = connect();
 } else {
   const seedParam = new URLSearchParams(window.location.search).get('seed');
   const seed = seedParam !== null && Number.isFinite(Number(seedParam)) ? Number(seedParam) : 42;
-  standaloneRefs = bootStandalone(scene, seed);
+  // Standalone boots into observer mode — autopilot camera pans the world
+  // with no player avatar. The upcoming main menu will sit on top of this;
+  // its "Play" button will later swap in a player connection on the same
+  // world (or a fresh one with the user's chosen seed).
+  standaloneRefs = bootStandaloneObserver(scene, seed);
   conn = standaloneRefs.conn;
 }
 

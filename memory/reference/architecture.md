@@ -36,6 +36,7 @@ GameWorld implements SystemState {
   occupancy: OccupancyGrid   // tile → entityId (Uint16Array)
   inventoryMgr: InventoryManager
   players: Map<entityId, PlayerSlot>
+  observers: Map<observerId, ObserverSlot>  // negative-id keyed; passive viewers
   telemetry: Telemetry       // per-phase CPU timing + network bytes
 
   // System state Maps
@@ -48,6 +49,9 @@ GameWorld implements SystemState {
 
   addPlayer(connection: PlayerConnection): entityId
   removePlayer(entityId)
+  addObserver(connection, focusX, focusY): observerId   // see Observer Mode
+  removeObserver(observerId)
+  setObserverFocus(observerId, focusX, focusY)
   setAction(entityId, action)  // queues pendingAction; runTick's action phase calls processAction(this, ...) from world-actions.ts
   runTick() / runTicks(n)
 }
@@ -76,10 +80,12 @@ interface PlayerConnection {
 }
 ```
 
-Three implementations:
-- **WebSocketConnection** (`connections/ws-connection.ts`) — binary protocol encoding. `onGameEvent` is a no-op (point-to-point events are MCP-only); `onBroadcastEvent` translates to `WireEvent` via `WIRE_EVENT_MAP`, queues in `pendingEvents`, flushes one `ServerOpcode.GameEvents` batch per tick after `WorldDelta`.
-- **HeadlessConnection** (`connections/headless-connection.ts`) — test spy. Captures point-to-point events into `gameEvents[]` and broadcasts into `broadcastEvents[]` separately.
-- **McpConnection** (`connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick. `onBroadcastEvent` is a no-op — MCP narration stays first-person.
+Five implementations (three server-side, two in `client-webgl/src/network/standalone-connection.ts` for the in-tab build):
+- **WebSocketConnection** (`server/src/connections/ws-connection.ts`) — binary protocol encoding. `onGameEvent` is a no-op (point-to-point events are MCP-only); `onBroadcastEvent` translates to `WireEvent` via `WIRE_EVENT_MAP`, queues in `pendingEvents`, flushes one `ServerOpcode.GameEvents` batch per tick after `WorldDelta`.
+- **HeadlessConnection** (`server/src/connections/headless-connection.ts`) — test spy. Captures point-to-point events into `gameEvents[]` and broadcasts into `broadcastEvents[]` separately. Used by both player and observer tests (observer-channel events arrive with `entityId=0`).
+- **McpConnection** (`server/src/connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick. `onBroadcastEvent` is a no-op — MCP narration stays first-person.
+- **StandaloneConnection** (`client-webgl/src/network/standalone-connection.ts`) — in-tab player bridge. Implements both `PlayerConnection` (server-facing) and the client's `Connection` interface (client-facing). Forwards GameWorld callbacks straight into `scene.on*()` — bypasses the binary protocol. `bootStandalone(scene, seed)` factory.
+- **StandaloneObserverConnection** (same file) — in-tab observer bridge. Narrower surface: no `send`, no inventory/container/dialogue routing. `bootStandaloneObserver(scene, seed)` factory wires it up with the autopilot camera.
 
 ## Event System
 
@@ -245,6 +251,57 @@ Players don't get destroyed on death. Instead: `ActionType.Dead` set, equipped i
 Server-side AI cleanup on death: `clearAiTargetsOn(deadEntityId)` iterates `critterStates` + `combatStates` and clears targets pointing at the dead entity. Called from both `handlePlayerDeath` (player entity persists, so critter-ai's `entities.exists()` check wouldn't catch it) and `processEntityDeath` (upfront cleanup is immediate rather than waiting for next-tick scan). `critter-ai.ts` also skips Dead players when scanning for nearest aggro target, so a revived player won't be re-aggroed.
 
 Client-side death visuals: see `memory/client-webgl/architecture.md::Death visuals` — smoke puff spawned on both `EntityDied` wire event (creatures) and `currentAction → Dead` transition (player entity persists). Respawn position deltas snap instead of lerping.
+
+## Observer Mode
+
+A passive viewer with no in-world entity. Implemented as a parallel
+collection (`observers: Map<observerId, ObserverSlot>`, ids negative
+to never collide with positive entityIds) that rides the same
+broadcast plumbing as players. `addObserver(connection, focusX, focusY)`
+streams the initial chunks around the focus and fires
+`onInitialState(0, this)` (entityId 0 = observer-channel sentinel).
+
+The per-tick broadcast loop in `game-world.ts::broadcastTick` extracts
+a `streamToTarget(centerX, centerY, knownEntities, sentChunks, ...,
+connection)` helper that builds one viewer's `TickDelta` against any
+interest center. Two short loops then drive it once per slot:
+
+```
+for (eid, slot) in players:
+  pos = entities.position.get(eid)
+  delta = streamToTarget(pos.tileX, pos.tileY, slot.known/sent..., slot.connection)
+  slot.connection.onTick(eid, this, delta)
+
+for slot in observers:
+  delta = streamToTarget(slot.focusX, slot.focusY, slot.known/sent..., slot.connection)
+  slot.connection.onTick(0, this, delta)
+```
+
+`broadcastEvent`, `setEntityMeta`, and `world-actions.ts::handleSay`
+all gained parallel observer loops range-tested against
+`slot.focusX/focusY` so observers receive nearby visual events,
+nameplate updates, and chat. Point-to-point `emitEvent` deliberately
+does NOT reach observers — it's first-person narration to the subject,
+and observers have no entity to be the subject of.
+
+What observers don't get (by construction): no `onInventoryChanged`
+(no inventory), no `onContainerOpen`/`onDialogueOpen` (no actions to
+trigger them), no `onActionRejected` (can't act). Standalone observer
+connection no-ops these to satisfy the `PlayerConnection` interface.
+
+Observer entity-id space is negative; observer is invisible to other
+players because it has no entity in `world.entities` at all (so it
+never enters another player's `entered` set, doesn't appear in
+nameplate broadcasts, doesn't occupy a tile). Free invariant from the
+data layout.
+
+Today's only consumer is the standalone build's background world
+(`bootStandaloneObserver` in `client-webgl/src/network/standalone-connection.ts`),
+which adds one observer at SPAWN and runs an autopilot camera that
+calls `setObserverFocus` whenever the rounded focus tile changes.
+Future consumers (godview debug tooling, networked spectator mode)
+plug into the same `addObserver`/`setObserverFocus` API. Coverage in
+`test/e2e/observer.test.ts` (10 cases).
 
 ## Telemetry
 

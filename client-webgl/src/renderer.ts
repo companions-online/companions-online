@@ -76,9 +76,13 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
       e.tick?.(e, dt, scene);
     }
 
+    // Tick the autopilot first so the latest observerFocus drives this frame's
+    // camera + lighting.
+    scene.observerCamera?.tick(now);
+
     // Camera follows the player entity once it arrives from the server;
-    // otherwise stays at its initial SPAWN position. Pass ground z so the
-    // viewport translates up/down with the player's hill height.
+    // in observer mode it follows scene.observerFocus instead. Pass ground z
+    // so the viewport translates up/down with the focus tile's hill height.
     let playerTileX: number | undefined;
     let playerTileY: number | undefined;
     if (scene.myEntityId !== null) {
@@ -88,6 +92,11 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
         playerTileX = me.visualX;
         playerTileY = me.visualY;
       }
+    } else if (scene.observerFocus) {
+      const { tileX, tileY } = scene.observerFocus;
+      scene.camera.follow(tileX, tileY, scene.getGroundZ(tileX, tileY));
+      playerTileX = tileX;
+      playerTileY = tileY;
     }
 
     // Rebuild the lightmap before any draw that samples it. Uses the

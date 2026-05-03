@@ -55,13 +55,33 @@ export interface PlayerSlot {
   pendingAction: DecodedAction | null;
 }
 
+/** A passive viewer with no in-world entity. Receives the same broadcast
+ *  surface as a player (chunks, tick deltas, broadcast events, entity meta,
+ *  chat-in-range) keyed off `focusX/focusY` instead of an entity position.
+ *  Cannot act, has no inventory, no occupancy, and is not visible to other
+ *  players (no entity to enter their interest range). Used by the standalone
+ *  main menu's background world and any future god-view tooling. */
+export interface ObserverSlot {
+  observerId: number;
+  connection: PlayerConnection;
+  focusX: number;
+  focusY: number;
+  knownEntities: Set<number>;
+  sentChunks: Set<number>;
+}
+
 export class GameWorld implements SystemState {
   readonly entities = new EntityManager();
   readonly occupancy: OccupancyGrid;
   readonly inventoryMgr = new InventoryManager();
 
   readonly players = new Map<number, PlayerSlot>();
+  readonly observers = new Map<number, ObserverSlot>();
   readonly pendingActions = new Map<number, PendingAction>();
+  /** Counter for observer ids — starts at -1, decrements. Negative space
+   *  keeps observer ids from ever colliding with entityIds (which are
+   *  positive). */
+  private nextObserverId = -1;
 
   readonly moveStates = new Map<number, MovementState>();
   readonly harvestStates = new Map<number, HarvestState>();
@@ -151,6 +171,17 @@ export class GameWorld implements SystemState {
         try { this.eventObserver(eid, event, 'broadcast'); } catch { /* swallow */ }
       }
     }
+    // Observers receive broadcasts whose tile is within their focus range,
+    // same as players. eventObserver gets entityId=0 for observer-channel
+    // events; eval/test scoring filters on the 'emit' channel only so this
+    // is harmless to existing tests.
+    for (const slot of this.observers.values()) {
+      if (Math.abs(tileX - slot.focusX) <= INTEREST_RANGE &&
+          Math.abs(tileY - slot.focusY) <= INTEREST_RANGE) {
+        slot.connection.onBroadcastEvent(0, event);
+        try { this.eventObserver(0, event, 'broadcast'); } catch { /* swallow */ }
+      }
+    }
   }
 
   makeEvent<T extends GameEvent['type']>(
@@ -201,6 +232,14 @@ export class GameWorld implements SystemState {
       this.emitEvent(otherEid, this.makeEvent('entity_meta_changed', {
         entityId: eid, key, oldValue, newValue: value,
       }));
+    }
+    // Observers near the renamed entity also see the new nameplate. No
+    // entity_meta_changed event — that's a point-to-point narration channel
+    // observers don't subscribe to.
+    for (const slot of this.observers.values()) {
+      if (Math.abs(pos.tileX - slot.focusX) > INTEREST_RANGE ||
+          Math.abs(pos.tileY - slot.focusY) > INTEREST_RANGE) continue;
+      slot.connection.onEntityMeta(0, eid, key, value);
     }
   }
 
@@ -277,6 +316,50 @@ export class GameWorld implements SystemState {
     this.entityMeta.delete(entityId);
     this.players.delete(entityId);
     this.log.info('player disconnected', { entityId });
+  }
+
+  // --- Observer lifecycle ---
+
+  /** Register a passive viewer at `(focusX, focusY)`. Streams initial
+   *  chunks synchronously then calls `connection.onInitialState(0, this)`.
+   *  Entities in interest range arrive on the first tick via the same
+   *  `entered` channel players use. Returns the observer id used for
+   *  `setObserverFocus` / `removeObserver`. */
+  addObserver(connection: PlayerConnection, focusX: number, focusY: number): number {
+    const observerId = this.nextObserverId--;
+    const slot: ObserverSlot = {
+      observerId, connection, focusX, focusY,
+      knownEntities: new Set(), sentChunks: new Set(),
+    };
+    this.observers.set(observerId, slot);
+
+    for (const [cx, cy] of getNeededChunks(focusX, focusY)) {
+      connection.onChunkNeeded(cx, cy, this);
+      slot.sentChunks.add(chunkKey(cx, cy));
+    }
+    // Sentinel entityId=0: observer impls treat this as "no player entity";
+    // they send seed + env only, no inventory, no entity-by-id reads.
+    connection.onInitialState(0, this);
+
+    this.log.info('observer joined', {
+      observerId, focusX, focusY,
+      connectionType: connection.constructor.name,
+    });
+    return observerId;
+  }
+
+  removeObserver(observerId: number): void {
+    if (!this.observers.delete(observerId)) return;
+    this.log.info('observer left', { observerId });
+  }
+
+  /** Move an observer's interest center. Chunks for the new focus stream
+   *  on the next tick via the same path players walk through. */
+  setObserverFocus(observerId: number, focusX: number, focusY: number): void {
+    const slot = this.observers.get(observerId);
+    if (!slot) return;
+    slot.focusX = focusX;
+    slot.focusY = focusY;
   }
 
   setAction(entityId: number, action: DecodedAction): void {
@@ -685,62 +768,93 @@ export class GameWorld implements SystemState {
     for (const [eid, slot] of this.players) {
       const playerPos = this.entities.position.get(eid);
       if (!playerPos) continue;
-
-      // Stream any unsent chunks now in range
-      const needed = getNeededChunks(playerPos.tileX, playerPos.tileY);
-      for (const [cx, cy] of needed) {
-        const key = chunkKey(cx, cy);
-        if (!slot.sentChunks.has(key)) {
-          slot.connection.onChunkNeeded(cx, cy, this);
-          slot.sentChunks.add(key);
-        }
-      }
-
-      const entered: number[] = [];
-      const left: number[] = [];
-      const updates: DecodedEntityUpdate[] = [];
-
-      for (const entityId of this.entities.getAllEntities()) {
-        const pos = this.entities.position.get(entityId);
-        if (!pos) continue;
-        const inRange = Math.abs(pos.tileX - playerPos.tileX) <= INTEREST_RANGE
-                     && Math.abs(pos.tileY - playerPos.tileY) <= INTEREST_RANGE;
-
-        if (inRange && !slot.knownEntities.has(entityId)) {
-          entered.push(entityId);
-          slot.knownEntities.add(entityId);
-        } else if (!inRange && slot.knownEntities.has(entityId)) {
-          left.push(entityId);
-          slot.knownEntities.delete(entityId);
-        }
-      }
-
-      for (const destroyedEid of destroyed) {
-        if (slot.knownEntities.has(destroyedEid)) {
-          left.push(destroyedEid);
-          slot.knownEntities.delete(destroyedEid);
-        }
-      }
-
-      for (const [dirtyEid, bitmask] of dirty) {
-        if (slot.knownEntities.has(dirtyEid)) {
-          updates.push({ entityId: dirtyEid, components: this.entities.getDeltaComponents(dirtyEid, bitmask) });
-        }
-      }
-
-      // Filter tile updates to chunks this player has received
-      const tileUpdates = mapDirtyTiles.filter(tu => {
-        const cx = Math.floor(tu.tileX / CHUNK_SIZE);
-        const cy = Math.floor(tu.tileY / CHUNK_SIZE);
-        return slot.sentChunks.has(chunkKey(cx, cy));
-      });
-
-      const delta: TickDelta = {
-        tick: this._tick, entered, left, updated: updates, tileUpdates,
-        environment: envPayload,
-      };
+      const delta = this.streamToTarget(
+        playerPos.tileX, playerPos.tileY,
+        slot.knownEntities, slot.sentChunks,
+        dirty, destroyed, mapDirtyTiles, envPayload,
+        slot.connection,
+      );
       slot.connection.onTick(eid, this, delta);
     }
+    // Observers ride the same broadcast plumbing keyed off their focus
+    // point. entityId=0 is the observer-channel sentinel — observer
+    // PlayerConnection impls treat it as "no player entity, you're a
+    // viewer."
+    for (const slot of this.observers.values()) {
+      const delta = this.streamToTarget(
+        slot.focusX, slot.focusY,
+        slot.knownEntities, slot.sentChunks,
+        dirty, destroyed, mapDirtyTiles, envPayload,
+        slot.connection,
+      );
+      slot.connection.onTick(0, this, delta);
+    }
+  }
+
+  /** Compute one viewer's TickDelta against an interest center, streaming
+   *  any new chunks via `connection.onChunkNeeded` as a side effect.
+   *  Shared between the player and observer broadcast loops; keeping the
+   *  body in one place stops the two paths from drifting (entered/left
+   *  detection, tile-update chunk filter, etc.). */
+  private streamToTarget(
+    centerX: number, centerY: number,
+    knownEntities: Set<number>, sentChunks: Set<number>,
+    dirty: ReadonlyMap<number, number>, destroyed: readonly number[],
+    mapDirtyTiles: readonly DecodedTileUpdate[],
+    envPayload: { gameMinute: number; weather: number } | undefined,
+    connection: PlayerConnection,
+  ): TickDelta {
+    // Stream any unsent chunks now in range
+    for (const [cx, cy] of getNeededChunks(centerX, centerY)) {
+      const key = chunkKey(cx, cy);
+      if (!sentChunks.has(key)) {
+        connection.onChunkNeeded(cx, cy, this);
+        sentChunks.add(key);
+      }
+    }
+
+    const entered: number[] = [];
+    const left: number[] = [];
+    const updates: DecodedEntityUpdate[] = [];
+
+    for (const entityId of this.entities.getAllEntities()) {
+      const pos = this.entities.position.get(entityId);
+      if (!pos) continue;
+      const inRange = Math.abs(pos.tileX - centerX) <= INTEREST_RANGE
+                   && Math.abs(pos.tileY - centerY) <= INTEREST_RANGE;
+
+      if (inRange && !knownEntities.has(entityId)) {
+        entered.push(entityId);
+        knownEntities.add(entityId);
+      } else if (!inRange && knownEntities.has(entityId)) {
+        left.push(entityId);
+        knownEntities.delete(entityId);
+      }
+    }
+
+    for (const destroyedEid of destroyed) {
+      if (knownEntities.has(destroyedEid)) {
+        left.push(destroyedEid);
+        knownEntities.delete(destroyedEid);
+      }
+    }
+
+    for (const [dirtyEid, bitmask] of dirty) {
+      if (knownEntities.has(dirtyEid)) {
+        updates.push({ entityId: dirtyEid, components: this.entities.getDeltaComponents(dirtyEid, bitmask) });
+      }
+    }
+
+    const tileUpdates = mapDirtyTiles.filter(tu => {
+      const cx = Math.floor(tu.tileX / CHUNK_SIZE);
+      const cy = Math.floor(tu.tileY / CHUNK_SIZE);
+      return sentChunks.has(chunkKey(cx, cy));
+    });
+
+    return {
+      tick: this._tick, entered, left, updated: updates, tileUpdates,
+      environment: envPayload,
+    };
   }
 
   private nextSpawnOffset(): number {

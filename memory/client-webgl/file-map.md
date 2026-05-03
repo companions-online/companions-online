@@ -4,21 +4,25 @@ Everything under `client-webgl/src/`. Ordered by role, not alphabetically.
 
 ## Bootstrap + loop
 ```
-main.ts                  Bootstrap: createScene → connect → wireSceneToConnection → attachMouseControls → renderer.start.
-scene.ts                 Scene interface + createScene + chunk rebuild/eviction + lighting manager + onEnvironmentSync mutator + all on* mutators incl onGameEvent (action-anim + smoke-puff spawns).
-renderer.ts              RAF loop: drain dirty chunks, tick entities, scene.lighting.update(), terrain + Y-sorted sprite passes (lit), drawEntityOverlays (HP bar + nameplate, unlit), effects pass (unlit), HUD.
+main.ts                  Bootstrap: createScene → host-toggle (WS connect() vs bootStandaloneObserver) → wireSceneToConnection → attachMouseControls/Keyboard → renderer.start. Reads window.GAME_SERVER_HOST as the toggle.
+scene.ts                 Scene interface + createScene + chunk rebuild/eviction + lighting manager + onEnvironmentSync mutator + all on* mutators incl onGameEvent (action-anim + smoke-puff spawns). Eviction + (renderer-side) camera + lighting fall back to scene.observerFocus when myEntityId is null.
+overlay.ts               Discriminated union for modal UI (none / inventory / container / dialogue / menu) + helpers (isInventoryShowing, isInputCaptured, getContainer). Replaces the prior parallel inventoryOpen/containerEntityId/containerItems/dialogueNpcId/dialogue scene fields.
+renderer.ts              RAF loop: tick observer-camera (if any), drain dirty chunks, tick entities, scene.lighting.update(), terrain + Y-sorted sprite passes (lit), drawEntityOverlays (HP bar + nameplate, unlit), effects pass (unlit), HUD. Camera follows player position OR scene.observerFocus when no player.
 ```
 
 ## Network
 ```
-network/connection.ts    WebSocket wrapper. encodeAction out, decodeServerMessage in. ?latency=N URL param.
-network/wire-scene.ts    Decoded message → scene mutator dispatch. Used by main.ts and tests.
+network/connection.ts            WebSocket wrapper. encodeAction out, decodeServerMessage in. ?latency=N URL param.
+network/wire-scene.ts            Decoded message → scene mutator dispatch. Networked path only; standalone bypasses (StandaloneConnection.onMessage is a no-op).
+network/standalone-connection.ts Virtual-network peer of the WS connection. StandaloneConnection (player bridge: PlayerConnection ↔ Connection ↔ in-tab GameWorld) + StandaloneObserverConnection (observer bridge: no inventory, no actions, no player entity). bootStandalone(scene, seed) and bootStandaloneObserver(scene, seed) factories spin up GameWorld + GameLoop + connection + addPlayer/addObserver.
 ```
 
 ## Controls
 ```
-controls/mouse.ts        mousedown → cursor-context → resolveAction → connection.send. Turn prediction on MoveTo.
-controls/cursor-context.ts  Build shared ActionContext from scene state (worldMap + entities + inventory).
+controls/mouse.ts            mousedown → cursor-context → resolveAction → connection.send. Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
+controls/cursor-context.ts   Build shared ActionContext from scene state (worldMap + entities + inventory).
+controls/keyboard.ts         Keyboard handler — chat input mode, debug, inventory toggle, Esc routing. Mutates scene.overlay for inventory open/close.
+controls/observer-camera.ts  Autopilot driver for observer mode. 8-dir random walk over float tile coords; 3-5s segments; edge buffer biases turns toward map center; pushes setObserverFocus only on rounded-tile transitions. Mulberry32 RNG, seedable for tests.
 ```
 
 ## Entities
@@ -97,10 +101,13 @@ test/e2e/environment.test.ts            Env section emission on keyframe crossin
 test/persistence.test.ts                Save/load round-trips tickOffset + new-world seeds twilight + legacy-save compat.
 ```
 
-## Assets + HTML
+## Assets + HTML + build
 ```
-client-webgl/index.html      <canvas id="game"> + <script type="module" src="/dist/main.js">.
-client-webgl/assets/         deer, player, tree-0/1/2, door, unknown-entity PNGs; smoke-anim / attack-anim / harvest-craft-anim effect sheets.
-client-webgl/build.ts        esbuild one-shot build.
-client-webgl/dev.ts          esbuild --watch. No dev server — game server serves built bundle.
+client-webgl/index.html             Networked-mode entry. Inline script sets window.GAME_SERVER_HOST = window.location.host so main.ts picks the WS path.
+client-webgl/index-standalone.html  Standalone-mode entry. No GAME_SERVER_HOST → main.ts falls through to bootStandaloneObserver.
+client-webgl/assets/                deer, player, tree-0/1/2, door, unknown-entity PNGs; smoke-anim / attack-anim / harvest-craft-anim / healing-anim effect sheets.
+client-webgl/build-shared.ts        Shared esbuild plumbing — makeAliasPlugin resolving @shared/*, @server/*, @client-webgl/*. The @server alias is what lets the server tree (createDefaultWorld + GameLoop + system code) bundle into the browser for standalone mode.
+client-webgl/build.ts               esbuild one-shot build.
+client-webgl/dev.ts                 esbuild --watch. No dev server — game server (npm run dev) serves the built bundle.
+client-webgl/dev-standalone.ts      esbuild watch + serve mode (default :3002, servedir = client-webgl/). Used by `npm run dev:standalone` for offline iteration.
 ```

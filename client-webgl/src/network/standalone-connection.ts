@@ -19,7 +19,7 @@
 // factory: spin up createDefaultWorld + GameLoop + StandaloneConnection +
 // addPlayer, return the Connection for main.ts to wire into controls.
 
-import { TICK_RATE, INTEREST_RANGE } from '@shared/constants.js';
+import { TICK_RATE, INTEREST_RANGE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { gameMinuteFromTick } from '@shared/lighting.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import type { DecodedAction, DecodedServerMessage } from '@shared/protocol/codec.js';
@@ -32,6 +32,7 @@ import type { RejectionReason } from '@server/action-rejection.js';
 import { toWireEvent } from '@server/connections/wire-event-map.js';
 import type { Connection } from './connection.js';
 import type { Scene } from '../scene.js';
+import { startObserverCamera, type ObserverCamera } from '../controls/observer-camera.js';
 
 export class StandaloneConnection implements PlayerConnection, Connection {
   private myEntityId = 0;
@@ -186,4 +187,124 @@ export function bootStandalone(scene: Scene, seed: number): {
   loop.start(() => world.runTick());
 
   return { conn, world, loop };
+}
+
+/** PlayerConnection peer of `StandaloneConnection` for observer mode. The
+ *  observer has no entity in the world, no inventory, no actions — just a
+ *  focus point that drives chunk + entity streaming. The `Connection`
+ *  half's `send` is a no-op (observers can't act); the rest of the surface
+ *  routes server callbacks into the scene the same way the player bridge
+ *  does, with player-only callbacks no-oped. */
+export class StandaloneObserverConnection implements PlayerConnection, Connection {
+  private open = true;
+
+  constructor(private world: GameWorld, private scene: Scene) {}
+
+  // --- Connection (client-facing) ---
+
+  get isOpen(): boolean { return this.open; }
+  onMessage(_handler: (msg: DecodedServerMessage) => void): void { /* noop */ }
+  send(_action: DecodedAction): void { /* observer can't act */ }
+  close(): void { this.open = false; }
+
+  // --- PlayerConnection (server-facing) ---
+
+  onInitialState(_entityId: number, world: GameWorldView): void {
+    // entityId=0 is the observer sentinel; scene.onWelcome treats it as
+    // "leave myEntityId null." Entities arrive on the first tick via the
+    // entered channel; chunks were already streamed by addObserver before
+    // this call.
+    this.scene.onWelcome(0, world.seed);
+    this.scene.onEnvironmentSync(
+      gameMinuteFromTick(world.effectiveTick),
+      world.weather,
+      world.currentTick,
+    );
+  }
+
+  onChunkNeeded(chunkX: number, chunkY: number, world: GameWorldView): void {
+    this.scene.onChunk({
+      chunkX, chunkY,
+      terrain: world.map.getChunkTerrain(chunkX, chunkY),
+      buildings: world.map.getChunkBuildings(chunkX, chunkY),
+      buildingMeta: world.map.getChunkBuildingMeta(chunkX, chunkY),
+    });
+  }
+
+  onTick(_entityId: number, world: GameWorldView, delta: TickDelta): void {
+    for (const eid of delta.entered) {
+      const { components, speed } = world.entities.getFullState(eid);
+      this.scene.onEntityFull({ entityId: eid, components, speed });
+      this.sendMetaFor(eid, world);
+    }
+    for (const u of delta.updated) this.scene.onEntityUpdate(u);
+    for (const id of delta.left) this.scene.onEntityRemoval(id);
+    for (const tu of delta.tileUpdates) this.scene.onTileUpdate(tu);
+    if (delta.environment) {
+      this.scene.onEnvironmentSync(
+        delta.environment.gameMinute,
+        delta.environment.weather,
+        delta.tick,
+      );
+    }
+  }
+
+  onBroadcastEvent(_entityId: number, event: GameEvent): void {
+    const wire = toWireEvent(event);
+    if (wire) this.scene.onGameEvent(wire, this.world.currentTick);
+  }
+
+  onEntityMeta(_entityId: number, targetEntityId: number, key: MetaKey, value: string): void {
+    this.scene.onEntityMeta(targetEntityId, key, value);
+  }
+
+  onChatMessage(_entityId: number, senderEntityId: number, message: string): void {
+    this.scene.onChatMessage(senderEntityId, message);
+  }
+
+  // Observer-irrelevant — server never fires these for observers, but the
+  // PlayerConnection interface requires them.
+  onInventoryChanged(): void { /* observer has no inventory */ }
+  onContainerOpen(): void { /* observer can't open containers */ }
+  onDialogueOpen(): void { /* observer can't open dialogues */ }
+  onGameEvent(): void { /* point-to-point events are player-only */ }
+  onActionRejected(_entityId: number, _reason: RejectionReason): void { /* observer can't be rejected */ }
+
+  private sendMetaFor(eid: number, world: GameWorldView): void {
+    const bucket = world.entityMeta.get(eid);
+    if (!bucket) return;
+    for (const [key, value] of bucket) {
+      this.scene.onEntityMeta(eid, key, value);
+    }
+  }
+}
+
+/** Standalone observer boot. Spins up an in-tab GameWorld, registers an
+ *  observer at SPAWN, starts the autopilot camera, returns the refs.
+ *  No player is added — the world ticks under the observer's gaze, NPCs
+ *  and critters do their thing, and the camera pans across them
+ *  cinematically. The menu's "Play" button later tears this down (or
+ *  upgrades the observer to a player on the same world). */
+export function bootStandaloneObserver(scene: Scene, seed: number): {
+  conn: StandaloneObserverConnection;
+  world: GameWorld;
+  loop: GameLoop;
+  observerId: number;
+  camera: ObserverCamera;
+} {
+  const world = createDefaultWorld(seed);
+  const conn = new StandaloneObserverConnection(world, scene);
+  const observerId = world.addObserver(conn, SPAWN_X, SPAWN_Y);
+
+  const loop = new GameLoop(TICK_RATE);
+  loop.start(() => world.runTick());
+
+  const camera = startObserverCamera(
+    scene,
+    (x, y) => world.setObserverFocus(observerId, x, y),
+    SPAWN_X, SPAWN_Y,
+  );
+  scene.observerCamera = camera;
+
+  return { conn, world, loop, observerId, camera };
 }
