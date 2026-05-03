@@ -1,7 +1,3 @@
-import { createWriteStream, type WriteStream } from 'fs';
-import { mkdir } from 'fs/promises';
-import { dirname } from 'path';
-
 export type LogLevel = 'info' | 'warn' | 'error';
 
 export interface LogEntry {
@@ -25,7 +21,10 @@ export interface WorldLogger {
   close(): Promise<void>;
 }
 
-class BaseLogger implements WorldLogger {
+// File-logger lives in world-logger-file.ts so this module stays free of
+// node:fs/path imports — keeps the standalone (browser) bundle building
+// without a Node shim. BaseLogger is exported so the file variant can extend.
+export class BaseLogger implements WorldLogger {
   warnCount = 0;
   errorCount = 0;
   readonly entries: LogEntry[] = [];
@@ -59,60 +58,6 @@ class MemoryLogger extends BaseLogger {
   constructor() { super(true); }
 }
 
-class FileLogger extends BaseLogger {
-  private stream: WriteStream | null = null;
-  private readyPromise: Promise<void>;
-  private streamErrored = false;
-
-  constructor(logPath: string) {
-    super(false);
-    this.readyPromise = this.open(logPath);
-  }
-
-  private async open(logPath: string): Promise<void> {
-    try {
-      await mkdir(dirname(logPath), { recursive: true });
-      this.stream = createWriteStream(logPath, { flags: 'a' });
-      this.stream.on('error', (err) => {
-        if (!this.streamErrored) {
-          this.streamErrored = true;
-          // eslint-disable-next-line no-console
-          console.error('[world-logger] write stream error:', err);
-        }
-      });
-    } catch (err) {
-      this.streamErrored = true;
-      // eslint-disable-next-line no-console
-      console.error('[world-logger] failed to open log file:', err);
-    }
-  }
-
-  protected override onEntry(entry: LogEntry): void {
-    if (!this.stream || this.streamErrored) return;
-    try {
-      this.stream.write(JSON.stringify(entry) + '\n');
-    } catch (err) {
-      if (!this.streamErrored) {
-        this.streamErrored = true;
-        // eslint-disable-next-line no-console
-        console.error('[world-logger] write error:', err);
-      }
-    }
-  }
-
-  override async close(): Promise<void> {
-    await this.readyPromise;
-    const stream = this.stream;
-    if (!stream) return;
-    await new Promise<void>((resolve) => stream.end(resolve));
-    this.stream = null;
-  }
-}
-
 export function createMemoryLogger(): WorldLogger {
   return new MemoryLogger();
-}
-
-export function createFileLogger(logPath: string): WorldLogger {
-  return new FileLogger(logPath);
 }
