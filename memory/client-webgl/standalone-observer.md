@@ -66,10 +66,15 @@ eviction fall back to `scene.observerFocus`. The autopilot
 - Segments of `random[3000..5000] ms`, then re-roll direction.
 - Edge buffer (default 16 tiles): when about to leave the band, clamp
   + force `pickDirTowardCenter` and re-roll the segment timer.
-- `pushFocus()`: every frame writes `scene.observerFocus`, but only
-  fires `setObserverFocus(tx, ty)` when the rounded tile changes.
-  Keeps server-side chunk-streaming churn proportional to motion, not
-  RAF rate.
+- `pushFocus()`: every frame writes the float `posX/posY` straight
+  into `scene.observerFocus` (smooth camera follow, mirroring the
+  player path's `entity.visualX/visualY`); only calls the server
+  `setObserverFocus(tx, ty)` when the *rounded* tile changes, keeping
+  chunk-streaming churn proportional to motion, not RAF rate.
+  Rounding the camera focus instead of the server push caused per-axis
+  Math.round boundaries to fire at staggered times during diagonal
+  motion → continuous screen-zigzag (NE-tile motion = pure-right on
+  screen, but staggered .5 crossings turned that into ↘↗↘↗ jumps).
 - Renderer drives `tick(now)` once per frame via
   `scene.observerCamera?.tick(now)`.
 

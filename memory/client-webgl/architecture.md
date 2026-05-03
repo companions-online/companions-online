@@ -351,16 +351,16 @@ The renderer / lighting / chunk eviction support a "no player entity"
 path used by the standalone build's background world. When
 `scene.myEntityId === null`:
 
-- Camera follow falls back to `scene.observerFocus: {tileX, tileY}`.
+- Camera follow falls back to `scene.observerFocus: {tileX, tileY}` (float tile coords, mirror of `visualX/visualY`).
 - Chunk eviction keys off the same focus tile.
 - Lighting center uses the focus tile (or 0,0 if neither set).
 - HP bars + nameplates draw normally; the "skip self" check is keyed on
   `myEntityId`, which is null, so nothing is skipped.
 
 The autopilot in `controls/observer-camera.ts` advances `observerFocus`
-along an 8-direction random walk (3-5s segments, edge-buffer biases
-turns inward) and pushes `setObserverFocus(tileX, tileY)` to the
-server only when the rounded tile changes. The renderer ticks the
+(float tile coords) along an 8-direction random walk (3-5s segments,
+edge-buffer biases turns inward) and pushes `setObserverFocus(tileX,
+tileY)` to the server only when the rounded tile changes. The renderer ticks the
 autopilot via `scene.observerCamera?.tick(now)` once per frame.
 
 `onWelcome(0, seed)` (entityId 0 = observer sentinel) keeps

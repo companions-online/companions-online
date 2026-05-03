@@ -6,10 +6,16 @@
 // camera away from the void; entering the buffer band immediately
 // re-rolls the direction biased toward the map center.
 //
-// The autopilot updates `scene.observerFocus` every frame (smooth visual
-// pan via scene-side rounding) but only fires `setFocus` when the rounded
-// tile actually changes — keeps server-side chunk-streaming churn
-// proportional to camera motion, not RAF rate.
+// The autopilot writes float tile coords into `scene.observerFocus` every
+// frame so the camera follow is smooth (mirroring how the player path uses
+// `entity.visualX/visualY`). The `setFocus` callback — which drives
+// server-side chunk streaming — fires only when the *rounded* tile actually
+// changes, keeping streaming churn proportional to camera motion, not RAF
+// rate. Rounding the focus before camera follow caused per-axis rounding
+// boundaries to fire at staggered times during diagonal motion, producing a
+// visible high-frequency screen-zigzag (e.g. NE-tile motion = pure-right on
+// screen, but Math.round(posX) and Math.round(posY) crossing .5 boundaries
+// at different moments turned that into ↘↗↘↗ jumps).
 
 import { DX, DY } from '@shared/direction.js';
 import { MAP_SIZE } from '@shared/constants.js';
@@ -108,9 +114,9 @@ export function startObserverCamera(
   }
 
   function pushFocus(): void {
+    scene.observerFocus = { tileX: posX, tileY: posY };
     const tx = Math.round(posX);
     const ty = Math.round(posY);
-    scene.observerFocus = { tileX: tx, tileY: ty };
     if (tx !== lastSentTileX || ty !== lastSentTileY) {
       setFocus(tx, ty);
       lastSentTileX = tx;

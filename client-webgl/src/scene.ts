@@ -125,11 +125,14 @@ export interface Scene {
    *  getTileCornersLocal, but sprites anchor at draw time. */
   chunkElevation: Map<number, Float32Array>;
   myEntityId: number | null;
-  /** Observer-mode interest center (rounded tile coords). Set when the
-   *  client is acting as an observer (no player entity); drives camera
-   *  follow + chunk eviction + lighting center as the fallback when
-   *  `myEntityId === null`. Mutated by the autopilot camera (or any
-   *  future god-view driver). */
+  /** Observer-mode interest center (float tile coords; mirrors how
+   *  `ClientEntity.visualX/visualY` work for the player follow path). Set
+   *  when the client is acting as an observer (no player entity); drives
+   *  camera follow + chunk eviction (via Math.floor of chunk size) +
+   *  lighting center as the fallback when `myEntityId === null`. Mutated
+   *  by the autopilot camera (or any future god-view driver). The server
+   *  chunk-streaming call (`world.setObserverFocus`) is throttled to
+   *  rounded-tile transitions inside the driver. */
   observerFocus: { tileX: number; tileY: number } | null;
   /** Active autopilot driver for observer mode, ticked by the renderer
    *  each frame. Null in player mode (no observer to drive). */

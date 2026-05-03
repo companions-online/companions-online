@@ -22,7 +22,7 @@ network/standalone-connection.ts Virtual-network peer of the WS connection. Stan
 controls/mouse.ts            mousedown → cursor-context → resolveAction → connection.send. Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
 controls/cursor-context.ts   Build shared ActionContext from scene state (worldMap + entities + inventory).
 controls/keyboard.ts         Keyboard handler — chat input mode, debug, inventory toggle, Esc routing. Mutates scene.overlay for inventory open/close.
-controls/observer-camera.ts  Autopilot driver for observer mode. 8-dir random walk over float tile coords; 3-5s segments; edge buffer biases turns toward map center; pushes setObserverFocus only on rounded-tile transitions. Mulberry32 RNG, seedable for tests.
+controls/observer-camera.ts  Autopilot driver for observer mode. 8-dir random walk over float tile coords; 3-5s segments; edge buffer biases turns toward map center. Writes float coords to scene.observerFocus for smooth camera follow; pushes server setObserverFocus only on rounded-tile transitions. Mulberry32 RNG, seedable for tests.
 ```
 
 ## Entities
