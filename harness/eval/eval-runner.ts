@@ -9,7 +9,7 @@ import { GameLoop } from '../../server/src/ecs/game-loop.js';
 import { Telemetry } from '../../server/src/telemetry.js';
 import { createApp } from '../../server/src/app.js';
 import { TICK_RATE } from '../../shared/src/constants.js';
-import type { TokenUsage } from '../helpers/openrouter.js';
+import type { TurnCompleteCtx } from '../helpers/runner.js';
 import type { Decider } from '../helpers/decider.js';
 import type { Logger } from '../helpers/logger.js';
 import type { Scratchpad } from '../helpers/scratchpad.js';
@@ -113,7 +113,7 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
   let stopReason: StopReason | null = null;
   let errorMessage: string | undefined;
 
-  const onTurnComplete = (step: number, usage?: TokenUsage): void | 'stop' => {
+  const onTurnComplete = ({ step, usage }: TurnCompleteCtx): void | 'stop' => {
     turnCount = step;
     if (usage?.total_tokens) totalTokens += usage.total_tokens;
     if (usage?.prompt_tokens) promptTokens += usage.prompt_tokens;

@@ -1,0 +1,32 @@
+[
+  {
+    "prompt": "princess",
+    "harness": "baseline",
+    "model": {
+      "type": "model",
+      "model": "google/gemma-4-31b-it",
+      "temperature": 1,
+      "reasoning": { "effort": "none" }
+    }
+  },
+  {
+    "prompt": "hunter",
+    "harness": "baseline",
+    "model": {
+      "type": "model",
+      "model": "google/gemma-4-31b-it",
+      "temperature": 1,
+      "reasoning": { "effort": "none" }
+    }
+  },
+  {
+    "prompt": "peon",
+    "harness": "baseline",
+    "model": {
+      "type": "model",
+      "model": "google/gemini-3.1-flash-lite-preview",
+      "temperature": 1,
+      "reasoning": { "effort": "none" }
+    }
+  }
+]

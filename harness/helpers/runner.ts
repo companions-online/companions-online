@@ -1,6 +1,7 @@
 import { bootstrapHarness, type Bootstrap, type BootstrapOpts } from './bootstrap.js';
 import type { ChatMessage, TokenUsage } from './openrouter.js';
 import type { ToolCall, DispatchResult } from './dispatcher.js';
+import type { RateTracker } from './rate-tracker.js';
 
 export type StopReason = 'aborted' | 'max_steps' | 'host_stop' | 'completed';
 
@@ -18,6 +19,21 @@ export interface UsageAccumulator {
   prompt: number;
   completion: number;
   total: number;
+  /** Cumulative dollars billed (sum of `usage.cost` per turn; 0 when provider doesn't report cost). */
+  costUsd: number;
+}
+
+/**
+ * Post-turn hook context. The runner already has `lastToolName` /
+ * `lastInlineText` as locals when calling this hook, so handing them over
+ * lets the multi-character dashboard render the current action without
+ * tailing the JSONL log.
+ */
+export interface TurnCompleteCtx {
+  step: number;
+  usage?: TokenUsage;
+  lastToolName?: string;
+  lastInlineText?: string;
 }
 
 export interface RunVariantOpts extends BootstrapOpts {
@@ -25,9 +41,11 @@ export interface RunVariantOpts extends BootstrapOpts {
   maxSteps?: number;
   abortSignal?: AbortSignal;
   /** Called after each turn. Return 'stop' to end the loop early. */
-  onTurnComplete?: (step: number, usage?: TokenUsage) => void | 'stop' | Promise<void | 'stop'>;
+  onTurnComplete?: (ctx: TurnCompleteCtx) => void | 'stop' | Promise<void | 'stop'>;
   /** Mutable accumulator updated each turn from the decider's reported usage. */
   usage?: UsageAccumulator;
+  /** Trailing-window completion-token tracker, pushed once per turn for live tps display. */
+  rate?: RateTracker;
 }
 
 export interface ToolResultCtx {
@@ -91,17 +109,21 @@ export async function runHarness<S>(
       if (usage.prompt_tokens) opts.usage.prompt += usage.prompt_tokens;
       if (usage.completion_tokens) opts.usage.completion += usage.completion_tokens;
       if (usage.total_tokens) opts.usage.total += usage.total_tokens;
+      if (usage.cost) opts.usage.costUsd += usage.cost;
     }
+    opts.rate?.push(usage?.completion_tokens ?? 0);
 
     const inlineText = assistantMsg.content ?? '';
     if (inlineText) log.stdout(`assistant: ${shortText(inlineText)}`);
 
     const calls = assistantMsg.tool_calls ?? [];
+    let lastToolName: string | undefined;
     if (calls.length === 0) {
       log.stdout(`assistant: (no tool call)`);
       strategy.onNoToolCall(state, { step: stepCount, inlineText, assistantMsg });
     } else {
       const call = calls[0] as ToolCall;
+      lastToolName = call.function.name;
       log.stdout(`tool: ${call.function.name}(${call.function.arguments ?? ''})`);
       log.event('tool_call', { step: stepCount, call });
 
@@ -119,7 +141,12 @@ export async function runHarness<S>(
     }
 
     if (opts.onTurnComplete) {
-      const verdict = await opts.onTurnComplete(stepCount, usage);
+      const verdict = await opts.onTurnComplete({
+        step: stepCount,
+        usage,
+        lastToolName,
+        lastInlineText: inlineText || undefined,
+      });
       if (verdict === 'stop') { stopReason = 'host_stop'; break; }
     }
   }

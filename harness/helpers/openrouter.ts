@@ -19,6 +19,8 @@ export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** USD spent on this call. Populated when the request body sets `usage: { include: true }`; not all providers report it. */
+  cost?: number;
 }
 
 export interface ChatResponse {

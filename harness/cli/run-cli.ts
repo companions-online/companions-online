@@ -11,7 +11,7 @@ export async function runCli(
   fn: (ac: AbortController, usage: UsageAccumulator) => Promise<unknown>,
 ): Promise<void> {
   const ac = new AbortController();
-  const usage: UsageAccumulator = { prompt: 0, completion: 0, total: 0 };
+  const usage: UsageAccumulator = { prompt: 0, completion: 0, total: 0, costUsd: 0 };
   process.on('SIGINT', () => {
     console.error(`\n[${name}] SIGINT — shutting down`);
     ac.abort();
@@ -27,5 +27,6 @@ export async function runCli(
 }
 
 function printUsage(name: string, usage: UsageAccumulator): void {
-  console.log(`[${name}] tokens: in=${usage.prompt} out=${usage.completion} total=${usage.total}`);
+  const cost = usage.costUsd > 0 ? ` cost=$${usage.costUsd.toFixed(4)}` : '';
+  console.log(`[${name}] tokens: in=${usage.prompt} out=${usage.completion} total=${usage.total}${cost}`);
 }

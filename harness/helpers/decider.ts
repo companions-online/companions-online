@@ -25,6 +25,8 @@ export class OpenRouterDecider implements Decider {
       model: this.modelBody.model as string,
       messages,
       tools,
+      // After the spread so a stray `usage` in the model JSON can't shadow it.
+      usage: { include: true },
     });
     const choice = resp.choices?.[0];
     if (!choice) throw new Error('OpenRouter returned no choices');

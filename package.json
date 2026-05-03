@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "harness": "./harness/cli/harness.ts",
-    "eval": "./harness/cli/eval.ts"
+    "eval": "./harness/cli/eval.ts",
+    "characters": "./harness/cli/characters.ts"
   },
   "scripts": {
     "dev": "tsx server/src/main.ts",
@@ -22,6 +23,7 @@
     "cli:mcp": "tsx scripts/mcp.ts",
     "harness": "tsx harness/cli/harness.ts",
     "eval": "tsx harness/cli/eval.ts",
+    "characters": "tsx harness/cli/characters.ts",
     "import:sprite": "tsx scripts/import-sprite.ts",
     "render": "tsx scripts/render-frame.ts",
     "render:gl": "tsx scripts/render-gl-frame.ts"
