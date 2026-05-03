@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { makeAliasPlugin } from './build-shared.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -11,15 +12,7 @@ await esbuild.build({
   sourcemap: true,
   format: 'esm',
   minify: true,
-  plugins: [{
-    name: 'shared-alias',
-    setup(build) {
-      build.onResolve({ filter: /^@shared\// }, (args) => {
-        const rel = args.path.slice('@shared/'.length).replace(/\.js$/, '');
-        return { path: path.resolve(__dirname, '..', 'shared', 'src', rel + '.ts') };
-      });
-    },
-  }],
+  plugins: [makeAliasPlugin(__dirname)],
 });
 
 console.log('[client-gl] build complete');

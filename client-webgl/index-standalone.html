@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Companions Online — WebGL prototype</title>
+  <title>Companions Online — standalone</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
@@ -12,14 +12,7 @@
 </head>
 <body>
   <canvas id="game" tabindex="0"></canvas>
-  <script>
-    // Networked-mode marker — main.ts reads window.GAME_SERVER_HOST and
-    // picks the WS Connection when defined, the in-tab StandaloneConnection
-    // otherwise. Value is the bare host (no scheme); the WS connect uses
-    // location.host, this is just the toggle today. Concrete cross-origin
-    // value drives menu defaults later.
-    window.GAME_SERVER_HOST = window.location.host;
-  </script>
+  <!-- No GAME_SERVER_HOST injected here — main.ts boots in-tab GameWorld. -->
   <script type="module" src="/dist/main.js"></script>
 </body>
 </html>

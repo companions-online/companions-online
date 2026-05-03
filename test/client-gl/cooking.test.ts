@@ -56,7 +56,7 @@ describe('cooking mode', () => {
 
   it('inactive when inventory is open', async () => {
     const { scene } = await setupCookScene({ tileX: 6, tileY: 5 });
-    scene.inventoryOpen = true;
+    scene.overlay = { kind: 'inventory' };
     expect(isCookingActive(scene)).toBe(false);
   });
 

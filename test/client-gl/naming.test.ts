@@ -107,21 +107,21 @@ describe('keyboard /command parsing', () => {
     expect((conn.sent[0] as any).parameter).toBe('hello world how are you');
   });
 
-  it('I toggles scene.inventoryOpen; Esc closes; held stack drops on close', async () => {
+  it('I toggles inventory overlay; Esc closes; held stack drops on close', async () => {
     const { scene, conn } = await createTestScene();
     const { canvas, fire } = makeFakeCanvas();
     attachKeyboardControls(canvas, conn, scene);
 
     fire('i');
-    expect(scene.inventoryOpen).toBe(true);
+    expect(scene.overlay.kind).toBe('inventory');
     fire('i');
-    expect(scene.inventoryOpen).toBe(false);
+    expect(scene.overlay.kind).toBe('none');
 
     // Open, fake a held stack, close with Esc → expect a Drop with quantity.
     fire('i');
     scene.heldStack = { itemId: 42, blueprintId: 1, quantity: 3, source: 'inventory' };
     fire('Escape');
-    expect(scene.inventoryOpen).toBe(false);
+    expect(scene.overlay.kind).toBe('none');
     expect(scene.heldStack).toBeNull();
     expect(conn.sent).toHaveLength(1);
     expect(conn.sent[0].action).toBe(ClientAction.Drop);

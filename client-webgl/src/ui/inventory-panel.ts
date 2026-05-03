@@ -1,6 +1,6 @@
 // Minecraft-style inventory panel for the WebGL client.
 //
-// Drawn by the HUD pass when `keyboard.inventoryOpen` is set. Sections
+// Drawn by the HUD pass when `isInventoryShowing(scene.overlay)`. Sections
 // over a translucent backdrop:
 //   • LEFT     — player stats (name, HP, weight) + head/body/boot armor
 //                slot widgets (hand is driven by the quickbar below)
@@ -26,6 +26,7 @@ import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { SpriteRegistry, SpriteSheetRef } from '../entities/sprite-registry.js';
 import type { TextSurface, TextSurfaceFactory } from '../effects/text-surface.js';
 import { createCanvasTexture } from '../platform/gl-utils.js';
+import { getContainer } from '../overlay.js';
 
 // In-flight removal entries (Drop / Transfer / Equip-with-quantity)
 // expire after this long if the server never sends a confirming sync —
@@ -525,8 +526,9 @@ const HUD_QUICKBAR_Y = GAME_Y + GAME_H - HUD_QUICKBAR_CELL - 8;
 
 /** Draw the always-visible quickbar at the bottom of the game viewport.
  *  Caller must have `sprites.begin(resolution)` active for the HUD pass.
- *  Gated elsewhere to only fire when `scene.inventoryOpen === false` so
- *  it doesn't render underneath the inventory panel's own quickbar row. */
+ *  Gated elsewhere to only fire when `isInventoryShowing(scene.overlay)`
+ *  is false so it doesn't render underneath the inventory panel's own
+ *  quickbar row. */
 export function drawQuickbarHud(
   gl: WebGL2RenderingContext,
   scene: Scene,
@@ -620,7 +622,7 @@ export function drawInventoryPanel(
   drawPlayerSection(gl, sprites, factory, scene, solids);
   drawGridSection(gl, sprites, factory, scene, solids);
   drawQuickbarSection(gl, sprites, factory, scene, solids);
-  if (scene.containerEntityId !== null) {
+  if (getContainer(scene.overlay)) {
     drawContainerSection(gl, sprites, factory, scene, solids);
   } else {
     drawRecipesSection(gl, sprites, factory, scene, solids);
@@ -645,8 +647,10 @@ function drawContainerSection(
   }
 
   // Items by index.
-  for (let i = 0; i < scene.containerItems.length && i < CONTAINER_SLOT_COUNT; i++) {
-    const item = scene.containerItems[i];
+  const container = getContainer(scene.overlay);
+  const items = container?.items ?? [];
+  for (let i = 0; i < items.length && i < CONTAINER_SLOT_COUNT; i++) {
+    const item = items[i];
     if (!item) continue;
     const r = containerCellRect(i);
     const heldQty = scene.heldStack && scene.heldStack.source === 'container'
@@ -729,7 +733,7 @@ export function hitTestInventoryPanel(x: number, y: number, scene: Scene): Panel
     }
   }
 
-  if (scene.containerEntityId !== null) {
+  if (getContainer(scene.overlay)) {
     for (let i = 0; i < CONTAINER_SLOT_COUNT; i++) {
       const r = containerCellRect(i);
       if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
@@ -889,13 +893,14 @@ function handleGridClick(
   if (!scene.heldStack) {
     if (!item) return;
     if (mods.shift && mods.button === 'left') {
-      if (scene.containerEntityId !== null) {
+      const container = getContainer(scene.overlay);
+      if (container) {
         // Container open → quick-transfer whole stack to chest.
         markPendingDecrement(scene, item.itemId, item.quantity);
         connection.send({
           action: ClientAction.Transfer,
           itemId: item.itemId,
-          containerId: scene.containerEntityId,
+          containerId: container.entityId,
           direction: 0,
         });
         return;
@@ -930,12 +935,13 @@ function handleGridClick(
 
   // Held stack came from the container: dropping onto any inventory grid
   // cell means Transfer chest→player with quantity.
-  if (scene.heldStack.source === 'container' && scene.containerEntityId !== null) {
+  const heldContainer = getContainer(scene.overlay);
+  if (scene.heldStack.source === 'container' && heldContainer) {
     markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
     connection.send({
       action: ClientAction.Transfer,
       itemId: scene.heldStack.itemId,
-      containerId: scene.containerEntityId,
+      containerId: heldContainer.entityId,
       direction: 1,
       quantity: scene.heldStack.quantity,
     });
@@ -981,9 +987,10 @@ function handleContainerClick(
   slotIndex: number,
   mods: ClickModifiers,
 ): void {
-  const containerId = scene.containerEntityId;
-  if (containerId === null) return;
-  const item = scene.containerItems[slotIndex];
+  const container = getContainer(scene.overlay);
+  if (!container) return;
+  const containerId = container.entityId;
+  const item = container.items[slotIndex];
 
   // --- No held stack ---
   if (!scene.heldStack) {

@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { makeAliasPlugin } from './build-shared.js';
 
 // Watch-mode build. The game server (server/src/main.ts) serves
 // client-webgl/ as static files same-origin on its own port, so this script
@@ -15,15 +16,7 @@ const ctx = await esbuild.context({
   sourcemap: true,
   format: 'esm',
   logLevel: 'info',
-  plugins: [{
-    name: 'shared-alias',
-    setup(build) {
-      build.onResolve({ filter: /^@shared\// }, (args) => {
-        const rel = args.path.slice('@shared/'.length).replace(/\.js$/, '');
-        return { path: path.resolve(__dirname, '..', 'shared', 'src', rel + '.ts') };
-      });
-    },
-  }],
+  plugins: [makeAliasPlugin(__dirname)],
 });
 
 await ctx.watch();

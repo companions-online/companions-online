@@ -26,6 +26,7 @@ import { hitTestInventoryPanel, handleInventoryPanelClick } from '../ui/inventor
 import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
 import { selectedItem, selectedMode } from '../ui/quickslot.js';
 import { handleCookingClick, isCookingActive } from '../ui/cooking-highlight.js';
+import { isInputCaptured } from '../overlay.js';
 
 function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
   if (action.action !== ClientAction.MoveTo) return;
@@ -88,10 +89,14 @@ export function attachMouseControls(
 
     const button = ev.button === 2 ? 'right' : 'left';
 
-    // Inventory panel swallows all world input while open.
-    if (scene.inventoryOpen) {
-      const hit = hitTestInventoryPanel(cx, cy, scene);
-      handleInventoryPanelClick(scene, connection, hit, { button, shift: ev.shiftKey });
+    // Any active overlay swallows world input. Inventory and container
+    // overlays route the click to the inventory panel; other overlays
+    // (dialogue, menu) consume the click without world dispatch.
+    if (isInputCaptured(scene.overlay)) {
+      if (scene.overlay.kind === 'inventory' || scene.overlay.kind === 'container') {
+        const hit = hitTestInventoryPanel(cx, cy, scene);
+        handleInventoryPanelClick(scene, connection, hit, { button, shift: ev.shiftKey });
+      }
       return;
     }
 

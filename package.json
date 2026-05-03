@@ -12,6 +12,7 @@
     "dev": "tsx server/src/main.ts",
     "dev:server": "tsx server/src/main.ts",
     "dev:client-gl": "tsx client-webgl/dev.ts",
+    "dev:standalone": "tsx client-webgl/dev-standalone.ts",
     "build:client-gl": "tsx client-webgl/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

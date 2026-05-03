@@ -20,6 +20,7 @@ import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Connection } from '../network/connection.js';
 import type { SyncedInventoryItem } from '@shared/protocol/codec.js';
 import { selectedItem, selectedMode } from './quickslot.js';
+import { isInventoryShowing } from '../overlay.js';
 
 /** The quickslot-selected item when placement mode is active, else null. */
 export function getPlacementHandItem(scene: Scene): SyncedInventoryItem | null {
@@ -30,7 +31,7 @@ export function getPlacementHandItem(scene: Scene): SyncedInventoryItem | null {
 /** True when placement-mode gestures should be active: inventory closed
  *  AND the selected quickslot holds a placeable. */
 export function isPlacementActive(scene: Scene): boolean {
-  return !scene.inventoryOpen && selectedMode(scene) === 'placement';
+  return !isInventoryShowing(scene.overlay) && selectedMode(scene) === 'placement';
 }
 
 /** Update `scene.placementHoverTile` from canvas-pixel coords. Called from

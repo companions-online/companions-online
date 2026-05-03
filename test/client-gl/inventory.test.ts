@@ -88,7 +88,7 @@ describe('fishing rod → Harvest on water', () => {
 });
 
 describe('containerOpen / dialogueOpen / chatMessage', () => {
-  it('containerOpen populates scene.containerEntityId + items', async () => {
+  it('containerOpen sets a container overlay carrying entity id + items', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'containerOpen',
@@ -97,17 +97,21 @@ describe('containerOpen / dialogueOpen / chatMessage', () => {
         { itemId: 7, blueprintId: BlueprintType.Wood, quantity: 10, equippedSlot: 0 },
       ],
     });
-    expect(scene.containerEntityId).toBe(123);
-    expect(scene.containerItems).toHaveLength(1);
-    expect(scene.containerItems[0].blueprintId).toBe(BlueprintType.Wood);
+    expect(scene.overlay.kind).toBe('container');
+    if (scene.overlay.kind !== 'container') throw new Error('unreachable');
+    expect(scene.overlay.entityId).toBe(123);
+    expect(scene.overlay.items).toHaveLength(1);
+    expect(scene.overlay.items[0].blueprintId).toBe(BlueprintType.Wood);
   });
 
-  it('dialogueOpen stores npc id + dialogue blob', async () => {
+  it('dialogueOpen sets a dialogue overlay carrying npc id + blob', async () => {
     const { scene, conn } = await createTestScene();
     const dialogue = { greeting: 'hi', options: [] };
     conn.deliver({ type: 'dialogueOpen', npcEntityId: 55, dialogue });
-    expect(scene.dialogueNpcId).toBe(55);
-    expect(scene.dialogue).toBe(dialogue);
+    expect(scene.overlay.kind).toBe('dialogue');
+    if (scene.overlay.kind !== 'dialogue') throw new Error('unreachable');
+    expect(scene.overlay.npcId).toBe(55);
+    expect(scene.overlay.dialogue).toBe(dialogue);
   });
 
   it('chatMessage appends with a timestamp', async () => {

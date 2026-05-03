@@ -30,7 +30,7 @@ describe('quickslot keybind: 1..9 while inventory panel is open', () => {
       items: [{ itemId: 12, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: 0 }],
     });
     scene.quickSlots[0] = 12;
-    scene.inventoryOpen = true;
+    scene.overlay = { kind: 'inventory' };
 
     const { canvas, fire } = makeFakeCanvas();
     attachKeyboardControls(canvas, conn, scene);

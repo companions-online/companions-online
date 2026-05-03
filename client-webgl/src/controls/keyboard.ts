@@ -10,6 +10,7 @@ import type { Scene } from '../scene.js';
 import { isPlacementActive } from '../ui/placement.js';
 import { markPendingDecrement } from '../ui/inventory-panel.js';
 import { selectQuickSlot, clearQuickSlotSelection } from '../ui/quickslot.js';
+import { getContainer, isInventoryShowing } from '../overlay.js';
 
 const MAX_CHAT_LENGTH = 200;
 
@@ -40,12 +41,13 @@ export function attachKeyboardControls(
   function closeInventory() {
     if (scene.heldStack) {
       markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
-      if (scene.heldStack.source === 'container' && scene.containerEntityId !== null) {
+      const container = getContainer(scene.overlay);
+      if (scene.heldStack.source === 'container' && container) {
         // Don't accidentally drop a chest item to the world; return it.
         connection.send({
           action: ClientAction.Transfer,
           itemId: scene.heldStack.itemId,
-          containerId: scene.containerEntityId,
+          containerId: container.entityId,
           direction: 1,
           quantity: scene.heldStack.quantity,
         });
@@ -58,9 +60,7 @@ export function attachKeyboardControls(
       }
       scene.heldStack = null;
     }
-    scene.inventoryOpen = false;
-    scene.containerEntityId = null;
-    scene.containerItems = [];
+    scene.overlay = { kind: 'none' };
   }
 
   canvas.addEventListener('keydown', (ev) => {
@@ -113,7 +113,7 @@ export function attachKeyboardControls(
     //     quickslot selection so the player can swap hand items while
     //     browsing. Other keys are swallowed so world input doesn't fire
     //     underneath the panel. ---
-    if (scene.inventoryOpen) {
+    if (isInventoryShowing(scene.overlay)) {
       if (ev.key === 'Escape' || ev.key === 'i' || ev.key === 'I') {
         closeInventory();
         ev.preventDefault();
@@ -157,7 +157,7 @@ export function attachKeyboardControls(
       return;
     }
     if (ev.key === 'i' || ev.key === 'I') {
-      scene.inventoryOpen = true;
+      scene.overlay = { kind: 'inventory' };
       ev.preventDefault();
       return;
     }

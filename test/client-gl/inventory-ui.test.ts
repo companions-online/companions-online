@@ -358,10 +358,11 @@ describe('container mode', () => {
     return { scene, conn };
   }
 
-  it('containerOpen also pops the inventory panel', async () => {
+  it('containerOpen sets a container overlay (which also renders the inventory panel)', async () => {
     const { scene } = await setupContainer();
-    expect(scene.inventoryOpen).toBe(true);
-    expect(scene.containerEntityId).toBe(99);
+    expect(scene.overlay.kind).toBe('container');
+    if (scene.overlay.kind !== 'container') throw new Error('unreachable');
+    expect(scene.overlay.entityId).toBe(99);
   });
 
   it('shift+left on inventory item (container open) sends Transfer player→chest', async () => {

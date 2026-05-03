@@ -21,10 +21,11 @@ import type { Scene } from '../scene.js';
 import type { Connection } from '../network/connection.js';
 import type { ClientEntity } from '../entities/client-entity.js';
 import { selectedItem, selectedMode } from './quickslot.js';
+import { isInventoryShowing } from '../overlay.js';
 
 /** True when cooking mode is active (inventory closed + raw-food quickslot). */
 export function isCookingActive(scene: Scene): boolean {
-  return !scene.inventoryOpen && selectedMode(scene) === 'cook';
+  return !isInventoryShowing(scene.overlay) && selectedMode(scene) === 'cook';
 }
 
 function myPosition(scene: Scene): { tileX: number; tileY: number } | null {

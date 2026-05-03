@@ -15,6 +15,7 @@
     "rootDir": ".",
     "paths": {
       "@shared/*": ["./shared/src/*"],
+      "@server/*": ["./server/src/*"],
       "@client-webgl/*": ["./client-webgl/src/*"]
     }
   },

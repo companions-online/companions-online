@@ -56,7 +56,7 @@ describe('placement mode', () => {
       items: [{ itemId: 5, blueprintId: BlueprintType.Campfire, quantity: 1, equippedSlot: EQUIP_SLOT_HAND }],
     });
     equipViaQuickslot(scene, 5);
-    scene.inventoryOpen = true;
+    scene.overlay = { kind: 'inventory' };
     expect(isPlacementActive(scene)).toBe(false);
   });
 

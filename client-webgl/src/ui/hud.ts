@@ -12,6 +12,7 @@ import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
 import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
 import { wrapChatMessage } from '../effects/chat-bubble.js';
+import { isInventoryShowing } from '../overlay.js';
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
@@ -88,9 +89,10 @@ export function drawHud(
   const factory = scene.textSurfaceFactory;
   // The HUD quickbar is always shown when the inventory panel is closed,
   // so force a sprites.begin() pass even if chat + debug are quiet.
-  const showHudQuickbar = !scene.inventoryOpen;
+  const inventoryShowing = isInventoryShowing(scene.overlay);
+  const showHudQuickbar = !inventoryShowing;
   const needSprites =
-    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || scene.inventoryOpen || showHudQuickbar;
+    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || inventoryShowing || showHudQuickbar;
 
   if (!needSprites) return;
 
@@ -199,7 +201,7 @@ export function drawHud(
   }
 
   // --- Inventory panel (overlays everything else when open) ---
-  if (scene.inventoryOpen) {
+  if (inventoryShowing) {
     drawInventoryPanel(gl, scene, sprites, factory);
     // Held-stack ghost follows the mouse on top of the panel.
     drawHeldCursor(gl, scene, sprites, factory);

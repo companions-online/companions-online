@@ -34,6 +34,7 @@ import { ActionType } from '@shared/actions.js';
 import { getBlueprint } from '@shared/blueprints.js';
 import type { ClientEntity } from './entities/client-entity.js';
 import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
+import type { Overlay } from './overlay.js';
 
 import { generateRawTerrainTiles } from './terrain/texture.js';
 import { generateBlendMasks } from './terrain/blend-masks.js';
@@ -133,14 +134,12 @@ export interface Scene {
   // --- Replicated sync state (Phase 9) ---
   /** The player's inventory. Empty until the server's first InventorySync. */
   inventory: SyncedInventoryItem[];
-  /** Open container entity id + its items; null while no container is open. */
-  containerEntityId: number | null;
-  containerItems: SyncedInventoryItem[];
-  /** NPC whose dialogue is currently open + the server-sent dialogue blob.
-   *  Shape lives server-side (`onDialogueOpen` param) — kept here as
-   *  unknown until the UI pass pulls in the exact type. */
-  dialogueNpcId: number | null;
-  dialogue: unknown;
+  /** Currently active modal overlay. See `overlay.ts` for the union and
+   *  helpers (isInventoryShowing, isInputCaptured, getContainer). Replaces
+   *  the prior parallel inventoryOpen / containerEntityId / containerItems /
+   *  dialogueNpcId / dialogue fields — the data each variant needs is
+   *  carried inside the variant. */
+  overlay: Overlay;
   /** Rolling chat log, capped at CHAT_LOG_MAX (oldest dropped first). */
   chatLog: ChatLogEntry[];
   /** Entity meta dict per entity (name, title, etc.). Sparse — only entities
@@ -151,11 +150,6 @@ export interface Scene {
   nameplateCache: Map<string, TextSurface>;
 
   // --- Inventory / crafting UI state ---
-  /** True when the inventory panel is open. Gates world input (mouse
-   *  clicks in the game area don't fire actions while open) and tells the
-   *  HUD pass to draw the panel on top. Mutated by the keyboard
-   *  controller and the panel's own close paths. */
-  inventoryOpen: boolean;
   /** Minecraft-style held stack on the cursor. Null when nothing held.
    *  `source` tells the click dispatcher which inventory (player vs. open
    *  container) the stack originated in — needed so that dropping onto
@@ -444,15 +438,11 @@ export async function createScene(
     lighting,
 
     inventory: [],
-    containerEntityId: null,
-    containerItems: [],
-    dialogueNpcId: null,
-    dialogue: null,
+    overlay: { kind: 'none' },
     chatLog: [],
     entityMeta: new Map(),
     nameplateCache: new Map(),
 
-    inventoryOpen: false,
     heldStack: null,
     cursorScreenX: 0,
     cursorScreenY: 0,
@@ -537,16 +527,14 @@ export async function createScene(
     },
 
     onContainerOpen(containerEntityId, items) {
-      this.containerEntityId = containerEntityId;
-      this.containerItems = items;
-      // Opening a chest pops the player's inventory panel automatically so
-      // the user sees both sides of the transfer.
-      this.inventoryOpen = true;
+      // The container variant is itself "inventory-showing" (see
+      // isInventoryShowing) so the player's inventory panel renders
+      // alongside the chest items — same UX as before, fewer fields.
+      this.overlay = { kind: 'container', entityId: containerEntityId, items };
     },
 
     onDialogueOpen(npcEntityId, dialogue) {
-      this.dialogueNpcId = npcEntityId;
-      this.dialogue = dialogue;
+      this.overlay = { kind: 'dialogue', npcId: npcEntityId, dialogue };
     },
 
     onEnvironmentSync(gameMinute, weather, serverTick) {
