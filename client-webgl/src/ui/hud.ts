@@ -11,10 +11,17 @@ import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
 import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
+import { wrapChatMessage } from '../effects/chat-bubble.js';
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
-const CHAT_MAX_VISIBLE = 8;
+/** Cap on total wrapped lines drawn — a single long message can occupy
+ *  several slots, so this is not the same as a cap on entries. */
+const CHAT_MAX_VISIBLE_LINES = 12;
+/** Soft wrap width for chat-log entries. Sized to keep text left of the
+ *  HUD quickbar (centered at the bottom of the play area) at the default
+ *  game width. Mirrors the above-head bubble's wrap pattern. */
+const HUD_CHAT_WRAP_CHARS = 50;
 const CHAT_PAD_X = 10;
 const CHAT_PAD_Y = 8;
 /** A chat line stays full opacity for CHAT_FULL_MS then fades over CHAT_FADE_MS. */
@@ -94,27 +101,42 @@ export function drawHud(
   const inputX = GAME_X + CHAT_PAD_X;
   const chatBottomY = inputY - CHAT_LINE_H; // y of the newest chat line
 
-  // Age-filter + cap. Oldest retained entry sits highest; newest sits at chatBottomY.
+  // Age-filter live entries; oldest retained sits highest, newest at chatBottomY.
   const now = Date.now();
   const live: typeof scene.chatLog = [];
   for (const entry of scene.chatLog) {
     if (now - entry.receivedAt < CHAT_LIFETIME_MS) live.push(entry);
   }
-  const visibleLog = live.slice(-CHAT_MAX_VISIBLE);
 
-  // Build chat line keys and sync cache.
+  // Expand each entry into its wrapped sub-lines, then keep the most
+  // recent CHAT_MAX_VISIBLE_LINES across the flattened list. A single
+  // long message therefore consumes several slots.
+  const flat: { receivedAt: number; senderEntityId: number; subIndex: number; text: string }[] = [];
+  for (const entry of live) {
+    const formatted = formatChatLine(scene, entry.senderEntityId, entry.message);
+    const wrapped = wrapChatMessage(formatted, HUD_CHAT_WRAP_CHARS);
+    for (let s = 0; s < wrapped.length; s++) {
+      flat.push({
+        receivedAt: entry.receivedAt,
+        senderEntityId: entry.senderEntityId,
+        subIndex: s,
+        text: wrapped[s],
+      });
+    }
+  }
+  const visibleLines = flat.slice(-CHAT_MAX_VISIBLE_LINES);
+
+  // Build sub-line keys (receivedAt + sub-index) and sync cache.
   const newCachedLines: { key: string; surface: TextSurface }[] = [];
-  for (let i = 0; i < visibleLog.length; i++) {
-    const entry = visibleLog[i];
-    const text = formatChatLine(scene, entry.senderEntityId, entry.message);
-    const lineKey = `${entry.receivedAt}|${text}`;
+  for (const line of visibleLines) {
+    const lineKey = `${line.receivedAt}|${line.subIndex}|${line.text}`;
     const existing = cachedChatLines.find(c => c.key === lineKey);
     if (existing) {
       newCachedLines.push(existing);
     } else {
       const surface = factory.create({
-        text,
-        fillColor: entry.senderEntityId === 0 ? '#fa0' : '#fff',
+        text: line.text,
+        fillColor: line.senderEntityId === 0 ? '#fa0' : '#fff',
         outlineColor: '#000',
         fontPx: CHAT_FONT_PX,
       });
@@ -129,11 +151,10 @@ export function drawHud(
   }
   cachedChatLines = newCachedLines;
 
-  // Draw chat lines: newest (index visibleLog.length-1) at chatBottomY,
-  // older stacked upward.
+  // Draw lines: newest (last index) at chatBottomY, older stacked upward.
   for (let i = 0; i < cachedChatLines.length; i++) {
     const { surface } = cachedChatLines[i];
-    const age = now - visibleLog[i].receivedAt;
+    const age = now - visibleLines[i].receivedAt;
     const alpha = chatLineAlpha(age);
     if (alpha <= 0) continue;
     const stackFromBottom = cachedChatLines.length - 1 - i;
