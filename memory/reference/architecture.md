@@ -92,7 +92,7 @@ Events emitted at authoritative sources: GameWorld handlers emit via **two chann
 
 The two channels are separate `PlayerConnection` methods (`onGameEvent` / `onBroadcastEvent`) so the MCP/WS consumer asymmetry is explicit per connection type. Migrating an emit site to broadcast is **additive** — keep the existing `emitEvent` call for MCP narration and add a `broadcastEvent` call for spectator visuals.
 
-Wire format: `ServerOpcode.GameEvents = 0x37` carries a batched `WireEvent[]`. `WireEventType` is a numeric subset of `GameEventType` — only visual events cross the wire (combat hit dealt, harvest yield, craft complete, entity died). MCP-only events (`action_interrupted`, `creature_aggro`, `trade_complete`) stay off the wire. Mapping in `server/src/connections/ws-connection.ts::WIRE_EVENT_MAP`.
+Wire format: `ServerOpcode.GameEvents = 0x37` carries a batched `WireEvent[]`. `WireEventType` is a numeric subset of `GameEventType` — only visual events cross the wire (combat hit dealt, harvest yield, craft complete, entity died). MCP-only events (`action_interrupted`, `creature_aggro`, `trade_complete`) stay off the wire. Mapping in `server/src/connections/wire-event-map.ts` (`WIRE_EVENT_MAP` + `toWireEvent`).
 
 Design principle: only emit events NOT inferrable from state snapshots (damage causality, ephemeral chat, action interruption reasons). LLM experience is "constant teleportation" — full snapshot per response.
 

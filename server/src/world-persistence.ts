@@ -9,7 +9,7 @@ import { generateWorld } from '@shared/world/world-gen.js';
 import { WorldMap } from '@shared/world/world-map.js';
 import { MORNING_TICK_OFFSET } from '@shared/lighting.js';
 import { GameWorld } from './game-world.js';
-import { createFileLogger } from './world-logger.js';
+import { createFileLogger } from './world-logger-file.js';
 import { initTreeResource } from './systems/resources.js';
 import { initCritterAI } from './systems/critter-ai.js';
 import { isGroundItemBlueprint, shouldRestoreAsGround, spawnCreatureEntity, spawnGroundItem } from './entity-spawn.js';
