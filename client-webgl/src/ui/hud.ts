@@ -12,7 +12,7 @@ import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
 import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
 import { wrapChatMessage } from '../effects/chat-bubble.js';
-import { isInventoryShowing } from '../overlay.js';
+import { isInventoryShowing, isInputCaptured } from '../overlay.js';
 
 const CHAT_FONT_PX = 13;
 const CHAT_LINE_H = CHAT_FONT_PX + 4;
@@ -87,10 +87,12 @@ export function drawHud(
   debugLabel: string | null,
 ): void {
   const factory = scene.textSurfaceFactory;
-  // The HUD quickbar is always shown when the inventory panel is closed,
-  // so force a sprites.begin() pass even if chat + debug are quiet.
+  // The HUD quickbar shows only during free play — any overlay (inventory
+  // panel, container, dialogue, menu) hides it since those modes either
+  // own the quickbar's input role (inventory) or take over the screen
+  // entirely (menu) and the quickbar would clutter the modal layout.
   const inventoryShowing = isInventoryShowing(scene.overlay);
-  const showHudQuickbar = !inventoryShowing;
+  const showHudQuickbar = !isInputCaptured(scene.overlay);
   const needSprites =
     scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || inventoryShowing || showHudQuickbar;
 

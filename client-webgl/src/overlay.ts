@@ -12,12 +12,31 @@
 
 import type { SyncedInventoryItem } from '@shared/protocol/codec.js';
 
+/** Values entered on the create-join screen. Carried by the variant so
+ *  Phase 5's connecting↔connect-error round-trip preserves them
+ *  without scratch state. `seed` and `host` stay as free-form strings
+ *  during editing; parsing/normalization happens at submit time. */
+export interface CreateJoinValues {
+  name: string;
+  /** Variant index for the player blueprint. 0 = catgirl. */
+  avatar: number;
+  seed: string;
+  host: string;
+}
+
 export type Overlay =
   | { kind: 'none' }
   | { kind: 'inventory' }
   | { kind: 'container'; entityId: number; items: SyncedInventoryItem[] }
   | { kind: 'dialogue';  npcId: number; dialogue: unknown }
-  | { kind: 'menu';      screen: 'landing' | 'create-join' | 'settings' };
+  | { kind: 'menu';      screen: 'landing' }
+  | { kind: 'menu';      screen: 'settings' }
+  | { kind: 'menu';      screen: 'create-join'; mode: 'new' | 'join'; values: CreateJoinValues }
+  // Join-flow transient screens. `host` is the resolved WS URL being
+  // dialed; `values` are carried through so Back / Retry land back on
+  // create-join with the user's edits intact.
+  | { kind: 'menu';      screen: 'connecting';    host: string; values: CreateJoinValues }
+  | { kind: 'menu';      screen: 'connect-error'; host: string; message: string; values: CreateJoinValues };
 
 /** True when the inventory panel should render — both the standalone
  *  inventory overlay and the container overlay (which renders the inventory

@@ -109,6 +109,11 @@ export function attachKeyboardControls(
       return;
     }
 
+    // --- Menu open: world keyboard fully no-ops. menu-input.ts owns input
+    //     while the main-menu overlay is up; Tab/Esc/Enter and printable
+    //     keys all route through there. ---
+    if (scene.overlay.kind === 'menu') return;
+
     // --- Inventory open: Esc closes, I toggles shut, 1..9 still drive
     //     quickslot selection so the player can swap hand items while
     //     browsing. Other keys are swallowed so world input doesn't fire

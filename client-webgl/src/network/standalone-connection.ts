@@ -279,19 +279,41 @@ export class StandaloneObserverConnection implements PlayerConnection, Connectio
   }
 }
 
+/** Refs returned by `bootStandaloneObserver` — held by the menu boot
+ *  path until the user starts a real game, at which point they pass to
+ *  `tearDownStandaloneObserver`. */
+export interface StandaloneObserverRefs {
+  conn: StandaloneObserverConnection;
+  world: GameWorld;
+  loop: GameLoop;
+  observerId: number;
+  camera: ObserverCamera;
+}
+
+/** Stop the loop, detach the autopilot camera, remove the observer slot,
+ *  and close the connection. The scene's chunk/entity state is NOT
+ *  touched — the caller is expected to call `scene.reset()` separately
+ *  before mounting a fresh world, since reset is a scene-level concern
+ *  that doesn't depend on which boot path is being torn down. */
+export function tearDownStandaloneObserver(
+  refs: StandaloneObserverRefs,
+  scene: Scene,
+): void {
+  refs.camera.stop();
+  refs.loop.stop();
+  refs.world.removeObserver(refs.observerId);
+  refs.conn.close();
+  scene.observerCamera = null;
+  scene.observerFocus = null;
+}
+
 /** Standalone observer boot. Spins up an in-tab GameWorld, registers an
  *  observer at SPAWN, starts the autopilot camera, returns the refs.
  *  No player is added — the world ticks under the observer's gaze, NPCs
  *  and critters do their thing, and the camera pans across them
  *  cinematically. The menu's "Play" button later tears this down (or
  *  upgrades the observer to a player on the same world). */
-export function bootStandaloneObserver(scene: Scene, seed: number): {
-  conn: StandaloneObserverConnection;
-  world: GameWorld;
-  loop: GameLoop;
-  observerId: number;
-  camera: ObserverCamera;
-} {
+export function bootStandaloneObserver(scene: Scene, seed: number): StandaloneObserverRefs {
   const world = createDefaultWorld(seed);
   const conn = new StandaloneObserverConnection(world, scene);
   const observerId = world.addObserver(conn, SPAWN_X, SPAWN_Y);

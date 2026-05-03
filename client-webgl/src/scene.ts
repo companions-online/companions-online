@@ -36,6 +36,9 @@ import type { ClientEntity } from './entities/client-entity.js';
 import { createEntityFromNetwork, applyComponentsToEntity } from './entities/from-network.js';
 import type { Overlay } from './overlay.js';
 import type { ObserverCamera } from './controls/observer-camera.js';
+import { createWidgetPalette, type WidgetPalette } from './ui/widget-palette.js';
+import { loadMenuLogo, type MenuLogo } from './ui/logo.js';
+import type { MenuController } from './ui/menu.js';
 
 import { generateRawTerrainTiles } from './terrain/texture.js';
 import { generateBlendMasks } from './terrain/blend-masks.js';
@@ -143,6 +146,14 @@ export interface Scene {
   textSurfaceFactory: TextSurfaceFactory;
   effectSprites: EffectSprites;
   lighting: LightingManager;
+  /** Pre-baked solid-color palette used by the menu / widget kit. */
+  widgetPalette: WidgetPalette;
+  /** Logo texture for the main menu. Loaded once at scene init. */
+  menuLogo: MenuLogo | null;
+  /** Active menu orchestrator when the menu is mounted. main.ts wires this
+   *  during boot for standalone mode (and the upcoming menu-driven join
+   *  path); null when the menu isn't in use. */
+  menu: MenuController | null;
 
   // --- Replicated sync state (Phase 9) ---
   /** The player's inventory. Empty until the server's first InventorySync. */
@@ -238,6 +249,13 @@ export interface Scene {
    *  sampled at the tile center. Returns 0 if the chunk is not loaded —
    *  the caller (sprite draw / camera) falls through to baseline iso. */
   getGroundZ(tileX: number, tileY: number): number;
+
+  /** Drop all replicated state — chunks, entities, inventory, chat,
+   *  effects, lighting, overlay-data — so a new world can populate the
+   *  scene from scratch. Called when the menu starts/joins a fresh game
+   *  (Phase 4/5). Static GPU assets (terrain texture array, wall
+   *  sprites, palette, logo) are kept; they're world-independent. */
+  reset(): void;
 }
 
 export interface StaticAssets {
@@ -276,6 +294,9 @@ export interface CreateSceneOptions {
    *  solid-color textures. Tests inject stubs; production omits this and
    *  boots the real loader from /assets/. */
   effectSprites?: EffectSprites;
+  /** Pre-loaded logo. Tests omit this (menuLogo stays null and the menu
+   *  isn't exercised); production loads from /assets/game-logo.png. */
+  menuLogo?: MenuLogo | null;
 }
 
 export async function createScene(
@@ -295,6 +316,10 @@ export async function createScene(
   const textSurfaceFactory = opts.textSurfaceFactory ?? createTextSurfaceFactory(gl);
   const effectSprites = opts.effectSprites ?? await loadEffectSprites(gl);
   const lighting = new LightingManager(gl);
+  const widgetPalette = createWidgetPalette(gl);
+  // Logo loading is awaited lazily by main.ts for standalone boot — tests
+  // pass `menuLogo: null` (default) and never exercise the menu render path.
+  const menuLogo: MenuLogo | null = opts.menuLogo ?? null;
 
   const entities = new Map<number, ClientEntity>();
   const wallDrawablesByChunk = new Map<number, WallDrawable[]>();
@@ -422,6 +447,53 @@ export async function createScene(
     );
   }
 
+  // Drop chunk + entity + UI state so a fresh world can repopulate. Static
+  // GPU assets stay (terrain/wall textures, palette, logo, factory). The
+  // worldMap's terrain bytes are zeroed in place to avoid reallocating
+  // a large Uint8Array; the renderer will re-mark chunks dirty as soon
+  // as the new world's chunk messages arrive.
+  function resetScene(): void {
+    chunkTerrainData.clear();
+    chunkElevation.clear();
+    wallDrawablesByChunk.clear();
+    dirtyChunks.clear();
+    layoutDirty = true;
+    lastEvictionChunk = null;
+
+    entities.clear();
+    worldMap.terrain.fill(0);
+    worldMap.buildings.fill(0);
+    worldMap.buildingMeta.fill(0);
+
+    // Release cached nameplate text surfaces so a name reused across
+    // worlds doesn't dangle a leaked GL texture; the cache rebuilds
+    // organically as new entityMeta arrives.
+    for (const surface of scene.nameplateCache.values()) {
+      textSurfaceFactory.release(surface);
+    }
+    scene.nameplateCache.clear();
+
+    // Sweep any in-flight effects so a stale damage number / chat
+    // bubble doesn't survive into the new world. Effects own
+    // OffscreenCanvas-backed textures via their dispose() path.
+    for (const e of effects.active) e.dispose(gl);
+    effects.active.length = 0;
+
+    scene.myEntityId = null;
+    scene.observerFocus = null;
+    scene.observerCamera = null;
+    scene.seed = null;
+    scene.entityMeta.clear();
+    scene.chatLog.length = 0;
+    scene.inventory = [];
+    scene.heldStack = null;
+    scene.gridOrder.clear();
+    scene.pendingItemDecrements.clear();
+    scene.placementHoverTile = null;
+    scene.quickSlots.fill(null);
+    scene.selectedQuickSlot = null;
+  }
+
   // Corner-grid sampler. Corner (cornerX, cornerY) is shared across the
   // chunks that border it — pick whichever chunk owns the integer corner.
   // Unloaded chunks return 0, so partial-map edges degrade to baseline iso.
@@ -457,6 +529,9 @@ export async function createScene(
     textSurfaceFactory,
     effectSprites,
     lighting,
+    widgetPalette,
+    menuLogo,
+    menu: null,
 
     inventory: [],
     overlay: { kind: 'none' },
@@ -809,6 +884,8 @@ export async function createScene(
         layoutDirty = false;
       }
     },
+
+    reset() { resetScene(); },
 
     getGroundZ(tileX, tileY) {
       // Sprite feet anchor at the tile center (screen.screenY + TILE_H/2),

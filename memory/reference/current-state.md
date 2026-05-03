@@ -182,6 +182,42 @@ Client-side effects wired onto the channel:
   `isWalkable` for river/water tiles instead of returning null, so
   clicking a bridged river tile emits `MoveTo`. Fishing-rod branch
   still wins for rivers when the rod is equipped.
+- **Main menu** — canvas-native menu drawn on top of a live observer
+  pan in both standalone and game-server-served boots. Three screens
+  (`landing`, `settings`, `create-join`) plus two transient join-flow
+  screens (`connecting`, `connect-error`). Closure-factory widget kit
+  (`makeButton`, `makeTextInput`, `makeLabel`, `makeDivider`,
+  `makeImage`, `makeBackdropDim`, `makeSelectableTile`) backed by a
+  pre-baked 1×1 solid-color palette + the existing `TextSurfaceFactory`
+  — no new GL paths. Build version inlined from `.build-number` via
+  esbuild `define`. Boot path now always runs `bootStandaloneObserver`
+  for the menu backdrop; game-start happens through the menu —
+  **Start World** tears down the observer, runs `bootStandalone(seed)`,
+  applies `/nick` + `/avatar` if changed, dismisses; **Join World**
+  runs `normalizeHost` + `connectTo` (8s timeout, categorized errors:
+  `bad-url|refused|timeout|closed-pre-welcome|wrong-protocol`),
+  transitions through Connecting → success | Connect-error with
+  Retry/Back. `ConnectionRef implements Connection` is a swappable
+  proxy so all 30+ `connection.send` callsites stay attached at boot
+  while the underlying connection is replaced atomically. `connectTo`
+  buffers pre-welcome chunk traffic (server's `addPlayer` streams
+  `onChunkNeeded` before `onInitialState`'s welcome) and post-welcome
+  traffic until `onMessage` is wired, replaying in arrival order so
+  `wireSceneToConnection` initializes scene state normally.
+  Avatar selection wires through the existing `BlueprintData.variant`
+  component — new `/avatar <n>` server command validates against the
+  Player blueprint's `variantCount`, sets the variant via
+  `entities.blueprint.set` (auto-dirty marks for the next WorldDelta).
+  No new MetaKey, no protocol change. Adding new player variants:
+  bump `variantCount` in `shared/src/blueprints.ts`, ship
+  `player-<n>.png`, add an entry to `KNOWN_VARIANTS` in
+  `client-webgl/src/ui/avatar-selector.ts`. Keyboard polish (no Tab
+  cycle, but Enter triggers screen `defaultAction`, Esc triggers
+  `escapeAction`, clipboard-paste-denial focuses the host input).
+  HUD quickbar hides whenever any overlay is up. Coverage:
+  `test/client-gl/widgets.test.ts` (28), `test/client-gl/host-normalizer.test.ts`
+  (18), `test/e2e/server-commands.test.ts` `/avatar` cases (4).
+  Detail in `memory/client-webgl/menu.md`.
 
 ## Tests — all passing
 

@@ -1,7 +1,7 @@
 import * as esbuild from 'esbuild';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { makeAliasPlugin } from './build-shared.js';
+import { makeAliasPlugin, readBuildNumber } from './build-shared.js';
 
 // Watch-mode build. The game server (server/src/main.ts) serves
 // client-webgl/ as static files same-origin on its own port, so this script
@@ -16,6 +16,7 @@ const ctx = await esbuild.context({
   sourcemap: true,
   format: 'esm',
   logLevel: 'info',
+  define: { __BUILD_VERSION__: JSON.stringify(readBuildNumber(__dirname)) },
   plugins: [makeAliasPlugin(__dirname)],
 });
 

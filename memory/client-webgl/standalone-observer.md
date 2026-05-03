@@ -1,22 +1,17 @@
 # Standalone + Observer Mode
 
-How the standalone build and observer mode plug together. Backstops the
-upcoming main-menu work.
+How the standalone build and observer mode plug together. Backstops
+the main menu (`memory/client-webgl/menu.md`).
 
 ## Mode toggle
 
-`main.ts` reads `window.GAME_SERVER_HOST` and picks one of two
-transports:
-
-| HTML | `GAME_SERVER_HOST` | Transport | Connection class |
-|------|---------------------|-----------|------------------|
-| `index.html` | injected (= `location.host`) | WS | `connect()` from `network/connection.ts` |
-| `index-standalone.html` | absent | in-tab | `bootStandaloneObserver(scene, seed)` |
-
-The toggle is presence-only today — the value carried on
-`GAME_SERVER_HOST` isn't read for anything yet (the WS connect uses
-`location.host` directly). When the menu lands, "Join" will use it for
-defaults / cross-origin awareness.
+`main.ts` always boots an observer-mode world via
+`bootStandaloneObserver` to back the menu's live pan, regardless of
+mode. `window.GAME_SERVER_HOST` is consulted only to autofill the
+menu's create-join "Remote Host" field on initial entry. The networked
+`connect()` is no longer called at boot — the menu's Join World handler
+runs `connectTo(url)` (with timeout + categorized errors) and swaps
+the `ConnectionRef` from observer to the resulting WS connection.
 
 ## In-tab transport (`network/standalone-connection.ts`)
 
@@ -111,7 +106,14 @@ direction change after segment timer, `stop()`.
 - Manual god-view controls (WASD pan, follow-this-entity) — drop in
   alongside the autopilot using the same `setObserverFocus` API; the
   autopilot exposes `stop()` for swap.
-- Menu "Play" → tear down observer + addPlayer on same world (or
-  spawn fresh world with chosen seed). The two boot factories
-  (`bootStandalone` and `bootStandaloneObserver`) are the two halves;
-  the menu glue between them is the next phase.
+
+## Menu glue (landed)
+
+`main.ts` keeps an `observerRefs: StandaloneObserverRefs | null` and a
+`playerRefs / networkedConn` slot. **Start World** calls
+`tearDownStandaloneObserver(refs, scene)` + `scene.reset()` +
+`bootStandalone(scene, chosenSeed)` and `connRef.swap(playerRefs.conn)`.
+**Join World** does the same teardown after `connectTo(url)` resolves
+and swaps to the networked WS conn. `applyCharacterChoices(values)`
+sends `/nick` + `/avatar` only when the user changed defaults. See
+`memory/client-webgl/menu.md` for the full state machine.

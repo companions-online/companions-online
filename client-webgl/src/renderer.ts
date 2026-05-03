@@ -214,6 +214,13 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     }
 
     drawHud(gl, scene, scene.spriteRenderer, keyboard, hudResolution, debugLabel);
+
+    // Menu pass — drawn last so it sits on top of the live observer world.
+    // The menu controller short-circuits when overlay.kind !== 'menu'.
+    if (scene.menu && scene.overlay.kind === 'menu') {
+      scene.menu.draw(scene);
+    }
+
     syncCursorStyle();
 
     requestAnimationFrame(frame);

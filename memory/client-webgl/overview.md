@@ -13,24 +13,31 @@ them; they only share `shared/src/`.
 ```
 index{,-standalone}.html loads /dist/main.js
   → main.ts: canvas + WebGL2 context
-  → createScene(gl)           — boots renderers + loads sprite + static assets
-  → conn = (window.GAME_SERVER_HOST defined)
-       ? connect()                          — ws://location.host/ws
-       : bootStandaloneObserver(scene, seed)  — in-tab GameWorld + GameLoop +
-                                              StandaloneObserverConnection +
-                                              autopilot camera
-  → wireSceneToConnection(scene, conn)  — WS-only switch; no-op for standalone
-  → attachMouseControls + attachKeyboardControls
-  → renderer.start()          — RAF loop
+  → createScene(gl)            — boots renderers + loads sprite + static assets + widget palette
+  → bootStandaloneObserver(scene, seed)   — always: in-tab GameWorld + GameLoop +
+                                            StandaloneObserverConnection + autopilot camera
+  → connRef = new ConnectionRef(observerConn)   — swappable wrapper used by all controls
+  → wireSceneToConnection(scene, connRef)
+  → loadMenuLogo(gl) + createMenuController(...) + attachMenuInput(canvas, scene, menu)
+  → attachMouseControls(canvas, scene, connRef) + attachKeyboardControls(canvas, connRef, scene)
+  → scene.overlay = { kind: 'menu', screen: 'landing' }
+  → renderer.start()           — RAF loop
 ```
+
+Both standalone and game-server-served boots now mount the same menu
+on top of an observer-mode world. `window.GAME_SERVER_HOST` is read
+only to autofill the menu's "Remote Host" field. Game-start happens
+through the menu: **New Game** tears down the observer and runs
+`bootStandalone(scene, chosenSeed)` on the same scene; **Join Game**
+runs `connectTo(url)`, swaps `connRef` to the resulting WS connection,
+and applies `/nick` + `/avatar` if the user changed defaults. Detail:
+`memory/client-webgl/menu.md`.
 
 Networked path: the scene starts empty; chunks + entities fill in as
 the server streams them. Standalone path: same wire model, same
 `Scene.on*()` mutators, but the server lives in the same browser tab
 and bypasses the binary protocol via `StandaloneConnection` /
-`StandaloneObserverConnection`. Today the standalone build boots into
-observer mode (no player avatar, autopilot camera) — the upcoming
-main menu will sit on top of this.
+`StandaloneObserverConnection`.
 
 ## Same-origin serving + standalone serving
 

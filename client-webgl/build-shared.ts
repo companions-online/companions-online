@@ -12,6 +12,7 @@
 
 import * as esbuild from 'esbuild';
 import path from 'path';
+import { readFileSync } from 'node:fs';
 
 interface AliasSpec {
   prefix: string;
@@ -24,6 +25,21 @@ function buildAliases(repoRoot: string): AliasSpec[] {
     { prefix: '@server/',       resolveTo: (r) => path.resolve(repoRoot, 'server',       'src', r + '.ts') },
     { prefix: '@client-webgl/', resolveTo: (r) => path.resolve(repoRoot, 'client-webgl', 'src', r + '.ts') },
   ];
+}
+
+/** Read the integer in `<repoRoot>/.build-number`. The file is bumped by
+ *  the vitest global setup (scripts/vitest-global-setup.ts) on each test
+ *  run, so production builds embed whatever the last test run left. Falls
+ *  back to 0 if the file is missing — keeps dev iteration unblocked. */
+export function readBuildNumber(clientWebglDir: string): number {
+  const repoRoot = path.resolve(clientWebglDir, '..');
+  try {
+    const raw = readFileSync(path.resolve(repoRoot, '.build-number'), 'utf8').trim();
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function makeAliasPlugin(clientWebglDir: string): esbuild.Plugin {

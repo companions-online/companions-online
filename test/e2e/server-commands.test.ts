@@ -315,6 +315,69 @@ describe('server commands', () => {
     });
   });
 
+  describe('/avatar', () => {
+    it('accepts variant 0 (the default) without changing state', () => {
+      const world = createTestWorld();
+      const { entityId } = addTestPlayer(world, 10, 10);
+      const before = world.entities.blueprint.get(entityId);
+      expect(before?.variant).toBe(0);
+
+      world.setAction(entityId, {
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: '0',
+      });
+      world.runTick();
+
+      expect(world.entities.blueprint.get(entityId)?.variant).toBe(0);
+    });
+
+    it('rejects out-of-range variant via system chat', () => {
+      // Player blueprint currently has variantCount=1 (default), so any
+      // variant > 0 is out of range. Once player-1.png lands, raise
+      // variantCount and update this assertion.
+      const world = createTestWorld();
+      const { entityId, connection } = addTestPlayer(world, 10, 10);
+
+      world.setAction(entityId, {
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: '99',
+      });
+      world.runTick();
+
+      const chat = connection.events.find(e => e.type === 'chatMessage' && e.senderEntityId === 0);
+      expect(chat?.chatMessage).toMatch(/variant must be/);
+    });
+
+    it('rejects non-numeric parameter via system chat', () => {
+      const world = createTestWorld();
+      const { entityId, connection } = addTestPlayer(world, 10, 10);
+
+      world.setAction(entityId, {
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: 'catgirl',
+      });
+      world.runTick();
+
+      const chat = connection.events.find(e => e.type === 'chatMessage' && e.senderEntityId === 0);
+      expect(chat?.chatMessage).toMatch(/usage/);
+    });
+
+    it('rejects negative variant', () => {
+      // Negative numbers fail the digits-only regex at the parameter parse
+      // step (the leading minus isn't a digit), so the error is "usage"
+      // rather than "out of range". Either form is fine — just validate
+      // the command doesn't accept it.
+      const world = createTestWorld();
+      const { entityId, connection } = addTestPlayer(world, 10, 10);
+
+      world.setAction(entityId, {
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: '-1',
+      });
+      world.runTick();
+
+      expect(world.entities.blueprint.get(entityId)?.variant).toBe(0);
+      const chat = connection.events.find(e => e.type === 'chatMessage' && e.senderEntityId === 0);
+      expect(chat).toBeDefined();
+    });
+  });
+
   describe('/time', () => {
     function runTime(world: ReturnType<typeof createTestWorld>, eid: number, spec: string) {
       world.setAction(eid, { action: ClientAction.ServerCommand, command: 'time', parameter: spec });

@@ -1,5 +1,5 @@
 import { MetaKey } from '@shared/entity-meta.js';
-import { BlueprintType, getBlueprintByName } from '@shared/blueprints.js';
+import { BlueprintType, getBlueprint, getBlueprintByName } from '@shared/blueprints.js';
 import { TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_DAY } from '@shared/constants.js';
 import type { GameWorld, PlayerSlot } from './game-world.js';
 import { initCritterForEntity } from './systems/critter-ai.js';
@@ -63,6 +63,46 @@ const handleNick: ServerCommandHandler = (world, eid, _slot, parameter) => {
 };
 
 registerServerCommand(['nick', 'name'], handleNick);
+
+// --- /avatar <variant-index> ---
+// Sets the player's BlueprintData.variant — a numeric index into the
+// blueprint's per-variant sprite sheet. The change rides the existing
+// component-bitmask delta channel: ComponentStore.set marks the entity
+// dirty, and broadcastTick ships the new variant in the next WorldDelta
+// for every nearby client. No new opcode, no new MetaKey.
+//
+// Caller can only set their own avatar (the menu's create-join screen
+// is the typical source). New variants land by raising the Player
+// blueprint's variantCount in shared/src/blueprints.ts and shipping
+// `player-<n>.png` next to the existing player.png.
+
+const handleAvatar: ServerCommandHandler = (world, eid, _slot, parameter) => {
+  const raw = parameter.trim();
+  if (!/^\d+$/.test(raw)) {
+    return { ok: false, error: 'usage: /avatar <variant>' };
+  }
+  const variant = parseInt(raw, 10);
+  const current = world.entities.blueprint.get(eid);
+  if (!current) return { ok: false, error: 'caller has no blueprint' };
+
+  const bp = getBlueprint(current.blueprintId);
+  if (!bp) return { ok: false, error: 'unknown blueprint' };
+
+  const variantCount = bp.variantCount ?? 1;
+  if (variant < 0 || variant >= variantCount) {
+    return { ok: false, error: `variant must be 0-${variantCount - 1}` };
+  }
+
+  if (current.variant === variant) return { ok: true };
+
+  world.entities.blueprint.set(eid, {
+    blueprintId: current.blueprintId,
+    variant,
+  });
+  return { ok: true };
+};
+
+registerServerCommand(['avatar'], handleAvatar);
 
 // --- /spawn <creature-or-item-name> ---
 // Dev/god command. Resolves a blueprint by display name (case-insensitive),
