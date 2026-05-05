@@ -151,6 +151,20 @@ export function attachKeyboardControls(
       ev.preventDefault();
       return;
     }
+    // No inventory, no quickslot, no placement — Esc opens the in-game
+    // settings menu. Earlier branches above each return on Esc, so they
+    // take priority (open inventory + Esc still closes inventory, etc.).
+    //
+    // stopImmediatePropagation: the menu-input listener (registered after
+    // this one on the same canvas) gates on `overlay.kind === 'menu'` and
+    // would see the just-mutated overlay, dispatching this same Esc to the
+    // menu's escapeAction — which would close the menu we just opened.
+    if (ev.key === 'Escape') {
+      scene.overlay = { kind: 'menu', screen: 'settings', context: 'in-game' };
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      return;
+    }
     if (ev.key === 'Enter') {
       state.chatActive = true;
       ev.preventDefault();

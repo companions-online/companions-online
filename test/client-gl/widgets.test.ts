@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   makeButton, makeTextInput, makeLabel, makeDivider, makeImage, makeBackdropDim,
+  makeToggle,
   type DrawCtx, type Widget, type KeyEvent,
 } from '@client-webgl/ui/widgets.js';
 import type { WidgetPalette } from '@client-webgl/ui/widget-palette.js';
@@ -303,6 +304,69 @@ describe('makeLabel', () => {
     const { ctx, counts } = makeCtx();
     const w = makeLabel({ x: 0, y: 0, text: 'hi' });
     w.draw(ctx);
+    w.draw(ctx);
+    w.draw(ctx);
+    expect(counts.creates).toBe(1);
+    w.dispose(ctx.factory);
+    expect(counts.releases).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Toggle
+// ---------------------------------------------------------------------------
+
+describe('makeToggle', () => {
+  const bounds = { x: 0, y: 0, w: 200, h: 40 };
+
+  it('is focusable', () => {
+    const w = makeToggle({ bounds, label: 'Music', initialValue: true });
+    expect(w.isFocusable?.()).toBe(true);
+  });
+
+  it('flips state and fires onChange on a click in bounds', () => {
+    const seen: boolean[] = [];
+    const w = makeToggle({ bounds, label: 'Music', initialValue: true, onChange: v => seen.push(v) });
+    clickSequence(w, 50, 20, 60, 20);
+    expect(seen).toEqual([false]);
+    clickSequence(w, 50, 20, 60, 20);
+    expect(seen).toEqual([false, true]);
+  });
+
+  it('does not flip when mouseup leaves bounds', () => {
+    const seen: boolean[] = [];
+    const w = makeToggle({ bounds, label: 'Music', initialValue: false, onChange: v => seen.push(v) });
+    clickSequence(w, 50, 20, 500, 500);
+    expect(seen).toEqual([]);
+  });
+
+  it('Space toggles when focused; bubbles when not focused', () => {
+    const seen: boolean[] = [];
+    const w = makeToggle({ bounds, label: 'Music', initialValue: false, onChange: v => seen.push(v) });
+    expect(w.onKey?.(key(' '))).toBe(false);
+    expect(seen).toEqual([]);
+    w.setFocus?.(true);
+    expect(w.onKey?.(key(' '))).toBe(true);
+    expect(seen).toEqual([true]);
+  });
+
+  it('Enter toggles when focused', () => {
+    const seen: boolean[] = [];
+    const w = makeToggle({ bounds, label: 'Music', initialValue: true, onChange: v => seen.push(v) });
+    w.setFocus?.(true);
+    expect(w.onKey?.(key('Enter'))).toBe(true);
+    expect(seen).toEqual([false]);
+  });
+
+  it('Esc bubbles even when focused', () => {
+    const w = makeToggle({ bounds, label: 'Music', initialValue: true });
+    w.setFocus?.(true);
+    expect(w.onKey?.(key('Escape'))).toBe(false);
+  });
+
+  it('caches the label surface across redraws and releases it on dispose', () => {
+    const { ctx, counts } = makeCtx();
+    const w = makeToggle({ bounds, label: 'Music', initialValue: true });
     w.draw(ctx);
     w.draw(ctx);
     expect(counts.creates).toBe(1);

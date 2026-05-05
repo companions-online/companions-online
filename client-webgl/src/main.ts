@@ -122,6 +122,18 @@ function startWorld(values: CreateJoinValues): void {
   scene.overlay = { kind: 'none' };
 }
 
+/** Inverse of startWorld / joinWorld: tear down whichever world is live,
+ *  re-boot the observer backdrop, and send the user back to the landing
+ *  screen. Wired as `onDisconnect` on the menu controller; fired by the
+ *  in-game settings screen's "Disconnect" button. */
+function disconnect(): void {
+  tearDownActive();
+  scene.reset();
+  observerRefs = bootStandaloneObserver(scene, initialSeed);
+  connRef.swap(observerRefs.conn);
+  scene.overlay = { kind: 'menu', screen: 'landing' };
+}
+
 async function joinWorld(values: CreateJoinValues): Promise<void> {
   const normalized = normalizeHost(values.host);
   if ('error' in normalized) {
@@ -183,6 +195,7 @@ scene.menu = createMenuController({
   resolution: () => [CANVAS_W, CANVAS_H] as const,
   onStartWorld: startWorld,
   onJoinWorld: (values) => { void joinWorld(values); },
+  onDisconnect: disconnect,
 });
 
 attachMouseControls(canvas, scene, connRef);

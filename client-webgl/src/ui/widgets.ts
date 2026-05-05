@@ -186,6 +186,107 @@ export function makeButton(opts: ButtonOpts): Widget {
 }
 
 // ---------------------------------------------------------------------------
+// Toggle — focusable on/off control. Label on the left, pill on the right.
+// State is closure-local; no persistence. Mirrors makeButton's armed/hover
+// pattern for click affordance; Space and Enter toggle when focused.
+// ---------------------------------------------------------------------------
+
+export interface ToggleOpts {
+  bounds: Bounds;
+  label: string;
+  initialValue: boolean;
+  onChange?(next: boolean): void;
+  fontPx?: number;
+}
+
+const TOGGLE_PILL_W = 44;
+const TOGGLE_PILL_H = 22;
+const TOGGLE_KNOB_INSET = 3;
+const TOGGLE_LABEL_PAD = 12;
+
+export function makeToggle(opts: ToggleOpts): Widget {
+  let value = opts.initialValue;
+  let armed = false;
+  let focused = false;
+  let labelSurface: TextSurface | null = null;
+  let cachedKey = '';
+  const fontPx = opts.fontPx ?? 16;
+  const bounds = opts.bounds;
+  const inBounds = (x: number, y: number) => pointInBounds(bounds, x, y);
+
+  function flip(): void {
+    value = !value;
+    opts.onChange?.(value);
+  }
+
+  return {
+    bounds,
+    hitTest: inBounds,
+    isFocusable: () => true,
+    setFocus(f) { focused = f; },
+    draw(ctx) {
+      // Label
+      const key = `${opts.label}|${fontPx}`;
+      if (cachedKey !== key || !labelSurface) {
+        if (labelSurface) ctx.factory.release(labelSurface);
+        labelSurface = ctx.factory.create({
+          text: opts.label, fillColor: '#fff', fontPx,
+        });
+        cachedKey = key;
+      }
+      const surface: TextSurface = labelSurface;
+      const ly = bounds.y + (bounds.h - surface.height) / 2;
+      ctx.gl.activeTexture(ctx.gl.TEXTURE0);
+      ctx.gl.bindTexture(ctx.gl.TEXTURE_2D, surface.texture);
+      ctx.sprites.drawSprite(
+        bounds.x + TOGGLE_LABEL_PAD, ly,
+        surface.width, surface.height, 0, 0, 1, 1,
+      );
+
+      // Pill — right-aligned inside bounds.
+      const pillX = bounds.x + bounds.w - TOGGLE_PILL_W - TOGGLE_LABEL_PAD;
+      const pillY = bounds.y + (bounds.h - TOGGLE_PILL_H) / 2;
+      const pillBg = value ? ctx.palette.accent : ctx.palette.bgPressed;
+      drawSolidQuad(ctx, pillBg, pillX, pillY, TOGGLE_PILL_W, TOGGLE_PILL_H);
+      drawBorder(
+        ctx,
+        { x: pillX, y: pillY, w: TOGGLE_PILL_W, h: TOGGLE_PILL_H },
+        focused ? 2 : 1,
+        focused ? ctx.palette.accent : ctx.palette.border,
+      );
+
+      // Knob — slides between left and right ends of the pill.
+      const knobSize = TOGGLE_PILL_H - TOGGLE_KNOB_INSET * 2;
+      const knobX = value
+        ? pillX + TOGGLE_PILL_W - TOGGLE_KNOB_INSET - knobSize
+        : pillX + TOGGLE_KNOB_INSET;
+      drawSolidQuad(
+        ctx, ctx.palette.bg,
+        knobX, pillY + TOGGLE_KNOB_INSET, knobSize, knobSize,
+      );
+    },
+    onMouseDown(x, y) { if (inBounds(x, y)) armed = true; },
+    onMouseUp(x, y) {
+      if (armed && inBounds(x, y)) flip();
+      armed = false;
+    },
+    onKey(ev) {
+      if (!focused) return false;
+      if (ev.key === ' ' || ev.key === 'Spacebar' || ev.key === 'Enter') {
+        flip();
+        return true;
+      }
+      return false;
+    },
+    dispose(factory) {
+      if (labelSurface) factory.release(labelSurface);
+      labelSurface = null;
+      cachedKey = '';
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // TextInput
 // ---------------------------------------------------------------------------
 

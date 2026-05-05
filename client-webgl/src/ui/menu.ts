@@ -50,6 +50,10 @@ export interface MenuContext {
   startWorld(values: CreateJoinValues): void;
   /** "Join World" submission from create-join (mode='join'). Phase 5. */
   joinWorld(values: CreateJoinValues): void;
+  /** "Disconnect" from in-game settings. main.ts tears down the active
+   *  world (in-tab player or networked), re-boots the observer backdrop,
+   *  and returns to the landing screen. */
+  disconnect(): void;
   /** Make `target` the focused widget on the active screen. No-op if
    *  the widget isn't focusable or isn't in the active screen. Used by
    *  the create-join paste button to focus the host input when the
@@ -109,6 +113,7 @@ export interface CreateMenuOpts {
   onClose?: () => void;
   onStartWorld?: (values: CreateJoinValues) => void;
   onJoinWorld?: (values: CreateJoinValues) => void;
+  onDisconnect?: () => void;
 }
 
 export function createMenuController(opts: CreateMenuOpts): MenuController {
@@ -129,6 +134,7 @@ export function createMenuController(opts: CreateMenuOpts): MenuController {
     openUrl(url) { window.open(url, '_blank', 'noopener'); },
     startWorld(values) { opts.onStartWorld?.(values); },
     joinWorld(values) { opts.onJoinWorld?.(values); },
+    disconnect() { opts.onDisconnect?.(); },
     focusWidget(target) {
       if (!active) return;
       const widgetIdx = active.widgets.indexOf(target);
@@ -156,6 +162,7 @@ export function createMenuController(opts: CreateMenuOpts): MenuController {
     if (o.screen === 'create-join') return `menu:create-join:${o.mode}`;
     if (o.screen === 'connecting') return `menu:connecting:${o.host}`;
     if (o.screen === 'connect-error') return `menu:connect-error:${o.host}|${o.message}`;
+    if (o.screen === 'settings') return `menu:settings:${o.context}`;
     return `menu:${o.screen}`;
   }
 
@@ -308,7 +315,7 @@ function buildScreenWidgets(overlay: Overlay, ctx: MenuContext): ScreenBuild {
   if (overlay.kind !== 'menu') return { widgets: [] };
   switch (overlay.screen) {
     case 'landing':       return buildLandingScreen(ctx);
-    case 'settings':      return buildSettingsScreen(ctx);
+    case 'settings':      return buildSettingsScreen(ctx, overlay);
     case 'create-join':   return buildCreateJoinScreen(ctx, overlay);
     case 'connecting':    return buildConnectingScreen(ctx, overlay);
     case 'connect-error': return buildConnectErrorScreen(ctx, overlay);

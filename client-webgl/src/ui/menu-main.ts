@@ -75,7 +75,7 @@ export function buildLandingScreen(ctx: MenuContext): ScreenBuild {
     },
     {
       label: 'Settings',
-      onClick: () => ctx.goTo({ kind: 'menu', screen: 'settings' }),
+      onClick: () => ctx.goTo({ kind: 'menu', screen: 'settings', context: 'main-menu' }),
     },
   ];
 

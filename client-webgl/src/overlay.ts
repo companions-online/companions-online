@@ -30,7 +30,10 @@ export type Overlay =
   | { kind: 'container'; entityId: number; items: SyncedInventoryItem[] }
   | { kind: 'dialogue';  npcId: number; dialogue: unknown }
   | { kind: 'menu';      screen: 'landing' }
-  | { kind: 'menu';      screen: 'settings' }
+  // `context` distinguishes the entry point: 'main-menu' opens via the
+  // landing screen's Settings button (Music + Back); 'in-game' opens via
+  // Esc during gameplay (Music + Back-to-Game + Disconnect).
+  | { kind: 'menu';      screen: 'settings'; context: 'main-menu' | 'in-game' }
   | { kind: 'menu';      screen: 'create-join'; mode: 'new' | 'join'; values: CreateJoinValues }
   // Join-flow transient screens. `host` is the resolved WS URL being
   // dialed; `values` are carried through so Back / Retry land back on
