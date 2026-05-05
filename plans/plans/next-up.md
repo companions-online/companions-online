@@ -1,3 +1,37 @@
+
+Usability:
+* increase max weight carriable by player to 100; max weight in chest to 250
+* remove "q" as debug, the current action command in upper-left should always be visible
+
+
+Mobile support
+
+* bottom-right button menu:  [default right-click action] [Inventory] [Settings]
+^^ default right-click action is when a thing is selected in inventory -eg cooked meat- to heal; it should display the action itself. Eg for building, place wooden wall, which then places wherever the user left clicks/taps
+* quickslot items clickable -> switches quickslot item
+
+Remaining assets:
+* wooden wall, floor tile sprites
+* NPCs + new variants for player
+
+
+
+---
+
+user guide sections:
+
+> getting started
+* crafting guide
+* building guide
+> running server
+> running LLMs
+* harness
+* prompts
+* MCP server
+> contribute
+---
+
+
 Next, we want to develop a combined landing page - user guide - online instant play, using docusaurus
 * Goes into user-guide/    ; npm run build:guide  builds it
 
@@ -5,10 +39,6 @@ Next, we want to develop a combined landing page - user guide - online instant p
 Sections:
 * Landing: full-screen, no sidebar; middle: client-webgl/assets/game-logo.png,  below it: play now button
 ** on clicking "play now", it turns the entire logo + button into a canvas, dynamically loads the .js, starts the game
-
-
-
-
 
 
 
@@ -30,7 +60,7 @@ game:
 -elsyian github repo rewrite
 -elsyianmoe github reg + org setup
 
---license thinkthrough
+--license thinkthrough  => AGPL
 
 
 
