@@ -1,0 +1,28 @@
+/**
+ * Site-wide CSS overrides on top of Docusaurus's classic theme.
+ * Infima provides the variables — most theming should happen by
+ * tweaking these rather than writing new component CSS.
+ */
+
+:root {
+  --ifm-color-primary: #4f7cff;
+  --ifm-color-primary-dark: #2c5fff;
+  --ifm-color-primary-darker: #1e54ff;
+  --ifm-color-primary-darkest: #0033d6;
+  --ifm-color-primary-light: #7299ff;
+  --ifm-color-primary-lighter: #80a3ff;
+  --ifm-color-primary-lightest: #a8c0ff;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #80a3ff;
+  --ifm-color-primary-dark: #5e8aff;
+  --ifm-color-primary-darker: #4d7eff;
+  --ifm-color-primary-darkest: #1958ff;
+  --ifm-color-primary-light: #a2bcff;
+  --ifm-color-primary-lighter: #b3c8ff;
+  --ifm-color-primary-lightest: #e6edff;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

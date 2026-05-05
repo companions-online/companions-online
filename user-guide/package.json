@@ -1,0 +1,39 @@
+{
+  "name": "companions-online-user-guide",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Docusaurus site for Companions Online (landing + user guide).",
+  "scripts": {
+    "start": "docusaurus start --no-open",
+    "prebuild": "node scripts/copy-assets.mjs",
+    "build": "docusaurus build --out-dir ../docs",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve --dir ../docs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.1",
+    "@docusaurus/preset-classic": "^3.10.1",
+    "@docusaurus/theme-mermaid": "^3.10.1",
+    "@easyops-cn/docusaurus-search-local": "^0.55.1",
+    "@mdx-js/react": "^3.0.0",
+    "clsx": "^2.0.0",
+    "posthog-docusaurus": "^2.0.5",
+    "prism-react-renderer": "^2.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "^3.10.1",
+    "@docusaurus/tsconfig": "^3.10.1",
+    "@docusaurus/types": "^3.10.1",
+    "typescript": "^5.7.0"
+  },
+  "browserslist": {
+    "production": [">0.5%", "not dead", "not op_mini all"],
+    "development": ["last 3 chrome version", "last 3 firefox version", "last 5 safari version"]
+  },
+  "engines": {
+    "node": ">=18.0"
+  }
+}

@@ -14,6 +14,8 @@
     "dev:client-gl": "tsx client-webgl/dev.ts",
     "dev:standalone": "tsx client-webgl/dev-standalone.ts",
     "build:client-gl": "tsx client-webgl/build.ts",
+    "dev:guide": "npm --prefix user-guide install && npm --prefix user-guide start -- --no-open",
+    "build:guide": "npm run build:client-gl && npm --prefix user-guide install && npm --prefix user-guide run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
