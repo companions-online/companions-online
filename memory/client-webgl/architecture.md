@@ -326,7 +326,9 @@ scene.overlay: Overlay =
   | { kind: 'inventory' }
   | { kind: 'container'; entityId: number; items: SyncedInventoryItem[] }
   | { kind: 'dialogue';  npcId: number; dialogue: unknown }
-  | { kind: 'menu';      screen: 'landing' | 'create-join' | 'settings' }
+  | { kind: 'menu';      screen: 'landing' | 'create-join'
+                                | 'connecting' | 'connect-error' }
+  | { kind: 'menu';      screen: 'settings'; context: 'main-menu' | 'in-game' }
 ```
 
 Helpers in `overlay.ts`:

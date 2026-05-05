@@ -23,8 +23,10 @@ the "Game-start orchestration" section below.
   consistent with `effects/effect-sprites.ts`.
 - `ui/widgets.ts` — closure factories: `makeButton`, `makeTextInput`,
   `makeLabel`, `makeDivider`, `makeImage`, `makeBackdropDim`,
-  `makeSelectableTile`. `Widget` interface (bounds, draw, hitTest,
-  optional onMouseDown/Up/Key/setFocus, dispose).
+  `makeSelectableTile`, `makeToggle` (focusable on/off; click + Space +
+  Enter all flip; closure-local state, no persistence). `Widget`
+  interface (bounds, draw, hitTest, optional onMouseDown/Up/Key/setFocus,
+  dispose).
 - `ui/logo.ts` — one-shot `loadMenuLogo(gl)` for `assets/game-logo.png`.
 - `ui/menu.ts` — orchestrator (`createMenuController`). Owns the active
   screen widgets, focus, mouse + key dispatch, screen rebuild on
@@ -33,8 +35,16 @@ the "Game-start orchestration" section below.
 - `ui/menu-main.ts` — landing screen. Three-button stack
   (`New Game | Join Game | Settings`); footer link
   bottom-left, `build NNN` bottom-right.
-- `ui/menu-settings.ts` — placeholder. Title + Back. Empty per the
-  milestone scope.
+- `ui/menu-settings.ts` — context-aware screen. Always: title + **Music**
+  toggle (`makeToggle`, pure UI placeholder — no persistence, no audio
+  playback wired yet). Then a button row that depends on the overlay's
+  `context`:
+    - `'main-menu'` (entered from landing) → single **Back** button.
+      Enter and Esc both fire Back.
+    - `'in-game'` (entered via Esc during play) → **Back to Game** +
+      **Disconnect**. Esc fires Back to Game; Enter is intentionally
+      unwired (no accidental Disconnect on a stray Enter). Disconnect
+      routes via `MenuContext.disconnect()`.
 - `ui/menu-create-join.ts` — unified create/join screen. Mode-aware
   upper section (Seed input for `'new'`; Host input + Paste button for
   `'join'`); Character lower section (Name input + Avatar tiles);
@@ -71,7 +81,10 @@ the "Game-start orchestration" section below.
 variants:
 
 - `{kind:'menu', screen:'landing'}` — start point.
-- `{kind:'menu', screen:'settings'}` — placeholder.
+- `{kind:'menu', screen:'settings', context: 'main-menu' | 'in-game'}` —
+  context distinguishes entry point. Included in the menu controller's
+  signature (`menu:settings:${context}`) so a context flip rebuilds the
+  button row.
 - `{kind:'menu', screen:'create-join', mode, values}` — values is
   `{name, avatar, seed, host}` carried so subsequent transitions
   (connecting, connect-error, back) round-trip user edits.
@@ -120,6 +133,42 @@ goTo keeps the active widget tree mounted across keystrokes — focus
    the swap immediately replays buffered welcome through the dispatch.
    Then `applyCharacterChoices(values)` and dismiss.
 
+## Disconnect orchestration (`main.ts`)
+
+Inverse of `startWorld` / `joinWorld`. Fired by the in-game settings
+screen's **Disconnect** button via `MenuContext.disconnect()`, which is
+plumbed through `CreateMenuOpts.onDisconnect` to `main.ts::disconnect()`:
+
+1. `tearDownActive()` — stops whichever world is live (in-tab player or
+   networked conn).
+2. `scene.reset()` — wipes replicated state.
+3. `bootStandaloneObserver(scene, initialSeed)` — re-mounts the observer
+   backdrop; `observerRefs` is reassigned. Reusing `initialSeed` keeps
+   post-disconnect identical to boot-time observer.
+4. `connRef.swap(observerRefs.conn)` — dispatch routes through observer
+   bridge again.
+5. `scene.overlay = { kind: 'menu', screen: 'landing' }` — back at the
+   landing screen with autopilot pan running underneath.
+
+`MenuContext` exposes `disconnect()` alongside `startWorld` /
+`joinWorld`. Reserved for the in-game flow only — main-menu Settings
+never calls it (no button to press).
+
+## In-game entry (Esc)
+
+`controls/keyboard.ts` has an Esc fallthrough at the bottom of the
+keydown handler: when `scene.overlay.kind === 'none'` (no inventory,
+no quickslot selection, no placement mode — those branches early-return
+on Esc and take priority), Esc sets
+`overlay = {kind:'menu', screen:'settings', context:'in-game'}`.
+
+The handler calls `ev.stopImmediatePropagation()` after the mutation.
+Both `attachKeyboardControls` and `attachMenuInput` register keydown
+listeners on the same canvas; without stop-prop, the menu-input listener
+would see the just-mutated overlay (`kind === 'menu'`) and dispatch the
+same Esc to the menu controller's `escapeAction` (= Back to Game) in the
+same tick — closing the menu we just opened.
+
 ## Server `/avatar` command
 
 Avatar selection wires through the existing `BlueprintData.variant`
@@ -152,7 +201,8 @@ then screen-level defaults:
 - Screen-level `defaultAction` fires on Enter, `escapeAction` on Esc.
   Per-screen wiring:
   - landing: neither (user picks a button)
-  - settings: both fire Back
+  - settings (main-menu): Enter and Esc both fire Back
+  - settings (in-game): Esc fires Back to Game; Enter unwired
   - create-join: Enter → Start/Join World; Esc → Back to landing
   - connecting: neither (read-only; 8s timeout bounds it)
   - connect-error: Enter → Retry; Esc → Back to create-join
