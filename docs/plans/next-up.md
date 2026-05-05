@@ -1,3 +1,53 @@
+For next step, we want to turn this into an actual product:
+* we've developed a prototype around standalone mode in ../standalone/standalone -this will get integrated into the main game client. Essentially, it pulls in the server components necessary to run the game alone, without connecting to any server explicitly
+* client-gl will be able to run in stand-alone mode (default), or server running mode (GAME_SERVER_HOST js global is defined)
+* client will start in a main menu; with logo (assets/game-logo) on top, below it buttons for main menu; bottom left: companions-online.github.io    ; bottom right: build 123
+* while the user is in main menu, a new game-world (default seed) is spin up, and entered in observer mode: camera moves around: 3-5 sec in one of 8 directions, then direction change, repeatedly (unless hit edge points, in which case, forcibly towards the middle of the world) (this is the current observer view as implemented)
+
+
+* Main menu is determined by whether it runs in standalone, or server running mode:
+** in standalone mode, game menu is:  [New Game]  [Join Game]   [Settings]
+** server mode, it is only:   [Join Game]   [Settings]
+* after this, we have a new game screen. This will be divided into upper: world/server section, and lower: player section
+** Upper section: in new game -> World Seed: [42]   <- clicking on the box drops in cursor to edit it
+**** In join game:  Remote Host: [https://...]   <- accepts domain, or specific URL; if GAME_SERVER_HOST is set, autofill this out; next to it a paste icon, clicking on it pastes clipboard directly
+** Lower section: Character
+**** Name: [Player]   <- editable
+**** Avatar:  list variants of player sprite (currently only catgirl), with highlight on the selected one
+** bottom button:  [Start World]   or   [Join World] depending on whether new/join in-menu
+** in Start world -> starts up the game-world instance with specified seed, starts the game
+** in Join world -> displays a popup Connecting to [host]...     then either Connection Error:\n [error string]\n [Retry] [Back]  or joins the game directly
+
+
+
+
+
+
+Product update:
+-companions-online.github.io   <- docs page
+--about, play instantly, crafting guide, building guide
+--MCP / I'm an AI <- instant prompt-drop, how to connect, how to play
+--contribution guide
+--license
+
+game:
+-splash page  -> create single player game, join game somewhere
+--game bottom: settings, inventory
+--first game launch -> tutorial-ish: welcome to companions online, how to start
+
+-soundtracks dir
+
+
+-elsyian github repo rewrite
+-elsyianmoe github reg + org setup
+
+--license thinkthrough
+
+
+
+
+
+World refresh update:
 next stage of game design:
 * in-house elements to build/craft: internal decor (fireplace, table, chair, etc)
 * palm trees
