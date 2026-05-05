@@ -75,5 +75,5 @@ In decreasing order of how often you'll re-read:
    covered.
 
 Phase-by-phase design history lives in
-`docs/plans/webgl-client-network-integration.md` — useful context but
+`plans/plans/webgl-client-network-integration.md` — useful context but
 not required reading.

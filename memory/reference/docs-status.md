@@ -1,6 +1,6 @@
 # Docs vs Implementation Status
 
-`docs/` contains the original design seed documents. Implementation has evolved significantly. **Always trust the code over docs.**
+`plans/` contains working docs + the original design seed documents. Implementation has evolved significantly. **Always trust the code over docs.**
 
 ## Divergences
 
@@ -25,4 +25,4 @@
 ## What to trust
 1. **Code** — always authoritative
 2. **memory/** — orientation docs (this directory), updated per conversation
-3. **docs/** — design seeds only, may be outdated
+3. **plans/** — working docs + design seeds, may be outdated

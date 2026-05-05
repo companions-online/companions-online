@@ -27,7 +27,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [Current State](reference/current-state.md) — what's done, queued, known issues
 - [Design Decisions](reference/design-decisions.md) — why the code is shaped the way it is
 - [File Map](reference/file-map.md) — where every module lives
-- [Docs Status](reference/docs-status.md) — where `docs/` has drifted from code
+- [Docs Status](reference/docs-status.md) — where `plans/` has drifted from code
 - [Server Commands + Entity Meta](reference/server-commands.md) — `/nick` dispatcher, `MetaKey` sync channel, nameplates
 - [Occupancy + Logger](reference/occupancy-and-logger.md) — occupancy = single-blocker invariant; per-world WorldLogger (file/memory) + assertions
 - [Debug Tools](reference/debug-tools.md) — `d`-key world dumps + `scripts/world-dump-view.ts` forensic CLI (stuck-state scan, near/entity/find queries) + server.log grep

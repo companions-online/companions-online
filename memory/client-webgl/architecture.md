@@ -157,7 +157,7 @@ Tests drive it manually.
 **Forward-compatible with bend-only waypoints.** Current server sync
 is per-tile; client lerps between adjacent tiles each server tick.
 When the server deferred optimization in
-`docs/plans/bend-only-waypoints.md` lands, `position` becomes the
+`plans/plans/bend-only-waypoints.md` lands, `position` becomes the
 leg-start and `nextWaypoint` the bend, and the same lerp code covers
 multi-tile straight runs. No client edit needed.
 

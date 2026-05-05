@@ -59,7 +59,7 @@ single-frame blit. Both factories respect the flag.
 Server currently writes `position` to the dirty-tracked component
 store every tile (`server/src/systems/movement.ts:116`). Client lerps
 between adjacent tiles — correct but granular. The deferred
-optimization (`docs/plans/bend-only-waypoints.md`) changes the server
+optimization (`plans/plans/bend-only-waypoints.md`) changes the server
 to emit only at direction changes, with `nextWaypoint` as the bend.
 **The client lerp code is already forward-compatible** — the only
 change needed is the server side. Don't write client fixes

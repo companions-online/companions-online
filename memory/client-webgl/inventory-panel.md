@@ -234,4 +234,4 @@ adds one.
   multi-frame static placeable, hardcoded by id. Add the field if a
   third one shows up.
 - Ground piles — implementation of the
-  `docs/plans/ground-piles.md` plan is independent of this UI.
+  `plans/plans/ground-piles.md` plan is independent of this UI.
