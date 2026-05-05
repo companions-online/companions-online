@@ -45,8 +45,28 @@ function GameEmbedInner() {
     };
   }, [state]);
 
+  // Body class drives navbar hiding (CSS rule in src/css/custom.css)
+  // while the game owns the screen. Cleanup ensures we restore chrome
+  // even if the component unmounts mid-game.
+  useEffect(() => {
+    const showCanvas = state !== 'idle';
+    if (showCanvas) document.body.classList.add('game-running');
+    else document.body.classList.remove('game-running');
+    return () => document.body.classList.remove('game-running');
+  }, [state]);
+
   const onPlay = (): void => {
     if (state === 'idle') setState('launching');
+  };
+
+  // Exit: simplest reliable teardown is a full reload. The game module
+  // loaded by the script tag has running timers / canvas refs / WebGL
+  // state with no exposed shutdown hook, so trying to "soft-exit" by
+  // unmounting the canvas would leave the game ticking against a
+  // detached DOM. Reload trades a flash for a clean slate.
+  const onExit = (): void => {
+    document.body.classList.remove('game-running');
+    window.location.reload();
   };
 
   const showCanvas = state !== 'idle';
@@ -68,7 +88,20 @@ function GameEmbedInner() {
           </button>
         </div>
       )}
-      {showCanvas && <canvas id="game" tabIndex={0} className={styles.canvas} />}
+      {showCanvas && (
+        <>
+          <canvas id="game" tabIndex={0} className={styles.canvas} />
+          <button
+            type="button"
+            className={styles.exitBtn}
+            onClick={onExit}
+            aria-label="Exit game"
+            title="Exit game"
+          >
+            ✕
+          </button>
+        </>
+      )}
     </div>
   );
 }

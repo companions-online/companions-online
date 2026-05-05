@@ -26,3 +26,14 @@
   --ifm-color-primary-lightest: #e6edff;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/* GameEmbed hides the navbar when the game owns the viewport (see
+ * useEffect in src/components/GameEmbed.tsx that toggles this class).
+ * The hero itself is position:fixed and covers the rest of the page,
+ * but the sticky navbar would otherwise paint over its top edge. */
+body.game-running .navbar {
+  display: none;
+}
+body.game-running {
+  overflow: hidden;
+}

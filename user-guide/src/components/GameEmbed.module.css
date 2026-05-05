@@ -10,12 +10,22 @@
   box-sizing: border-box;
 }
 
-/* Once the game is running we want a black letterbox behind the
- * scaled canvas — matches client-webgl/rescale-variant-1.html. */
+/* Once the game is running, take over the whole viewport: position
+ * fixed so the navbar (also hidden via body.game-running in custom.css)
+ * and three-column section beneath are completely covered. Black
+ * letterbox matches client-webgl/rescale-variant-1.html. */
 .heroRunning {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   background: #000;
   padding: 0;
-  min-height: 100vh;
+  min-height: auto;
+  /* Use dynamic viewport units where supported so mobile browser
+   * URL-bar collapse doesn't leave a gap. Falls back to vh. */
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
 }
 
 .idleStack {
@@ -63,6 +73,38 @@
   aspect-ratio: 1330 / 750;
   max-width: 100vw;
   max-height: 100vh;
+  max-height: 100dvh;
   width: auto;
   height: auto;
+}
+
+/* Floating exit affordance — sits above the canvas in the top-right.
+ * On click we reload the page (see onExit comment in GameEmbed.tsx).
+ * Sized for thumb reach on mobile (44px is the iOS HIG minimum). */
+.exitBtn {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: background 120ms ease;
+}
+
+.exitBtn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.exitBtn:active {
+  background: rgba(0, 0, 0, 0.95);
 }
