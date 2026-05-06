@@ -8,9 +8,9 @@ import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
 import type { Connection } from '../network/connection.js';
 import type { Scene } from '../scene.js';
 import { isPlacementActive } from '../ui/placement.js';
-import { markPendingDecrement } from '../ui/inventory-panel.js';
+import { closeInventory } from '../ui/inventory-panel.js';
 import { selectQuickSlot, clearQuickSlotSelection } from '../ui/quickslot.js';
-import { getContainer, isInventoryShowing } from '../overlay.js';
+import { isInventoryShowing } from '../overlay.js';
 
 const MAX_CHAT_LENGTH = 200;
 
@@ -30,35 +30,6 @@ export function attachKeyboardControls(
     chatActive: false,
     chatBuffer: '',
   };
-
-  // Close the inventory panel. If the player was holding a stack on the
-  // cursor, drop it at their feet (Minecraft default). Also closes any
-  // open container client-side — the server's view lingers until the
-  // player moves away, but the local UI releases immediately.
-  function closeInventory() {
-    if (scene.heldStack) {
-      markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
-      const container = getContainer(scene.overlay);
-      if (scene.heldStack.source === 'container' && container) {
-        // Don't accidentally drop a chest item to the world; return it.
-        connection.send({
-          action: ClientAction.Transfer,
-          itemId: scene.heldStack.itemId,
-          containerId: container.entityId,
-          direction: 1,
-          quantity: scene.heldStack.quantity,
-        });
-      } else {
-        connection.send({
-          action: ClientAction.Drop,
-          itemId: scene.heldStack.itemId,
-          quantity: scene.heldStack.quantity,
-        });
-      }
-      scene.heldStack = null;
-    }
-    scene.overlay = { kind: 'none' };
-  }
 
   canvas.addEventListener('keydown', (ev) => {
     // --- Chat mode ---
@@ -117,7 +88,7 @@ export function attachKeyboardControls(
     //     underneath the panel. ---
     if (isInventoryShowing(scene.overlay)) {
       if (ev.key === 'Escape' || ev.key === 'i' || ev.key === 'I') {
-        closeInventory();
+        closeInventory(scene, connection);
         ev.preventDefault();
         return;
       }

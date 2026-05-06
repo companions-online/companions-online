@@ -32,7 +32,12 @@ import { selectedItem, selectedMode } from './quickslot.js';
 export type HudButtonId = 'action' | 'inventory' | 'settings';
 
 const BUTTON_H = 44;
-const BUTTON_W = 140;
+// Action button stays wide enough for labels like "Place Wooden Wall".
+// Inventory + Settings carry shorter labels, so they're slimmer — keeps
+// the action button's left edge clear of the centered HUD quickbar's
+// rightmost cell.
+const ACTION_BUTTON_W = 140;
+const SIDE_BUTTON_W = 100;
 const BUTTON_GAP = 6;
 const BUTTON_RIGHT_MARGIN = 8;
 const BUTTON_Y = GAME_Y + GAME_H - BUTTON_H - 8;
@@ -43,18 +48,16 @@ const RIGHT_EDGE_X = GAME_X + GAME_W - BUTTON_RIGHT_MARGIN;
 
 interface ButtonRect { x: number; y: number; w: number; h: number }
 
-/** The three buttons live at fixed positions; the action slot is reserved
- *  even when the button is hidden so inventory + settings don't shuffle. */
+/** Per-button rects. Order from right→left: settings, inventory, action.
+ *  Positions are fixed; the action button's slot is reserved even when
+ *  the button is hidden, so inventory + settings don't shift. */
 function buttonRect(id: HudButtonId): ButtonRect {
-  const stride = BUTTON_W + BUTTON_GAP;
-  // Right→left: settings, inventory, action.
-  const fromRight = id === 'settings' ? 0 : id === 'inventory' ? 1 : 2;
-  return {
-    x: RIGHT_EDGE_X - BUTTON_W - fromRight * stride,
-    y: BUTTON_Y,
-    w: BUTTON_W,
-    h: BUTTON_H,
-  };
+  const settingsX = RIGHT_EDGE_X - SIDE_BUTTON_W;
+  const inventoryX = settingsX - BUTTON_GAP - SIDE_BUTTON_W;
+  const actionX = inventoryX - BUTTON_GAP - ACTION_BUTTON_W;
+  if (id === 'settings')  return { x: settingsX,  y: BUTTON_Y, w: SIDE_BUTTON_W,   h: BUTTON_H };
+  if (id === 'inventory') return { x: inventoryX, y: BUTTON_Y, w: SIDE_BUTTON_W,   h: BUTTON_H };
+  return                         { x: actionX,    y: BUTTON_Y, w: ACTION_BUTTON_W, h: BUTTON_H };
 }
 
 // --- Solids + text cache (mirror of inventory-panel.ts patterns, kept

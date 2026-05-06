@@ -218,16 +218,54 @@ describe('inventory panel click dispatch', () => {
     expect(conn.sent).toHaveLength(0);
   });
 
-  it('click outside panel with held stack sends Drop with quantity and clears held', async () => {
+  it('click outside panel with held stack sends Drop with quantity, clears held, and closes overlay', async () => {
     const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
     scene.heldStack = { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 4, source: 'inventory' };
     handleInventoryPanelClick(scene, conn, { kind: 'outside' },
       { button: 'left', shift: false });
     expect(scene.heldStack).toBeNull();
+    expect(scene.overlay.kind).toBe('none');
     expect(conn.sent).toHaveLength(1);
     expect(conn.sent[0]).toMatchObject({
       action: ClientAction.Drop, itemId: 1, quantity: 4,
     });
+  });
+
+  it('click outside panel with no held stack closes the overlay (no actions sent)', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
+    handleInventoryPanelClick(scene, conn, { kind: 'outside' },
+      { button: 'left', shift: false });
+    expect(scene.overlay.kind).toBe('none');
+    expect(conn.sent).toHaveLength(0);
+  });
+
+  it('click outside container with held stack from container returns to container and closes', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = {
+      kind: 'container',
+      entityId: 99,
+      items: [{ itemId: 50, blueprintId: BlueprintType.Wood, quantity: 7, equippedSlot: 0 }],
+    };
+    scene.heldStack = { itemId: 50, blueprintId: BlueprintType.Wood, quantity: 7, source: 'container' };
+    handleInventoryPanelClick(scene, conn, { kind: 'outside' },
+      { button: 'left', shift: false });
+    expect(scene.heldStack).toBeNull();
+    expect(scene.overlay.kind).toBe('none');
+    expect(conn.sent).toHaveLength(1);
+    expect(conn.sent[0]).toMatchObject({
+      action: ClientAction.Transfer, itemId: 50, containerId: 99, direction: 1, quantity: 7,
+    });
+  });
+
+  it('click on panel inside-whitespace with no held stack is a no-op (overlay stays open)', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
+    handleInventoryPanelClick(scene, conn, { kind: 'inside' },
+      { button: 'left', shift: false });
+    expect(scene.overlay.kind).toBe('inventory');
+    expect(conn.sent).toHaveLength(0);
   });
 
   it('right-click on a stack picks up half (ceiling)', async () => {

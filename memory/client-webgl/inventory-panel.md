@@ -54,8 +54,15 @@ across panels. Cursor position from `scene.cursorScreenX/Y` (updated by
 | held | left | grid w/ different item | swap — held becomes displaced item; partial-held + different = no-op |
 | held | left | matching equip slot | Equip with quantity |
 | held | left | container cell | Transfer player→chest (or chest→player if held came from container), with quantity |
-| held | left | outside panel | Drop with quantity |
-| held | I / Esc | — | Drop (or Transfer-back if from chest) at player tile, then close |
+| any  | left | outside panel | Close (held: Drop, or Transfer-back if from chest) |
+| any  | I / Esc | — | Close (held: same as above) |
+
+The keyboard close (`i` / Esc) and the click-outside dismiss share one
+helper: `closeInventory(scene, conn)` exported from
+`client-webgl/src/ui/inventory-panel.ts`. It returns held stacks to
+their source container (if `heldStack.source === 'container'`), drops
+to world otherwise, clears `scene.armedAction`, and sets `scene.overlay
+= { kind: 'none' }`.
 
 Server-relevant outcomes (Equip/Unequip/Drop/Transfer/Craft) are sent
 immediately; the next `InventorySync` re-hydrates everything. Pure

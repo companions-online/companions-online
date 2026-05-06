@@ -792,24 +792,48 @@ export function itemInSlot(scene: Scene, slotIndex: number) {
 
 export interface ClickModifiers { button: 'left' | 'right'; shift: boolean }
 
+/** Close the inventory / container overlay. Held stacks are returned to
+ *  their source container (if any) or dropped into the world. Shared by
+ *  the keyboard close paths (`i` / Esc) and the click-outside-panel
+ *  dismiss in `handleInventoryPanelClick`. */
+export function closeInventory(scene: Scene, connection: Connection): void {
+  if (scene.heldStack) {
+    markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
+    const container = getContainer(scene.overlay);
+    if (scene.heldStack.source === 'container' && container) {
+      // Don't accidentally drop a chest item to the world; return it.
+      connection.send({
+        action: ClientAction.Transfer,
+        itemId: scene.heldStack.itemId,
+        containerId: container.entityId,
+        direction: 1,
+        quantity: scene.heldStack.quantity,
+      });
+    } else {
+      connection.send({
+        action: ClientAction.Drop,
+        itemId: scene.heldStack.itemId,
+        quantity: scene.heldStack.quantity,
+      });
+    }
+    scene.heldStack = null;
+  }
+  scene.armedAction = null;
+  scene.overlay = { kind: 'none' };
+}
+
 export function handleInventoryPanelClick(
   scene: Scene,
   connection: Connection,
   hit: PanelHit,
   mods: ClickModifiers,
 ): void {
-  // Held-stack released outside the panel = drop into world at player's
-  // tile. The panel stays open; user can continue dragging.
+  // Click on the dimmed backdrop outside the panel rect = dismiss.
+  // Mirrors the `i`/Esc keyboard close so a tap on mobile behaves like a
+  // standard modal dismiss. Any held stack is dropped to world (or
+  // returned to its source container) as part of the close.
   if (hit.kind === 'outside') {
-    if (scene.heldStack) {
-      markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
-      connection.send({
-        action: ClientAction.Drop,
-        itemId: scene.heldStack.itemId,
-        quantity: scene.heldStack.quantity,
-      });
-      scene.heldStack = null;
-    }
+    closeInventory(scene, connection);
     return;
   }
 
