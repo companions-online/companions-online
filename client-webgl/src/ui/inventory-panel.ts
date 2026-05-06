@@ -16,7 +16,7 @@
 
 import { getBlueprint, BlueprintType } from '@shared/blueprints.js';
 import { getAllRecipes } from '@shared/recipes.js';
-import { canCraft, getWeight, getEquipped, numberToEquipSlot, equipSlotToNumber, type EquipSlot } from '@shared/inventory.js';
+import { canCraft, getWeight, getEquipped, numberToEquipSlot, equipSlotToNumber, MAX_PLAYER_WEIGHT, type EquipSlot } from '@shared/inventory.js';
 import { ClientAction } from '@shared/actions.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H } from '../platform/config.js';
@@ -361,9 +361,9 @@ function drawPlayerSection(
   const inv = { items: scene.inventory.map(i => ({
     itemId: i.itemId, blueprintId: i.blueprintId, quantity: i.quantity,
     equippedSlot: numberToEquipSlot(i.equippedSlot),
-  })), maxWeight: 50 };
+  })), maxWeight: MAX_PLAYER_WEIGHT };
   const weight = getWeight(inv);
-  const wtLabel = `Weight  ${weight}/50`;
+  const wtLabel = `Weight  ${weight}/${MAX_PLAYER_WEIGHT}`;
   drawText(gl, sprites, text(factory, `wt:${wtLabel}`, {
     text: wtLabel, fillColor: '#fff', fontPx: 13,
   }), LEFT_X, PANEL_Y + PAD + 102);
@@ -1086,6 +1086,6 @@ function toLogicalInventory(scene: Scene) {
       quantity: i.quantity,
       equippedSlot: numberToEquipSlot(i.equippedSlot),
     })),
-    maxWeight: 50,
+    maxWeight: MAX_PLAYER_WEIGHT,
   };
 }

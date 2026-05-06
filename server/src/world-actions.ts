@@ -14,7 +14,7 @@ import { ClientAction, ActionType } from '@shared/actions.js';
 import { BlueprintType, getBlueprint, blueprintToBuilding } from '@shared/blueprints.js';
 import { Building, Terrain } from '@shared/terrain.js';
 import { StatusEffect } from '@shared/status-effects.js';
-import { findItem, getWeight, numberToEquipSlot } from '@shared/inventory.js';
+import { findItem, getWeight, numberToEquipSlot, MAX_CHEST_WEIGHT } from '@shared/inventory.js';
 import { getRecipe } from '@shared/recipes.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import { INTEREST_RANGE } from '@shared/constants.js';
@@ -564,7 +564,7 @@ function doPlace(world: GameWorld, eid: number, slot: PlayerSlot, itemId: number
     world.entities.statusEffects.set(newEid, { effects: StatusEffect.Placed });
     if (bp.maxHp) world.entities.health.set(newEid, { currentHp: bp.maxHp, maxHp: bp.maxHp });
     if (bp.collides) world.occupancy.set(tileX, tileY, newEid);
-    if (item.blueprintId === BlueprintType.StorageChest) world.inventoryMgr.create(newEid, 100);
+    if (item.blueprintId === BlueprintType.StorageChest) world.inventoryMgr.create(newEid, MAX_CHEST_WEIGHT);
   }
   slot.connection.onInventoryChanged(eid, world);
   world.emitEvent(eid, world.makeEvent('building_placed', {

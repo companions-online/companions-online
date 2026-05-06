@@ -5,6 +5,7 @@ import { BlueprintType, getBlueprint } from '../shared/src/blueprints.js';
 import { ActionType } from '../shared/src/actions.js';
 import { isPlaced } from '../shared/src/status-effects.js';
 import { resolveAction, describeAction } from '../shared/src/action-resolver.js';
+import { MAX_PLAYER_WEIGHT } from '../shared/src/inventory.js';
 import type { ActionContext } from '../shared/src/action-resolver.js';
 import { state, getBpId, getEffects, getActionType, getHp } from './state.js';
 import { renderInventoryLine, renderCraftingLine, renderContainerLine, renderDialogueLine } from './panels.js';
@@ -197,7 +198,7 @@ export function render() {
 
   const status1 = state.chatMode
     ? ` Chat: ${state.chatInput}_`
-    : ` ${hpStr} (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${state.entityMap.size} T:${state.lastTick} W:${wt}/50${activityStatus}`;
+    : ` ${hpStr} (${playerX},${playerY}) Cursor(${cursorWorldX},${cursorWorldY}) E:${state.entityMap.size} T:${state.lastTick} W:${wt}/${MAX_PLAYER_WEIGHT}${activityStatus}`;
   const keys = state.chatMode
     ? ' [enter]send [esc]cancel'
     : state.panelMode === 'none'

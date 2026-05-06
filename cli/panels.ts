@@ -1,6 +1,6 @@
 import { getBlueprint } from '../shared/src/blueprints.js';
 import { getAllRecipes } from '../shared/src/recipes.js';
-import { canCraft, numberToEquipSlot } from '../shared/src/inventory.js';
+import { canCraft, numberToEquipSlot, MAX_PLAYER_WEIGHT } from '../shared/src/inventory.js';
 import { state, getBpId } from './state.js';
 
 export function renderInventoryLine(vy: number, totalRows: number, maxW: number): string {
@@ -27,7 +27,7 @@ export function renderInventoryLine(vy: number, totalRows: number, maxW: number)
   const footerStart = Math.max(state.inventory.length + 3, totalRows - 3);
   if (vy === footerStart) {
     const wt = state.inventory.reduce((s, i) => s + (getBlueprint(i.blueprintId)?.weight ?? 0) * i.quantity, 0);
-    return `Weight: ${wt}/50`;
+    return `Weight: ${wt}/${MAX_PLAYER_WEIGHT}`;
   }
   return '';
 }
@@ -44,7 +44,7 @@ export function renderCraftingLine(vy: number, totalRows: number, maxW: number):
       quantity: i.quantity,
       equippedSlot: numberToEquipSlot(i.equippedSlot),
     })),
-    maxWeight: 50,
+    maxWeight: MAX_PLAYER_WEIGHT,
   };
 
   const recipeIdx = vy - 2;

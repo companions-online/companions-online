@@ -10,7 +10,7 @@ export class InventoryManager {
   private inventories = new Map<number, Inventory>();
   private nextItemId = 1;
 
-  create(entityId: number, maxWeight = 50): void {
+  create(entityId: number, maxWeight: number): void {
     this.inventories.set(entityId, { items: [], maxWeight });
   }
 

@@ -1,7 +1,7 @@
-// Keyboard controller — manages chat input mode, debug toggle, and the
-// inventory-panel open/close toggle. Attaches to the canvas element
-// (requires tabindex="0" for focus). Returns a KeyboardState read by the
-// renderer + mouse controller each frame.
+// Keyboard controller — manages chat input mode and the inventory-panel
+// open/close toggle. Attaches to the canvas element (requires tabindex="0"
+// for focus). Returns a KeyboardState read by the renderer + mouse
+// controller each frame.
 
 import { ClientAction } from '@shared/actions.js';
 import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
@@ -19,8 +19,6 @@ export interface KeyboardState {
   chatActive: boolean;
   /** Current chat input buffer. */
   chatBuffer: string;
-  /** True when debug overlay is active. */
-  debugMode: boolean;
 }
 
 export function attachKeyboardControls(
@@ -31,7 +29,6 @@ export function attachKeyboardControls(
   const state: KeyboardState = {
     chatActive: false,
     chatBuffer: '',
-    debugMode: false,
   };
 
   // Close the inventory panel. If the player was holding a stack on the
@@ -167,11 +164,6 @@ export function attachKeyboardControls(
     }
     if (ev.key === 'Enter') {
       state.chatActive = true;
-      ev.preventDefault();
-      return;
-    }
-    if (ev.key === 'q' || ev.key === 'Q') {
-      state.debugMode = !state.debugMode;
       ev.preventDefault();
       return;
     }

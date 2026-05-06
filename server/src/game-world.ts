@@ -8,6 +8,7 @@ import { generateWorld } from '@shared/world/world-gen.js';
 import type { WorldMap } from '@shared/world/world-map.js';
 import type { DecodedAction, DecodedEntityUpdate, DecodedTileUpdate } from '@shared/protocol/codec.js';
 import { MetaKey } from '@shared/entity-meta.js';
+import { MAX_PLAYER_WEIGHT } from '@shared/inventory.js';
 import { getLootTable } from '@shared/loot-tables.js';
 import { EntityManager } from './ecs/entity-manager.js';
 import { OccupancyGrid } from './occupancy.js';
@@ -267,7 +268,7 @@ export class GameWorld implements SystemState {
     this.entities.speed.set(eid, bp.speed ?? 3);
     this.occupancy.set(sx, sy, eid);
 
-    this.inventoryMgr.create(eid, 50);
+    this.inventoryMgr.create(eid, MAX_PLAYER_WEIGHT);
     this.inventoryMgr.addItem(eid, BlueprintType.Wood, 2);
     this.inventoryMgr.addItem(eid, BlueprintType.Rock, 1);
 
