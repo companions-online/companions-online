@@ -17,9 +17,11 @@ const repoRoot = resolve(userGuideRoot, '..');
 const assetsSrc = resolve(repoRoot, 'client-webgl', 'assets');
 const bundleSrc = resolve(repoRoot, 'client-webgl', 'dist', 'main.js');
 const bundleMapSrc = resolve(repoRoot, 'client-webgl', 'dist', 'main.js.map');
+const promptSrc = resolve(repoRoot, 'harness', 'config', 'prompt.md');
 
 const assetsDst = resolve(userGuideRoot, 'static', 'assets');
 const gameDst = resolve(userGuideRoot, 'static', 'game');
+const promptDst = resolve(userGuideRoot, 'static', 'prompt.md');
 
 if (!existsSync(assetsSrc)) {
   console.error(`[copy-assets] missing source: ${assetsSrc}`);
@@ -32,9 +34,14 @@ if (!existsSync(bundleSrc)) {
   );
   process.exit(1);
 }
+if (!existsSync(promptSrc)) {
+  console.error(`[copy-assets] missing harness prompt: ${promptSrc}`);
+  process.exit(1);
+}
 
 rmSync(assetsDst, { recursive: true, force: true });
 rmSync(gameDst, { recursive: true, force: true });
+rmSync(promptDst, { force: true });
 mkdirSync(gameDst, { recursive: true });
 
 cpSync(assetsSrc, assetsDst, { recursive: true });
@@ -42,6 +49,8 @@ cpSync(bundleSrc, resolve(gameDst, 'main.js'));
 if (existsSync(bundleMapSrc)) {
   cpSync(bundleMapSrc, resolve(gameDst, 'main.js.map'));
 }
+cpSync(promptSrc, promptDst);
 
 console.log(`[copy-assets] assets → ${assetsDst}`);
 console.log(`[copy-assets] bundle → ${gameDst}/main.js`);
+console.log(`[copy-assets] prompt → ${promptDst}`);
