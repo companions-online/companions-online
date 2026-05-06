@@ -9,6 +9,78 @@
     body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
     canvas { display: block; outline: none; }
   </style>
+  <script>
+    // Page-wide error reporter → POST /api/log → server WorldLogger.
+    // Installed before the module script so module-load failures are caught
+    // too. Path is `/api/log` and not `/error-handler` because adblock
+    // filter lists (EasyPrivacy / uBlock) match the descriptive name and
+    // kill the request browser-side. Blob type is `text/plain` because
+    // sendBeacon returns false for `application/json` (outside the CORS-
+    // safelisted Content-Types, even same-origin); server JSON-parses the
+    // body regardless of the declared MIME.
+    (function () {
+      function report(partial) {
+        try {
+          var payload = Object.assign({
+            url: location.href,
+            userAgent: navigator.userAgent,
+            ts: Date.now()
+          }, partial);
+          var body = JSON.stringify(payload);
+          var sent = false;
+          if (navigator.sendBeacon) {
+            try {
+              sent = navigator.sendBeacon('/api/log', new Blob([body], { type: 'text/plain' }));
+            } catch (_) { sent = false; }
+          }
+          if (!sent) {
+            fetch('/api/log', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: body,
+              keepalive: true
+            }).catch(function () {});
+          }
+        } catch (_) { /* never throw from the handler */ }
+      }
+      // Exposed so main.ts can route its entrypoint try/catch through the
+      // same /api/log sink (top-level-await rejections do not reliably fire
+      // `unhandledrejection` on iOS Safari, so the explicit catch is the
+      // systemic safety net).
+      window.__report = report;
+      window.addEventListener('error', function (e) {
+        report({
+          kind: 'error',
+          message: e.message,
+          stack: (e.error && e.error.stack) || null,
+          source: e.filename,
+          line: e.lineno,
+          col: e.colno
+        });
+      });
+      // Capture-phase listener catches resource load failures (script/img/link
+      // 404s, MIME mismatches, CSP blocks) — those fire on the element and
+      // don't bubble to window in the non-capture phase.
+      window.addEventListener('error', function (e) {
+        var t = e.target;
+        if (!t || t === window || !t.tagName) return;
+        report({
+          kind: 'resource',
+          tag: t.tagName,
+          src: t.src || t.href || null,
+          type: t.type || null
+        });
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        report({
+          kind: 'unhandledrejection',
+          message: r && r.message ? String(r.message) : String(r),
+          stack: (r && r.stack) || null
+        });
+      });
+    })();
+  </script>
 </head>
 <body>
   <canvas id="game" tabindex="0"></canvas>
