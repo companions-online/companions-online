@@ -9,6 +9,8 @@ import {
   equipSlotRect,
   recipeRowRectAt,
   quickslotCellRect,
+  hitTestHudQuickbar,
+  hudQuickbarCellRect,
   GRID_SLOT_COUNT,
   QUICKSLOT_COUNT,
   PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
@@ -102,6 +104,32 @@ describe('inventory panel hit-test', () => {
     expect(hitTestInventoryPanel(PANEL_X + PANEL_W + 1, PANEL_Y + 10, scene).kind).toBe('outside');
     expect(hitTestInventoryPanel(PANEL_X + 10, PANEL_Y - 1, scene).kind).toBe('outside');
     expect(hitTestInventoryPanel(PANEL_X + 10, PANEL_Y + PANEL_H + 5, scene).kind).toBe('outside');
+  });
+});
+
+describe('HUD quickbar hit-test', () => {
+  it('returns the slot index for a point inside each cell', () => {
+    for (let i = 0; i < QUICKSLOT_COUNT; i++) {
+      const r = hudQuickbarCellRect(i);
+      expect(hitTestHudQuickbar(r.x + 1, r.y + 1)).toBe(i);
+      expect(hitTestHudQuickbar(r.x + r.w - 1, r.y + r.h - 1)).toBe(i);
+    }
+  });
+
+  it('returns null in the gap between cells', () => {
+    const r0 = hudQuickbarCellRect(0);
+    const r1 = hudQuickbarCellRect(1);
+    const gapX = (r0.x + r0.w + r1.x) / 2;
+    expect(hitTestHudQuickbar(gapX, r0.y + 4)).toBeNull();
+  });
+
+  it('returns null for points outside the bar', () => {
+    const r = hudQuickbarCellRect(0);
+    expect(hitTestHudQuickbar(r.x - 1, r.y + 4)).toBeNull();
+    expect(hitTestHudQuickbar(r.x + 4, r.y - 1)).toBeNull();
+    expect(hitTestHudQuickbar(r.x + 4, r.y + r.h)).toBeNull();
+    const last = hudQuickbarCellRect(QUICKSLOT_COUNT - 1);
+    expect(hitTestHudQuickbar(last.x + last.w + 1, last.y + 4)).toBeNull();
   });
 });
 

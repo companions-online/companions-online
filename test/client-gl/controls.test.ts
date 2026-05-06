@@ -9,6 +9,7 @@ import { resolveAction } from '@shared/action-resolver.js';
 import { createTestScene } from './harness.js';
 import { buildCursorContext } from '@client-webgl/controls/cursor-context.js';
 import { attachMouseControls } from '@client-webgl/controls/mouse.js';
+import { hudQuickbarCellRect } from '@client-webgl/ui/inventory-panel.js';
 import type { Scene } from '@client-webgl/scene.js';
 import type { FakeConnection } from './fake-connection.js';
 
@@ -318,5 +319,24 @@ describe('attachMouseControls → action dispatch', () => {
     expect(conn.sent[0].action).toBe(ClientAction.Harvest);
     // No MoveTo → no turn prediction.
     expect(me.direction?.dir).toBe(dirBefore);
+  });
+
+  it('left-click on a HUD quickbar cell selects the slot, no MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    // Bind an axe to slot 0.
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 7;
+    const sentBefore = conn.sent.length;
+
+    const r = hudQuickbarCellRect(0);
+    fireClick(r.x + 4, r.y + 4);
+
+    expect(scene.selectedQuickSlot).toBe(0);
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.Equip, itemId: 7 });
   });
 });

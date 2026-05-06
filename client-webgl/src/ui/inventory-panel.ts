@@ -544,6 +544,33 @@ export function drawQuickbarHud(
   });
 }
 
+/** Canvas-pixel rect of a specific HUD quickbar cell. Mirror of
+ *  `quickslotCellRect` for the in-panel bar. */
+export function hudQuickbarCellRect(slotIndex: number): { x: number; y: number; w: number; h: number } {
+  return {
+    x: HUD_QUICKBAR_X + slotIndex * (HUD_QUICKBAR_CELL + HUD_QUICKBAR_GAP),
+    y: HUD_QUICKBAR_Y,
+    w: HUD_QUICKBAR_CELL,
+    h: HUD_QUICKBAR_CELL,
+  };
+}
+
+/** Hit-test a canvas-pixel point against the HUD quickbar's 9 cells.
+ *  Returns the slot index (0..8) when the point is inside a cell (gaps
+ *  between cells return null), else null. Caller is responsible for
+ *  gating to free-play mode — the HUD bar itself only renders when
+ *  `!isInputCaptured(scene.overlay)`. */
+export function hitTestHudQuickbar(canvasX: number, canvasY: number): number | null {
+  if (canvasY < HUD_QUICKBAR_Y || canvasY >= HUD_QUICKBAR_Y + HUD_QUICKBAR_CELL) return null;
+  const dx = canvasX - HUD_QUICKBAR_X;
+  if (dx < 0) return null;
+  const stride = HUD_QUICKBAR_CELL + HUD_QUICKBAR_GAP;
+  const idx = Math.floor(dx / stride);
+  if (idx < 0 || idx >= QUICKSLOT_COUNT) return null;
+  if (dx - idx * stride >= HUD_QUICKBAR_CELL) return null;
+  return idx;
+}
+
 function drawRecipesSection(
   gl: WebGL2RenderingContext,
   sprites: SpriteRenderer,

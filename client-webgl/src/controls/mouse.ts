@@ -22,9 +22,9 @@ import type { Scene } from '../scene.js';
 import type { ClientEntity } from '../entities/client-entity.js';
 import type { Connection } from '../network/connection.js';
 import { buildCursorContext, buildContextFromEntity } from './cursor-context.js';
-import { hitTestInventoryPanel, handleInventoryPanelClick } from '../ui/inventory-panel.js';
+import { hitTestInventoryPanel, handleInventoryPanelClick, hitTestHudQuickbar } from '../ui/inventory-panel.js';
 import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
-import { selectedItem, selectedMode } from '../ui/quickslot.js';
+import { selectedItem, selectedMode, selectQuickSlot } from '../ui/quickslot.js';
 import { handleCookingClick, isCookingActive } from '../ui/cooking-highlight.js';
 import { isInputCaptured } from '../overlay.js';
 
@@ -98,6 +98,17 @@ export function attachMouseControls(
         handleInventoryPanelClick(scene, connection, hit, { button, shift: ev.shiftKey });
       }
       return;
+    }
+
+    // Left-click on the always-visible HUD quickbar selects that slot —
+    // mirrors the keyboard 1..9 path. Sits above the right-click branch so
+    // right-click keeps its contextual "use selected slot" semantics.
+    if (button === 'left') {
+      const hudSlot = hitTestHudQuickbar(cx, cy);
+      if (hudSlot !== null) {
+        selectQuickSlot(scene, connection, hudSlot);
+        return;
+      }
     }
 
     // Right-click is context-sensitive based on the selected quickslot:
