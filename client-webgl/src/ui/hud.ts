@@ -11,6 +11,7 @@ import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
 import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
+import { drawHudButtons } from './hud-buttons.js';
 import { wrapChatMessage } from '../effects/chat-bubble.js';
 import { isInventoryShowing, isInputCaptured } from '../overlay.js';
 
@@ -200,6 +201,7 @@ export function drawHud(
   // --- HUD quickbar (visible when inventory panel is closed) ---
   if (showHudQuickbar) {
     drawQuickbarHud(gl, scene, sprites, factory);
+    drawHudButtons(gl, scene, sprites, factory);
   }
 
   // --- Inventory panel (overlays everything else when open) ---

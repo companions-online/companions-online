@@ -68,6 +68,9 @@ export function selectQuickSlot(
   if (idx < 0 || idx >= scene.quickSlots.length) return;
   if (scene.selectedQuickSlot === idx) return;
 
+  // Selection change invalidates any HUD-button arm.
+  scene.armedAction = null;
+
   const itemId = scene.quickSlots[idx];
 
   if (itemId === null) {
@@ -113,4 +116,5 @@ export function clearQuickSlotSelection(
     connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
   }
   scene.selectedQuickSlot = null;
+  scene.armedAction = null;
 }

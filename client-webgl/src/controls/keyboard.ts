@@ -157,6 +157,7 @@ export function attachKeyboardControls(
     // would see the just-mutated overlay, dispatching this same Esc to the
     // menu's escapeAction — which would close the menu we just opened.
     if (ev.key === 'Escape') {
+      scene.armedAction = null;
       scene.overlay = { kind: 'menu', screen: 'settings', context: 'in-game' };
       ev.preventDefault();
       ev.stopImmediatePropagation();
@@ -168,6 +169,7 @@ export function attachKeyboardControls(
       return;
     }
     if (ev.key === 'i' || ev.key === 'I') {
+      scene.armedAction = null;
       scene.overlay = { kind: 'inventory' };
       ev.preventDefault();
       return;

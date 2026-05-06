@@ -167,23 +167,51 @@ creature-entity.ts; revisit if it looks bad.
 
 ## Controls
 
-`controls/mouse.ts`:
-1. `canvas.mousedown` → `camera.tileAt(cx, cy)` for world tile.
-2. `buildCursorContext(scene, tx, ty)` (`controls/cursor-context.ts`)
-   — calls `worldMap.isWalkable(tx, ty)` (the shared predicate) for walkability,
-   iterates `scene.entities` for entity-at-tile (skipping self),
-   reads `scene.inventory.find(i => i.equippedSlot === 1)` for hand
-   item.
-3. Shared `resolveAction(ctx)` picks the action (MoveTo / Harvest /
-   Attack / Interact / Pickup / null).
-4. `applyTurnPrediction` — on MoveTo, computes 8-way direction from
-   player tile to target via `DX/DY` lookup and writes
-   `me.direction = { dir }` immediately. The next server delta
-   overwrites it correctly.
-5. `connection.send(action)`.
+`controls/mouse.ts` runs the click through this ladder; the first
+branch that matches consumes the click:
+
+1. **Overlay capture.** If `isInputCaptured(scene.overlay)`, route the
+   click to `hitTestInventoryPanel` (when inventory/container is open) or
+   swallow it (dialogue/menu). Done.
+2. **HUD quickbar (left-click).** `hitTestHudQuickbar(cx, cy)` → if the
+   click landed on a quickbar cell, `selectQuickSlot(scene, conn, idx)`
+   (mirrors keyboard `1`–`9`). Done.
+3. **HUD action / inventory / settings buttons (left-click).**
+   `hitTestHudButton(cx, cy, scene)` against the bottom-right button bar
+   (`ui/hud-buttons.ts`) → `handleHudButtonClick` opens the inventory or
+   settings overlay, or arms `scene.armedAction` for placement / cook
+   (consumables fire `UseConsumable` immediately on click). Done.
+4. **Armed tap-to-act (left-click, `scene.armedAction !== null`).**
+   The HUD action button latches an "arm" so the next world tap commits
+   the action. Sticky: stays armed across taps so you can chain wall
+   placements / cookings. Lazy stale check — if `selectedMode(scene) !==
+   armedAction` (stack ran out, slot rebound), the arm self-clears and
+   the click falls through. Otherwise sends `UseItemAt` (placement) or
+   `handleCookingClick` (cook) at the clicked tile. Done.
+5. **Right-click contextual.** Based on `selectedMode(scene)`:
+   `consumable` → `UseConsumable`; `placement` → `handlePlacementClick`
+   (uses hover tile); `cook` → `handleCookingClick` at the clicked tile.
+   Right-click never causes movement.
+6. **Left-click world dispatch.**
+   - `buildCursorContext(scene, tx, ty)` (`controls/cursor-context.ts`)
+     — calls `worldMap.isWalkable(tx, ty)` (the shared predicate) for walkability,
+     iterates `scene.entities` for entity-at-tile (skipping self),
+     reads `scene.inventory.find(i => i.equippedSlot === 1)` for hand
+     item.
+   - Shared `resolveAction(ctx)` picks the action (MoveTo / Harvest /
+     Attack / Interact / Pickup / null).
+   - `applyTurnPrediction` — on MoveTo, computes 8-way direction from
+     player tile to target via `DX/DY` lookup and writes
+     `me.direction = { dir }` immediately. The next server delta
+     overwrites it correctly.
+   - `connection.send(action)`.
 
 Same shared `resolveAction` the CLI uses. Inventory-equipped-hand
 check lets fishing-rod clicks on water resolve to Harvest.
+
+The HUD button bar is purely additive — desktop users keep right-click +
+`i` + Esc gestures. The bar exists so a tap-only / mobile player can
+drive the contextual action without a right-click.
 
 ## Static asset boot
 
@@ -372,11 +400,11 @@ Server-side observer concept lives in `memory/reference/architecture.md::Observe
 
 ## What doesn't live here (yet)
 
-- **HUD / inventory UI / status bar / dialogue UI / cursor hover.**
-  All the data is in `scene.*`; only the UI layer is missing. When it
-  lands, `ui/hud.ts` is the extension point.
 - **Reconnection / session resume.** The socket closes and the page
   has no recovery path — the user must reload.
 - **Interest-range chunk filtering on the server.** Server currently
   sends all entities; only chunk streaming is range-gated. Not a
   client concern, but affects load-testing.
+- **Touch-event wiring.** The HUD buttons + clickable quickbar work on
+  mobile via the browser's synthesized `mousedown`. Pinch/zoom,
+  long-press, and drag-from-canvas remain follow-ups.

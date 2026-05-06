@@ -26,6 +26,7 @@ import { hitTestInventoryPanel, handleInventoryPanelClick, hitTestHudQuickbar } 
 import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
 import { selectedItem, selectedMode, selectQuickSlot } from '../ui/quickslot.js';
 import { handleCookingClick, isCookingActive } from '../ui/cooking-highlight.js';
+import { hitTestHudButton, handleHudButtonClick } from '../ui/hud-buttons.js';
 import { isInputCaptured } from '../overlay.js';
 
 function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
@@ -107,6 +108,41 @@ export function attachMouseControls(
       const hudSlot = hitTestHudQuickbar(cx, cy);
       if (hudSlot !== null) {
         selectQuickSlot(scene, connection, hudSlot);
+        return;
+      }
+      const hudBtn = hitTestHudButton(cx, cy, scene);
+      if (hudBtn !== null) {
+        handleHudButtonClick(scene, connection, hudBtn);
+        return;
+      }
+    }
+
+    // Sticky tap-to-act mode (mobile / tap-only flow). When the HUD action
+    // button is armed, every left-click on the world commits the action
+    // and stays armed for the next tap. Stale arming (selection no longer
+    // matches what we armed for) self-clears and falls through to the
+    // normal world-click pipeline.
+    if (button === 'left' && scene.armedAction !== null) {
+      if (selectedMode(scene) !== scene.armedAction) {
+        scene.armedAction = null;
+        // fall through
+      } else {
+        const tile = scene.camera.tileAt(cx, cy);
+        if (tile) {
+          if (scene.armedAction === 'placement') {
+            const item = selectedItem(scene);
+            if (item) {
+              connection.send({
+                action: ClientAction.UseItemAt,
+                itemId: item.itemId,
+                tileX: tile.tx,
+                tileY: tile.ty,
+              });
+            }
+          } else if (scene.armedAction === 'cook') {
+            handleCookingClick(scene, connection, tile.tx, tile.ty);
+          }
+        }
         return;
       }
     }

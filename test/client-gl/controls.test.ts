@@ -10,6 +10,7 @@ import { createTestScene } from './harness.js';
 import { buildCursorContext } from '@client-webgl/controls/cursor-context.js';
 import { attachMouseControls } from '@client-webgl/controls/mouse.js';
 import { hudQuickbarCellRect } from '@client-webgl/ui/inventory-panel.js';
+import { hudButtonRect } from '@client-webgl/ui/hud-buttons.js';
 import type { Scene } from '@client-webgl/scene.js';
 import type { FakeConnection } from './fake-connection.js';
 
@@ -338,5 +339,95 @@ describe('attachMouseControls → action dispatch', () => {
     const newSent = conn.sent.slice(sentBefore);
     expect(newSent).toHaveLength(1);
     expect(newSent[0]).toEqual({ action: ClientAction.Equip, itemId: 7 });
+  });
+
+  // --- Tap-to-act flow via the HUD action button ---
+
+  function setupArmedPlacement(scene: Scene, conn: FakeConnection, qty: number): void {
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: qty, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 11;
+    scene.selectedQuickSlot = 0;
+    scene.armedAction = 'placement';
+  }
+
+  function findTilePixels(
+    scene: Scene,
+    tx: number,
+    ty: number,
+  ): { x: number; y: number } | null {
+    for (let py = 0; py < 768; py += 4) {
+      for (let px = 0; px < 1024; px += 4) {
+        const t = scene.camera.tileAt(px, py);
+        if (t && t.tx === tx && t.ty === ty) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  it('tapping action button (placement) arms; subsequent world tap places without MoveTo and stays armed', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    setupArmedPlacement(scene, conn, 5);
+    const sentBefore = conn.sent.length;
+
+    const t1 = findTilePixels(scene, 33, 32)!;
+    fireClick(t1.x, t1.y);
+    expect(scene.armedAction).toBe('placement');
+    let newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 33, tileY: 32 });
+
+    // Second tap on a different tile — sticky arming still places.
+    const t2 = findTilePixels(scene, 34, 32)!;
+    fireClick(t2.x, t2.y);
+    expect(scene.armedAction).toBe('placement');
+    newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(2);
+    expect(newSent[1]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 34, tileY: 32 });
+  });
+
+  it('full flow: tap action button arms, tap tile places, no MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: 5, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 11;
+    scene.selectedQuickSlot = 0;
+
+    // Click the action button.
+    const ab = hudButtonRect('action');
+    fireClick(ab.x + 4, ab.y + 4);
+    expect(scene.armedAction).toBe('placement');
+
+    // Now click a tile.
+    const sentBefore = conn.sent.length;
+    const t = findTilePixels(scene, 33, 32)!;
+    fireClick(t.x, t.y);
+
+    expect(scene.armedAction).toBe('placement'); // sticky
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 33, tileY: 32 });
+  });
+
+  it('armed placement self-clears when stack runs out, and the click falls through to MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    setupArmedPlacement(scene, conn, 1);
+
+    // Empty the inventory — selectedMode flips to 'none', arm becomes stale.
+    conn.deliver({ type: 'inventorySync', items: [] });
+    expect(scene.armedAction).toBe('placement'); // not yet cleared
+
+    const sentBefore = conn.sent.length;
+    const t = findTilePixels(scene, 33, 32)!;
+    fireClick(t.x, t.y);
+
+    expect(scene.armedAction).toBeNull();
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0].action).toBe(ClientAction.MoveTo);
   });
 });

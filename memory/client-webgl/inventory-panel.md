@@ -112,6 +112,16 @@ Keys `1..9` are accepted **in both states** (panel open or closed) —
 they always drive `selectQuickSlot` / `selectedQuickSlot`, so the player
 can swap hand items while browsing inventory.
 
+The HUD quickbar is also clickable. `hudQuickbarCellRect(slotIndex)`
+exposes per-cell canvas-pixel rects; `hitTestHudQuickbar(canvasX,
+canvasY)` returns the slot index under a point or `null` (rejects gaps).
+`controls/mouse.ts` runs the hit-test on left-click before the
+world-click pipeline so a tap on a HUD cell calls `selectQuickSlot`
+without ever triggering MoveTo. The HUD button bar (`ui/hud-buttons.ts`)
+sits beside the quickbar at the bottom-right of the play area; see that
+module for the action / inventory / settings buttons and the
+`scene.armedAction` sticky tap-to-act flow.
+
 ## Quickbar selection (keys 1..9)
 
 `scene.quickSlots: (number | null)[]` (length 9) and
