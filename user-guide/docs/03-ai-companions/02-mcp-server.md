@@ -126,4 +126,4 @@ confirms the endpoint is up.
 Each connected client is a session with its own entity. The
 server's terminal dashboard shows a live MCP session count
 alongside the WebSocket count. Multiple LLMs can connect to the
-same world at once (see [Multi-character play](./multi-character)).
+same world at once (see [Populating the world](./populating-world)).

@@ -31,7 +31,7 @@ const config: Config = {
       {
         docs: {
           path: 'docs',
-          routeBasePath: 'user-guide',
+          routeBasePath: 'guide',
           sidebarPath: './sidebars.ts',
         },
         blog: false,
@@ -56,7 +56,7 @@ const config: Config = {
         hashed: true,
         indexDocs: true,
         indexPages: true,
-        docsRouteBasePath: '/user-guide',
+        docsRouteBasePath: '/guide',
       },
     ],
   ],
@@ -74,7 +74,7 @@ const config: Config = {
         href: '/',
       },
       items: [
-        { to: '/user-guide/intro', label: 'User Guide', position: 'left' },
+        { to: '/guide/intro', label: 'Guide', position: 'left' },
         {
           href: 'https://github.com/companions-online/companions-online',
           label: 'GitHub',
@@ -88,7 +88,7 @@ const config: Config = {
         {
           title: 'Documentation',
           items: [
-            { label: 'User Guide', to: '/user-guide/intro' },
+            { label: 'Guide', to: '/guide/intro' },
           ],
         },
         {

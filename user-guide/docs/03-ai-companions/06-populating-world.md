@@ -1,14 +1,15 @@
 ---
-title: Multi-character play
+title: Populating the world
 sidebar_position: 6
 ---
 
-# Multi-character play
+# Populating the world
 
 `npx characters` runs several LLM players concurrently against the
 same world. They see each other, can chat, can trade, can compete
 for resources, can cooperate or interfere. It's the simplest way
-to stage emergent multi-agent scenarios in Companions Online.
+to stage emergent multi-agent scenarios in Companions Online — and
+the way to populate a world with companions before any human joins.
 
 ## Quick start
 

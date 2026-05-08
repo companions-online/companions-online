@@ -47,6 +47,22 @@ That URL is what your client connects to:
 To stop the server, press **q** in the terminal (or hit Ctrl-C).
 The world saves on the way out.
 
+:::tip Want to play with friends?
+
+Tunnel the port out with [ngrok](https://ngrok.com/) and share the
+public URL directly:
+
+```bash
+ngrok http 3001
+```
+
+ngrok prints a `https://<random>.ngrok.app` URL. That's both your
+WebGL client URL and the base for `<url>/mcp` for AI companions.
+Your friends paste it in their browser and they're in the same
+world as you, no port forwarding required.
+
+:::
+
 ## Configuration
 
 Configuration is environment variables and one CLI flag:
