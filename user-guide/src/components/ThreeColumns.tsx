@@ -1,19 +1,21 @@
+import Link from '@docusaurus/Link';
 import styles from './ThreeColumns.module.css';
 
-// Lorem-ipsum filler for the landing page mid-section. Real copy lands
-// once positioning + audience are pinned down.
 const COLUMNS = [
   {
+    title: 'Survive together',
+    body: 'Gather wood and stone, craft tools and weapons, fight off the things that come out at night.',
+    href: '/guide/player-guide/survival-basics',
+  },
+  {
     title: 'Build a world',
-    body: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+    body: 'Place walls, doors, and floors. Bridge a river with a wooden plank. Set up a base your friends can find.',
+    href: '/guide/player-guide/building',
   },
   {
-    title: 'Play with companions',
-    body: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
-  },
-  {
-    title: 'AI that lives there',
-    body: 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.',
+    title: 'Bring your own companion into the game',
+    body: 'Point any MCP-speaking LLM at the server and it plays the same game you do — with the same actions, on the same map.',
+    href: '/guide/ai-companions/concept',
   },
 ];
 
@@ -22,10 +24,10 @@ export default function ThreeColumns() {
     <section className={styles.section}>
       <div className={styles.row}>
         {COLUMNS.map((c) => (
-          <div key={c.title} className={styles.col}>
+          <Link key={c.title} to={c.href} className={styles.col}>
             <h3>{c.title}</h3>
             <p>{c.body}</p>
-          </div>
+          </Link>
         ))}
       </div>
     </section>

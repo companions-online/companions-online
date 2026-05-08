@@ -37,3 +37,14 @@ body.game-running .navbar {
 body.game-running {
   overflow: hidden;
 }
+
+/* Crafting recipe icons. Sources are pixel art, so disable smoothing
+ * and lock to a consistent 32px so tables stay tidy. */
+.recipe-icon {
+  width: 32px;
+  height: 32px;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
