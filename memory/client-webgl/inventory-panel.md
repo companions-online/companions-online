@@ -61,8 +61,7 @@ The keyboard close (`i` / Esc) and the click-outside dismiss share one
 helper: `closeInventory(scene, conn)` exported from
 `client-webgl/src/ui/inventory-panel.ts`. It returns held stacks to
 their source container (if `heldStack.source === 'container'`), drops
-to world otherwise, clears `scene.armedAction`, and sets `scene.overlay
-= { kind: 'none' }`.
+to world otherwise, and sets `scene.overlay = { kind: 'none' }`.
 
 Server-relevant outcomes (Equip/Unequip/Drop/Transfer/Craft) are sent
 immediately; the next `InventorySync` re-hydrates everything. Pure
@@ -125,9 +124,10 @@ canvasY)` returns the slot index under a point or `null` (rejects gaps).
 `controls/mouse.ts` runs the hit-test on left-click before the
 world-click pipeline so a tap on a HUD cell calls `selectQuickSlot`
 without ever triggering MoveTo. The HUD button bar (`ui/hud-buttons.ts`)
-sits beside the quickbar at the bottom-right of the play area; see that
-module for the action / inventory / settings buttons and the
-`scene.armedAction` sticky tap-to-act flow.
+sits beside the quickbar at the bottom-right of the play area —
+`[Inventory][Settings]` only; the world action (place / cook / eat) is
+driven by quickslot selection + left-click directly (see
+`controls/mouse.ts` and `ui/quickslot.ts`).
 
 ## Quickbar selection (keys 1..9)
 

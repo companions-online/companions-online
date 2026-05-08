@@ -818,7 +818,6 @@ export function closeInventory(scene: Scene, connection: Connection): void {
     }
     scene.heldStack = null;
   }
-  scene.armedAction = null;
   scene.overlay = { kind: 'none' };
 }
 

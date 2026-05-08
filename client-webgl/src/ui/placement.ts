@@ -4,9 +4,12 @@
 // Control scheme:
 //   • mousemove updates scene.placementHoverTile
 //   • ghost sprite rendered at that tile (half alpha)
-//   • LEFT-click is deliberately NOT consumed — falls through to the
-//     normal resolveAction pipeline (MoveTo / Attack / etc.)
-//   • RIGHT-click sends UseItemAt(itemId, tileX, tileY) to place
+//   • LEFT-click → UseItemAt at the clicked tile, dispatched from
+//     `controls/mouse.ts` (the quickslot-mode branch in the tile
+//     fallback). Entity-AABB hits above that branch resolve normally —
+//     clicking a deer still attacks with a wall selected.
+//   • RIGHT-click → handlePlacementClick below sends UseItemAt at the
+//     hover tile (legacy desktop gesture).
 //
 // Validity checking is deliberately left to the server — mismatched
 // placements bounce back with no harm. A client-side green/red hint is a
@@ -48,9 +51,9 @@ export function updatePlacementHover(scene: Scene, canvasX: number, canvasY: num
 /** Handle a mousedown in placement mode. Returns true if the click was
  *  consumed (caller should skip the normal world-click pipeline).
  *
- *  Only right-click places — left-click is intentionally not consumed so
- *  the player can still move / attack / interact while a placeable is
- *  selected. */
+ *  Only right-click places via this helper — the modern left-click
+ *  placement path lives in `controls/mouse.ts` (it dispatches
+ *  `UseItemAt` at the clicked tile when `selectedMode === 'placement'`). */
 export function handlePlacementClick(
   scene: Scene,
   connection: Connection,

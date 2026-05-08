@@ -215,14 +215,6 @@ export interface Scene {
    *  (sent to server when an equippable is selected) and the context-
    *  sensitive right-click mode (placement / cook / consumable). */
   selectedQuickSlot: number | null;
-  /** Sticky tap-to-act mode for mobile / tap-only play. Set by the HUD
-   *  action button when the user "arms" placement or cook; the next
-   *  left-click on a tile commits the action and arming persists for
-   *  repeat taps. Cleared when the action button toggles off, the
-   *  selected mode no longer matches (stack ran out), the quickslot
-   *  selection changes, or any modal overlay opens. */
-  armedAction: 'placement' | 'cook' | null;
-
   // --- Observer-mode mutator ---
   /** Set the observer's interest center. Pure scene-state set; the
    *  server-side `setObserverFocus` push is the caller's responsibility
@@ -499,7 +491,6 @@ export async function createScene(
     scene.placementHoverTile = null;
     scene.quickSlots.fill(null);
     scene.selectedQuickSlot = null;
-    scene.armedAction = null;
   }
 
   // Corner-grid sampler. Corner (cornerX, cornerY) is shared across the
@@ -555,7 +546,6 @@ export async function createScene(
     placementHoverTile: null,
     quickSlots: Array<number | null>(9).fill(null),
     selectedQuickSlot: null,
-    armedAction: null,
 
     onWelcome(entityId, seed) {
       // entityId === 0 is the observer-channel sentinel (see GameWorld

@@ -4,10 +4,8 @@
 // controller each frame.
 
 import { ClientAction } from '@shared/actions.js';
-import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
 import type { Connection } from '../network/connection.js';
 import type { Scene } from '../scene.js';
-import { isPlacementActive } from '../ui/placement.js';
 import { closeInventory } from '../ui/inventory-panel.js';
 import { selectQuickSlot, clearQuickSlotSelection } from '../ui/quickslot.js';
 import { isInventoryShowing } from '../overlay.js';
@@ -109,26 +107,15 @@ export function attachKeyboardControls(
       ev.preventDefault();
       return;
     }
-    // Esc during placement mode unequips the hand slot (legacy path; the
-    // selection-clear above usually runs first, but keep this as a safety
-    // net for edge cases where a placeable is in hand without a
-    // selection — e.g. a stale equip state from before this feature).
-    if (ev.key === 'Escape' && isPlacementActive(scene)) {
-      connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
-      scene.placementHoverTile = null;
-      ev.preventDefault();
-      return;
-    }
-    // No inventory, no quickslot, no placement — Esc opens the in-game
-    // settings menu. Earlier branches above each return on Esc, so they
-    // take priority (open inventory + Esc still closes inventory, etc.).
+    // No inventory, no quickslot — Esc opens the in-game settings menu.
+    // Earlier branches above each return on Esc, so they take priority
+    // (open inventory + Esc still closes inventory, etc.).
     //
     // stopImmediatePropagation: the menu-input listener (registered after
     // this one on the same canvas) gates on `overlay.kind === 'menu'` and
     // would see the just-mutated overlay, dispatching this same Esc to the
     // menu's escapeAction — which would close the menu we just opened.
     if (ev.key === 'Escape') {
-      scene.armedAction = null;
       scene.overlay = { kind: 'menu', screen: 'settings', context: 'in-game' };
       ev.preventDefault();
       ev.stopImmediatePropagation();
@@ -140,7 +127,6 @@ export function attachKeyboardControls(
       return;
     }
     if (ev.key === 'i' || ev.key === 'I') {
-      scene.armedAction = null;
       scene.overlay = { kind: 'inventory' };
       ev.preventDefault();
       return;

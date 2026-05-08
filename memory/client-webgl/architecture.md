@@ -176,42 +176,42 @@ branch that matches consumes the click:
 2. **HUD quickbar (left-click).** `hitTestHudQuickbar(cx, cy)` → if the
    click landed on a quickbar cell, `selectQuickSlot(scene, conn, idx)`
    (mirrors keyboard `1`–`9`). Done.
-3. **HUD action / inventory / settings buttons (left-click).**
+3. **HUD inventory / settings buttons (left-click).**
    `hitTestHudButton(cx, cy, scene)` against the bottom-right button bar
    (`ui/hud-buttons.ts`) → `handleHudButtonClick` opens the inventory or
-   settings overlay, or arms `scene.armedAction` for placement / cook
-   (consumables fire `UseConsumable` immediately on click). Done.
-4. **Armed tap-to-act (left-click, `scene.armedAction !== null`).**
-   The HUD action button latches an "arm" so the next world tap commits
-   the action. Sticky: stays armed across taps so you can chain wall
-   placements / cookings. Lazy stale check — if `selectedMode(scene) !==
-   armedAction` (stack ran out, slot rebound), the arm self-clears and
-   the click falls through. Otherwise sends `UseItemAt` (placement) or
-   `handleCookingClick` (cook) at the clicked tile. Done.
-5. **Right-click contextual.** Based on `selectedMode(scene)`:
+   settings overlay. Done. (No "action" button anymore — quickslot +
+   left-click subsumes it.)
+4. **Right-click contextual.** Based on `selectedMode(scene)`:
    `consumable` → `UseConsumable`; `placement` → `handlePlacementClick`
    (uses hover tile); `cook` → `handleCookingClick` at the clicked tile.
-   Right-click never causes movement.
-6. **Left-click world dispatch.**
-   - `buildCursorContext(scene, tx, ty)` (`controls/cursor-context.ts`)
-     — calls `worldMap.isWalkable(tx, ty)` (the shared predicate) for walkability,
-     iterates `scene.entities` for entity-at-tile (skipping self),
-     reads `scene.inventory.find(i => i.equippedSlot === 1)` for hand
-     item.
-   - Shared `resolveAction(ctx)` picks the action (MoveTo / Harvest /
-     Attack / Interact / Pickup / null).
-   - `applyTurnPrediction` — on MoveTo, computes 8-way direction from
-     player tile to target via `DX/DY` lookup and writes
-     `me.direction = { dir }` immediately. The next server delta
-     overwrites it correctly.
-   - `connection.send(action)`.
+   Right-click never causes movement. Kept for desktop muscle memory.
+5. **Left-click world dispatch.**
+   - Sprite-AABB hit-test runs first (`hitTestEntities`) — clicking on a
+     deer attacks even when a wall is selected.
+   - If no entity hit (or `resolveAction` returned null for the entity),
+     `scene.camera.tileAt(cx, cy)` resolves to a tile.
+   - Quickslot-driven branch: `selectedMode(scene) === 'placement'` →
+     send `UseItemAt(handItem, tx, ty)` and return. `'cook'` →
+     `handleCookingClick` at the clicked tile; if it consumes (adjacent
+     campfire), done; otherwise fall through. `'consumable'`/`'tool'`/
+     `'none'` → fall through.
+   - Default: `buildCursorContext(scene, tx, ty)` (`controls/cursor-context.ts`)
+     — calls `worldMap.isWalkable(tx, ty)`, iterates `scene.entities`
+     for entity-at-tile, reads `scene.inventory.find(i =>
+     i.equippedSlot === 1)` for hand item. Shared `resolveAction(ctx)`
+     picks the action. `applyTurnPrediction` rotates the player on
+     MoveTo. `connection.send(action)`.
 
 Same shared `resolveAction` the CLI uses. Inventory-equipped-hand
 check lets fishing-rod clicks on water resolve to Harvest.
 
-The HUD button bar is purely additive — desktop users keep right-click +
-`i` + Esc gestures. The bar exists so a tap-only / mobile player can
-drive the contextual action without a right-click.
+**Quickslot is the mode.** Selecting a placeable / raw food puts
+left-click into commit-mode for that item; selecting a consumable
+sends `UseConsumable` per press (re-press to keep eating). The HUD
+button bar is purely additive — desktop users keep right-click + `i`
++ Esc gestures. See [client-webgl/quickslot] in `ui/quickslot.ts`:
+`selectQuickSlot` special-cases `bp.consumeHeal !== undefined` so
+re-pressing the same consumable slot fires `UseConsumable` again.
 
 ## Static asset boot
 

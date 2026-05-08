@@ -13,6 +13,7 @@
 // the server overwrites `direction` and corrects it.
 
 import { ClientAction } from '@shared/actions.js';
+import { BlueprintType } from '@shared/blueprints.js';
 import { dirFromTo } from '@shared/direction.js';
 import { isPlaced } from '@shared/status-effects.js';
 import { resolveAction } from '@shared/action-resolver.js';
@@ -25,7 +26,7 @@ import { buildCursorContext, buildContextFromEntity } from './cursor-context.js'
 import { hitTestInventoryPanel, handleInventoryPanelClick, hitTestHudQuickbar } from '../ui/inventory-panel.js';
 import { updatePlacementHover, handlePlacementClick, isPlacementActive } from '../ui/placement.js';
 import { selectedItem, selectedMode, selectQuickSlot } from '../ui/quickslot.js';
-import { handleCookingClick, isCookingActive } from '../ui/cooking-highlight.js';
+import { handleCookingClick } from '../ui/cooking-highlight.js';
 import { hitTestHudButton, handleHudButtonClick } from '../ui/hud-buttons.js';
 import { isInputCaptured } from '../overlay.js';
 
@@ -117,36 +118,6 @@ export function attachMouseControls(
       }
     }
 
-    // Sticky tap-to-act mode (mobile / tap-only flow). When the HUD action
-    // button is armed, every left-click on the world commits the action
-    // and stays armed for the next tap. Stale arming (selection no longer
-    // matches what we armed for) self-clears and falls through to the
-    // normal world-click pipeline.
-    if (button === 'left' && scene.armedAction !== null) {
-      if (selectedMode(scene) !== scene.armedAction) {
-        scene.armedAction = null;
-        // fall through
-      } else {
-        const tile = scene.camera.tileAt(cx, cy);
-        if (tile) {
-          if (scene.armedAction === 'placement') {
-            const item = selectedItem(scene);
-            if (item) {
-              connection.send({
-                action: ClientAction.UseItemAt,
-                itemId: item.itemId,
-                tileX: tile.tx,
-                tileY: tile.ty,
-              });
-            }
-          } else if (scene.armedAction === 'cook') {
-            handleCookingClick(scene, connection, tile.tx, tile.ty);
-          }
-        }
-        return;
-      }
-    }
-
     // Right-click is context-sensitive based on the selected quickslot:
     //   • consumable → UseConsumable on self (no tile needed)
     //   • placement → UseItemAt at the hover tile (placement.ts handles it)
@@ -186,18 +157,29 @@ export function attachMouseControls(
     const vy = cy / GAME_ZOOM;
     const hit = hitTestEntities(scene, vx, vy);
     if (hit && hit.blueprint) {
-      const isGroundItem = !isPlaced(hit.statusEffects);
-      const ctx = buildContextFromEntity(scene, {
-        entityId: hit.id,
-        blueprintId: hit.blueprint.blueprintId,
-        isGroundItem,
-      });
-      if (ctx) {
-        const action = resolveAction(ctx);
-        if (action) {
-          applyTurnPrediction(scene, action);
-          connection.send(action);
-          return;
+      // Cook mode + campfire sprite: the campfire's sprite extends above
+      // its tile, so `tileAt(cx,cy)` would resolve to the wrong tile and
+      // skip the cook gesture. Route directly off the entity's own tile.
+      if (selectedMode(scene) === 'cook' &&
+          hit.blueprint.blueprintId === BlueprintType.Campfire &&
+          hit.position) {
+        if (handleCookingClick(scene, connection, hit.position.tileX, hit.position.tileY)) return;
+        // Not adjacent — fall through to default resolution (likely no-op
+        // since the campfire's tile is non-walkable).
+      } else {
+        const isGroundItem = !isPlaced(hit.statusEffects);
+        const ctx = buildContextFromEntity(scene, {
+          entityId: hit.id,
+          blueprintId: hit.blueprint.blueprintId,
+          isGroundItem,
+        });
+        if (ctx) {
+          const action = resolveAction(ctx);
+          if (action) {
+            applyTurnPrediction(scene, action);
+            connection.send(action);
+            return;
+          }
         }
       }
     }
@@ -205,6 +187,29 @@ export function attachMouseControls(
     // Fallback: tile-based resolution.
     const tile = scene.camera.tileAt(cx, cy);
     if (!tile) return;
+
+    // Quickslot-driven left-click: when a placeable / cookable is selected,
+    // the click commits the action instead of falling through to MoveTo.
+    // Entity-AABB hits above already handled attack/pickup/etc., so
+    // reaching this point means the click landed on bare terrain (or on a
+    // placed structure with no resolveAction match — e.g. a campfire).
+    const mode = selectedMode(scene);
+    if (mode === 'placement') {
+      const item = selectedItem(scene);
+      if (item) {
+        connection.send({
+          action: ClientAction.UseItemAt,
+          itemId: item.itemId,
+          tileX: tile.tx,
+          tileY: tile.ty,
+        });
+      }
+      return;
+    }
+    if (mode === 'cook') {
+      if (handleCookingClick(scene, connection, tile.tx, tile.ty)) return;
+      // Off-target — fall through to MoveTo / etc.
+    }
 
     const ctx = buildCursorContext(scene, tile.tx, tile.ty);
     if (!ctx) return;

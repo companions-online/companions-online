@@ -31,7 +31,7 @@ describe('quickslot selection', () => {
     expect(scene.selectedQuickSlot).toBe(0);
   });
 
-  it('selecting a non-equippable item (bandage) does NOT equip but records selection', async () => {
+  it('selecting a consumable (bandage) sends UseConsumable and records selection', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
@@ -39,11 +39,11 @@ describe('quickslot selection', () => {
     });
     scene.quickSlots[0] = 9;
     selectQuickSlot(scene, conn, 0);
-    expect(conn.sent).toHaveLength(0);
+    expect(conn.sent).toEqual([{ action: ClientAction.UseConsumable, itemId: 9 }]);
     expect(scene.selectedQuickSlot).toBe(0);
   });
 
-  it('selecting a non-equippable with another item in hand unequips first', async () => {
+  it('selecting a consumable with another item in hand unequips first then uses', async () => {
     const { scene, conn } = await createTestScene();
     conn.deliver({
       type: 'inventorySync',
@@ -56,9 +56,24 @@ describe('quickslot selection', () => {
     scene.quickSlots[1] = 9;
     scene.selectedQuickSlot = 0; // axe is "selected"
     selectQuickSlot(scene, conn, 1);
-    expect(conn.sent).toHaveLength(1);
-    expect(conn.sent[0]).toEqual({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
+    expect(conn.sent).toEqual([
+      { action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND },
+      { action: ClientAction.UseConsumable, itemId: 9 },
+    ]);
     expect(scene.selectedQuickSlot).toBe(1);
+  });
+
+  it('re-selecting the same consumable sends another UseConsumable, no Equip/Unequip', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 9, blueprintId: BlueprintType.Bandage, quantity: 3, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 9;
+    scene.selectedQuickSlot = 0;
+    selectQuickSlot(scene, conn, 0);
+    expect(conn.sent).toEqual([{ action: ClientAction.UseConsumable, itemId: 9 }]);
+    expect(scene.selectedQuickSlot).toBe(0);
   });
 
   it('repeated select on the same slot is a no-op', async () => {

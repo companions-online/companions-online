@@ -45,7 +45,6 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [Prefer Generic Layers](feedback/prefer-generic-layers.md) — new per-entity strings → MetaKey; new `/commands` → registry; skip bespoke plumbing
 - [Err-side-effects](feedback/err-side-effects.md) — state-changing helpers must be no-op on Err; enables callers to use them as predicates with free rollback
 - [Test Helper Bypass](feedback/test-helper-bypass.md) — direct-mutate setup helpers hide bugs in the production flow they skip; ensure ≥1 test covers the real path
-- [Sticky Arming](feedback/sticky-arming.md) — tap-to-act buttons stay armed across successful commits; lazy stale-check + explicit cancels, no auto-disarm
 - [Plan File Fresh Task](feedback/plan-file-fresh-task.md) — re-entering plan mode for a new task: fully overwrite the plan file, don't append
 
 ### Project — current initiatives

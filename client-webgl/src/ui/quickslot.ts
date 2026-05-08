@@ -7,8 +7,13 @@
 //   • The hand equip — if the slot holds a hand-equippable item, a server
 //     Equip is sent; if the slot is empty or holds a non-equippable, any
 //     currently-equipped hand item is Unequip'd.
-//   • The context-sensitive right-click mode ('placement' / 'cook' /
-//     'consumable' / 'tool' / 'none') consumed by the mouse controller.
+//   • The context-sensitive click mode ('placement' / 'cook' / 'consumable'
+//     / 'tool' / 'none') consumed by `controls/mouse.ts` for both the
+//     left-click commit gesture (placement → UseItemAt; cook →
+//     handleCookingClick) and the legacy right-click contextual mode.
+//   • Consumables are special-cased: re-pressing the same slot fires
+//     another `UseConsumable` so "press 2, press 2, press 2" eats three
+//     bandages in a row. The first press also runs the equip dance.
 
 import { ClientAction } from '@shared/actions.js';
 import { getBlueprint, BlueprintType, type Blueprint } from '@shared/blueprints.js';
@@ -58,22 +63,23 @@ function isHandOccupied(scene: Scene): boolean {
 
 /** Select quickbar slot `idx` (0..8). Handles the hand equip implicitly:
  *  picks up the referenced item if it's hand-equippable, unequips hand
- *  for non-equippables / empty slots. Idempotent against repeat presses
- *  on the already-selected slot. */
+ *  for non-equippables / empty slots. Idempotent for non-consumables.
+ *
+ *  Consumables are special-cased: pressing the slot key fires
+ *  `UseConsumable` every time. The first press also runs the equip
+ *  dance (Equip if hand-equippable, Unequip otherwise) so the gesture
+ *  reads as "pick it up and use it"; repeat presses just keep eating. */
 export function selectQuickSlot(
   scene: Scene,
   connection: Connection,
   idx: number,
 ): void {
   if (idx < 0 || idx >= scene.quickSlots.length) return;
-  if (scene.selectedQuickSlot === idx) return;
-
-  // Selection change invalidates any HUD-button arm.
-  scene.armedAction = null;
 
   const itemId = scene.quickSlots[idx];
 
   if (itemId === null) {
+    if (scene.selectedQuickSlot === idx) return;
     if (isHandOccupied(scene)) {
       connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
     }
@@ -90,17 +96,27 @@ export function selectQuickSlot(
     return;
   }
 
+  if (bp.consumeHeal !== undefined) {
+    if (scene.selectedQuickSlot !== idx) {
+      if (bp.equipSlot === 'hand') {
+        connection.send({ action: ClientAction.Equip, itemId: item.itemId });
+      } else if (isHandOccupied(scene)) {
+        connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
+      }
+      scene.selectedQuickSlot = idx;
+    }
+    connection.send({ action: ClientAction.UseConsumable, itemId: item.itemId });
+    return;
+  }
+
+  if (scene.selectedQuickSlot === idx) return;
+
   if (bp.equipSlot === 'hand') {
     // Equippable: ask the server to place it in hand (idempotent server-
     // side — same itemId already equipped is a no-op).
     connection.send({ action: ClientAction.Equip, itemId: item.itemId });
-  } else {
-    // Non-equippable (consumable, etc.). If something is in hand from a
-    // previous selection, unequip so the player isn't "holding" it during
-    // a bandage/cooked-meat use gesture.
-    if (isHandOccupied(scene)) {
-      connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
-    }
+  } else if (isHandOccupied(scene)) {
+    connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
   }
   scene.selectedQuickSlot = idx;
 }
@@ -116,5 +132,4 @@ export function clearQuickSlotSelection(
     connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
   }
   scene.selectedQuickSlot = null;
-  scene.armedAction = null;
 }

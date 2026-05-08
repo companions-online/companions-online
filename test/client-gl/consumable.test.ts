@@ -1,16 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { BlueprintType } from '@shared/blueprints.js';
 import { ClientAction } from '@shared/actions.js';
-import { selectedItem, selectedMode } from '@client-webgl/ui/quickslot.js';
+import { selectedItem, selectedMode, selectQuickSlot } from '@client-webgl/ui/quickslot.js';
 import { createTestScene } from './harness.js';
 
-// The consumable right-click path is implemented inline in mouse.ts — we
-// assert the building blocks here: selectedMode reports 'consumable' for
-// the right blueprints, and the UseConsumable payload can be constructed
-// from selectedItem. (A full end-to-end assertion on mousedown dispatch
-// would require a full canvas + MouseEvent setup; the mouse-controller
-// tests cover the left-click path, and this exercises the right-click
-// decision the controller makes.)
+// Consumables: pressing the bound quickslot fires `UseConsumable` every
+// press. First press also runs the equip dance (Equip if hand-equippable,
+// Unequip otherwise) so the gesture reads as "pick it up and use it".
+// Right-click on a consumable quickslot remains a UseConsumable shortcut
+// — the building blocks are here too.
 
 describe('consumable mode', () => {
   it('bandage selection reports consumable mode', async () => {
@@ -51,5 +49,21 @@ describe('consumable mode', () => {
     conn.send({ action: ClientAction.UseConsumable, itemId: item!.itemId });
     expect(conn.sent).toHaveLength(1);
     expect(conn.sent[0]).toEqual({ action: ClientAction.UseConsumable, itemId: 7 });
+  });
+
+  it('selectQuickSlot on a consumable fires UseConsumable, then again on re-select', async () => {
+    const { scene, conn } = await createTestScene();
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 9, blueprintId: BlueprintType.Bandage, quantity: 3, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 9;
+    selectQuickSlot(scene, conn, 0);
+    expect(conn.sent).toEqual([{ action: ClientAction.UseConsumable, itemId: 9 }]);
+    selectQuickSlot(scene, conn, 0);
+    expect(conn.sent).toEqual([
+      { action: ClientAction.UseConsumable, itemId: 9 },
+      { action: ClientAction.UseConsumable, itemId: 9 },
+    ]);
   });
 });

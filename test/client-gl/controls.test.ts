@@ -10,7 +10,6 @@ import { createTestScene } from './harness.js';
 import { buildCursorContext } from '@client-webgl/controls/cursor-context.js';
 import { attachMouseControls } from '@client-webgl/controls/mouse.js';
 import { hudQuickbarCellRect } from '@client-webgl/ui/inventory-panel.js';
-import { hudButtonRect } from '@client-webgl/ui/hud-buttons.js';
 import type { Scene } from '@client-webgl/scene.js';
 import type { FakeConnection } from './fake-connection.js';
 
@@ -341,17 +340,7 @@ describe('attachMouseControls → action dispatch', () => {
     expect(newSent[0]).toEqual({ action: ClientAction.Equip, itemId: 7 });
   });
 
-  // --- Tap-to-act flow via the HUD action button ---
-
-  function setupArmedPlacement(scene: Scene, conn: FakeConnection, qty: number): void {
-    conn.deliver({
-      type: 'inventorySync',
-      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: qty, equippedSlot: 0 }],
-    });
-    scene.quickSlots[0] = 11;
-    scene.selectedQuickSlot = 0;
-    scene.armedAction = 'placement';
-  }
+  // --- Quickslot-driven left-click flow ---
 
   function findTilePixels(
     scene: Scene,
@@ -367,28 +356,7 @@ describe('attachMouseControls → action dispatch', () => {
     return null;
   }
 
-  it('tapping action button (placement) arms; subsequent world tap places without MoveTo and stays armed', async () => {
-    const { scene, conn, fireClick } = await setup(32, 32);
-    setupArmedPlacement(scene, conn, 5);
-    const sentBefore = conn.sent.length;
-
-    const t1 = findTilePixels(scene, 33, 32)!;
-    fireClick(t1.x, t1.y);
-    expect(scene.armedAction).toBe('placement');
-    let newSent = conn.sent.slice(sentBefore);
-    expect(newSent).toHaveLength(1);
-    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 33, tileY: 32 });
-
-    // Second tap on a different tile — sticky arming still places.
-    const t2 = findTilePixels(scene, 34, 32)!;
-    fireClick(t2.x, t2.y);
-    expect(scene.armedAction).toBe('placement');
-    newSent = conn.sent.slice(sentBefore);
-    expect(newSent).toHaveLength(2);
-    expect(newSent[1]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 34, tileY: 32 });
-  });
-
-  it('full flow: tap action button arms, tap tile places, no MoveTo', async () => {
+  it('left-click on bare tile with placement-selected slot fires UseItemAt, no MoveTo', async () => {
     const { scene, conn, fireClick } = await setup(32, 32);
     conn.deliver({
       type: 'inventorySync',
@@ -396,36 +364,128 @@ describe('attachMouseControls → action dispatch', () => {
     });
     scene.quickSlots[0] = 11;
     scene.selectedQuickSlot = 0;
-
-    // Click the action button.
-    const ab = hudButtonRect('action');
-    fireClick(ab.x + 4, ab.y + 4);
-    expect(scene.armedAction).toBe('placement');
-
-    // Now click a tile.
     const sentBefore = conn.sent.length;
-    const t = findTilePixels(scene, 33, 32)!;
-    fireClick(t.x, t.y);
 
-    expect(scene.armedAction).toBe('placement'); // sticky
-    const newSent = conn.sent.slice(sentBefore);
+    const t1 = findTilePixels(scene, 33, 32)!;
+    fireClick(t1.x, t1.y);
+    let newSent = conn.sent.slice(sentBefore);
     expect(newSent).toHaveLength(1);
     expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 33, tileY: 32 });
+
+    // Second tap on a different tile — selection still drives placement.
+    const t2 = findTilePixels(scene, 34, 32)!;
+    fireClick(t2.x, t2.y);
+    newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(2);
+    expect(newSent[1]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 34, tileY: 32 });
   });
 
-  it('armed placement self-clears when stack runs out, and the click falls through to MoveTo', async () => {
+  it('left-click on a creature with placement-selected slot still resolves to Attack', async () => {
     const { scene, conn, fireClick } = await setup(32, 32);
-    setupArmedPlacement(scene, conn, 1);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: 5, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 11;
+    scene.selectedQuickSlot = 0;
+    // Place a deer at (35, 32) and pretend it has been drawn so its AABB is set.
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 77,
+        components: {
+          position: { tileX: 35, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+          statusEffects: { effects: 0 },
+        },
+      },
+    });
+    const deer = scene.entities.get(77)!;
+    deer.screenX = 200; deer.screenY = 200; deer.screenW = 32; deer.screenH = 32;
 
-    // Empty the inventory — selectedMode flips to 'none', arm becomes stale.
-    conn.deliver({ type: 'inventorySync', items: [] });
-    expect(scene.armedAction).toBe('placement'); // not yet cleared
-
+    // Compute a canvas pixel that lands inside the deer's AABB (account for GAME_ZOOM=2).
     const sentBefore = conn.sent.length;
+    fireClick(420, 420); // virtual coord 210, 210 — inside [200..232]
+
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.Attack, entityId: 77 });
+  });
+
+  it('left-click on campfire SPRITE (above its tile) with cook-selected slot still cooks', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 88,
+        components: {
+          position: { tileX: 33, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Campfire, variant: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
+        },
+      },
+    });
+    // Place AABB at virtual coords that map to a click pixel ABOVE the
+    // campfire's tile (the click pixel resolves to a different tile than
+    // the campfire's own).
+    const fire = scene.entities.get(88)!;
+    fire.screenX = 200; fire.screenY = 200; fire.screenW = 32; fire.screenH = 64;
+    const sentBefore = conn.sent.length;
+
+    // Pick a click pixel inside the AABB but at the top of the sprite.
+    fireClick(420, 410); // virtual (210, 205) — inside [200..232, 200..264]
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 21, tileX: 33, tileY: 32 });
+  });
+
+  it('left-click adjacent campfire with cook-selected slot fires UseItemAt at campfire', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    // Adjacent campfire at (33, 32).
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 88,
+        components: {
+          position: { tileX: 33, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Campfire, variant: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
+        },
+      },
+    });
+    const sentBefore = conn.sent.length;
+
     const t = findTilePixels(scene, 33, 32)!;
     fireClick(t.x, t.y);
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 21, tileX: 33, tileY: 32 });
+  });
 
-    expect(scene.armedAction).toBeNull();
+  it('left-click on a distant bare tile with cook-selected slot falls through to MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    const sentBefore = conn.sent.length;
+
+    const t = findTilePixels(scene, 36, 32)!; // far enough that there's no campfire there
+    fireClick(t.x, t.y);
     const newSent = conn.sent.slice(sentBefore);
     expect(newSent).toHaveLength(1);
     expect(newSent[0].action).toBe(ClientAction.MoveTo);
