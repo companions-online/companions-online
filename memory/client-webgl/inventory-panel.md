@@ -54,8 +54,14 @@ across panels. Cursor position from `scene.cursorScreenX/Y` (updated by
 | held | left | grid w/ different item | swap — held becomes displaced item; partial-held + different = no-op |
 | held | left | matching equip slot | Equip with quantity |
 | held | left | container cell | Transfer player→chest (or chest→player if held came from container), with quantity |
-| held | left | outside panel | Drop with quantity |
-| held | I / Esc | — | Drop (or Transfer-back if from chest) at player tile, then close |
+| any  | left | outside panel | Close (held: Drop, or Transfer-back if from chest) |
+| any  | I / Esc | — | Close (held: same as above) |
+
+The keyboard close (`i` / Esc) and the click-outside dismiss share one
+helper: `closeInventory(scene, conn)` exported from
+`client-webgl/src/ui/inventory-panel.ts`. It returns held stacks to
+their source container (if `heldStack.source === 'container'`), drops
+to world otherwise, and sets `scene.overlay = { kind: 'none' }`.
 
 Server-relevant outcomes (Equip/Unequip/Drop/Transfer/Craft) are sent
 immediately; the next `InventorySync` re-hydrates everything. Pure
@@ -111,6 +117,17 @@ quickbar row takes over (no double-draw).
 Keys `1..9` are accepted **in both states** (panel open or closed) —
 they always drive `selectQuickSlot` / `selectedQuickSlot`, so the player
 can swap hand items while browsing inventory.
+
+The HUD quickbar is also clickable. `hudQuickbarCellRect(slotIndex)`
+exposes per-cell canvas-pixel rects; `hitTestHudQuickbar(canvasX,
+canvasY)` returns the slot index under a point or `null` (rejects gaps).
+`controls/mouse.ts` runs the hit-test on left-click before the
+world-click pipeline so a tap on a HUD cell calls `selectQuickSlot`
+without ever triggering MoveTo. The HUD button bar (`ui/hud-buttons.ts`)
+sits beside the quickbar at the bottom-right of the play area —
+`[Inventory][Settings]` only; the world action (place / cook / eat) is
+driven by quickslot selection + left-click directly (see
+`controls/mouse.ts` and `ui/quickslot.ts`).
 
 ## Quickbar selection (keys 1..9)
 

@@ -11,6 +11,7 @@ import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
 import type { KeyboardState } from '../controls/keyboard.js';
 import { drawInventoryPanel, drawHeldCursor, drawQuickbarHud } from './inventory-panel.js';
+import { drawHudButtons } from './hud-buttons.js';
 import { wrapChatMessage } from '../effects/chat-bubble.js';
 import { isInventoryShowing, isInputCaptured } from '../overlay.js';
 
@@ -84,7 +85,7 @@ export function drawHud(
   sprites: SpriteRenderer,
   keyboard: KeyboardState,
   resolution: readonly [number, number],
-  debugLabel: string | null,
+  actionLabel: string | null,
 ): void {
   const factory = scene.textSurfaceFactory;
   // The HUD quickbar shows only during free play — any overlay (inventory
@@ -94,7 +95,7 @@ export function drawHud(
   const inventoryShowing = isInventoryShowing(scene.overlay);
   const showHudQuickbar = !isInputCaptured(scene.overlay);
   const needSprites =
-    scene.chatLog.length > 0 || keyboard.chatActive || (keyboard.debugMode && debugLabel) || inventoryShowing || showHudQuickbar;
+    scene.chatLog.length > 0 || keyboard.chatActive || actionLabel !== null || inventoryShowing || showHudQuickbar;
 
   if (!needSprites) return;
 
@@ -183,9 +184,9 @@ export function drawHud(
     );
   }
 
-  // --- Debug overlay (top-left of play area) ---
-  if (keyboard.debugMode && debugLabel) {
-    cachedDebug = getOrCreate(factory, debugLabel, cachedDebug, '#ff0', DEBUG_FONT_PX, '#000');
+  // --- Action label (top-left of play area, always visible) ---
+  if (actionLabel) {
+    cachedDebug = getOrCreate(factory, actionLabel, cachedDebug, '#ff0', DEBUG_FONT_PX, '#000');
     const dstX = GAME_X + DEBUG_PAD;
     const dstY = GAME_Y + DEBUG_PAD;
     gl.activeTexture(gl.TEXTURE0);
@@ -200,6 +201,7 @@ export function drawHud(
   // --- HUD quickbar (visible when inventory panel is closed) ---
   if (showHudQuickbar) {
     drawQuickbarHud(gl, scene, sprites, factory);
+    drawHudButtons(gl, scene, sprites, factory);
   }
 
   // --- Inventory panel (overlays everything else when open) ---

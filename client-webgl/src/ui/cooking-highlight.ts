@@ -1,12 +1,13 @@
-// Cooking-mode visual cue + right-click dispatch.
+// Cooking-mode visual cue + click dispatch.
 //
 // When the selected quickslot holds raw meat or raw fish, the Campfire
 // adjacent to the player (Chebyshev ≤ 1) is tinted red via the sprite
 // shader's `u_tint` uniform (applied inside `drawAnimatedStatic`, not as
-// a second draw). Right-clicking that adjacent campfire sends
-// UseItemAt(itemId, tileX, tileY). The server enforces the same
-// adjacency rule in `game-world.ts::handleUseItemAt`, so this mirror
-// keeps distant clicks from producing a silent server-side reject.
+// a second draw). Clicking that adjacent campfire (left- or right-,
+// dispatched from `controls/mouse.ts`) sends UseItemAt(itemId, tileX,
+// tileY). The server enforces the same adjacency rule in
+// `game-world.ts::handleUseItemAt`, so this mirror keeps distant clicks
+// from producing a silent server-side reject.
 //
 // Distant campfires get no visual treatment by design — only what the
 // player can act on *right now* stands out.
@@ -49,9 +50,10 @@ export function shouldTintCampfire(scene: Scene, e: ClientEntity): boolean {
   return chebyshev(me.tileX, me.tileY, e.position.tileX, e.position.tileY) <= 1;
 }
 
-/** Dispatch a right-click while in cooking mode. Only fires when the
- *  click lands on a campfire tile AND the player is adjacent (Chebyshev
- *  ≤ 1). Returns true if the click was consumed. */
+/** Dispatch a click in cooking mode. Only fires when the click lands on
+ *  a campfire tile AND the player is adjacent (Chebyshev ≤ 1). Returns
+ *  true if the click was consumed. Used by both the right-click and
+ *  left-click branches in `controls/mouse.ts`. */
 export function handleCookingClick(
   scene: Scene,
   connection: Connection,

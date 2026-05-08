@@ -1,16 +1,14 @@
-// Keyboard controller — manages chat input mode, debug toggle, and the
-// inventory-panel open/close toggle. Attaches to the canvas element
-// (requires tabindex="0" for focus). Returns a KeyboardState read by the
-// renderer + mouse controller each frame.
+// Keyboard controller — manages chat input mode and the inventory-panel
+// open/close toggle. Attaches to the canvas element (requires tabindex="0"
+// for focus). Returns a KeyboardState read by the renderer + mouse
+// controller each frame.
 
 import { ClientAction } from '@shared/actions.js';
-import { EQUIP_SLOT_HAND } from '@shared/inventory.js';
 import type { Connection } from '../network/connection.js';
 import type { Scene } from '../scene.js';
-import { isPlacementActive } from '../ui/placement.js';
-import { markPendingDecrement } from '../ui/inventory-panel.js';
+import { closeInventory } from '../ui/inventory-panel.js';
 import { selectQuickSlot, clearQuickSlotSelection } from '../ui/quickslot.js';
-import { getContainer, isInventoryShowing } from '../overlay.js';
+import { isInventoryShowing } from '../overlay.js';
 
 const MAX_CHAT_LENGTH = 200;
 
@@ -19,8 +17,6 @@ export interface KeyboardState {
   chatActive: boolean;
   /** Current chat input buffer. */
   chatBuffer: string;
-  /** True when debug overlay is active. */
-  debugMode: boolean;
 }
 
 export function attachKeyboardControls(
@@ -31,37 +27,7 @@ export function attachKeyboardControls(
   const state: KeyboardState = {
     chatActive: false,
     chatBuffer: '',
-    debugMode: false,
   };
-
-  // Close the inventory panel. If the player was holding a stack on the
-  // cursor, drop it at their feet (Minecraft default). Also closes any
-  // open container client-side — the server's view lingers until the
-  // player moves away, but the local UI releases immediately.
-  function closeInventory() {
-    if (scene.heldStack) {
-      markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
-      const container = getContainer(scene.overlay);
-      if (scene.heldStack.source === 'container' && container) {
-        // Don't accidentally drop a chest item to the world; return it.
-        connection.send({
-          action: ClientAction.Transfer,
-          itemId: scene.heldStack.itemId,
-          containerId: container.entityId,
-          direction: 1,
-          quantity: scene.heldStack.quantity,
-        });
-      } else {
-        connection.send({
-          action: ClientAction.Drop,
-          itemId: scene.heldStack.itemId,
-          quantity: scene.heldStack.quantity,
-        });
-      }
-      scene.heldStack = null;
-    }
-    scene.overlay = { kind: 'none' };
-  }
 
   canvas.addEventListener('keydown', (ev) => {
     // --- Chat mode ---
@@ -120,7 +86,7 @@ export function attachKeyboardControls(
     //     underneath the panel. ---
     if (isInventoryShowing(scene.overlay)) {
       if (ev.key === 'Escape' || ev.key === 'i' || ev.key === 'I') {
-        closeInventory();
+        closeInventory(scene, connection);
         ev.preventDefault();
         return;
       }
@@ -141,19 +107,9 @@ export function attachKeyboardControls(
       ev.preventDefault();
       return;
     }
-    // Esc during placement mode unequips the hand slot (legacy path; the
-    // selection-clear above usually runs first, but keep this as a safety
-    // net for edge cases where a placeable is in hand without a
-    // selection — e.g. a stale equip state from before this feature).
-    if (ev.key === 'Escape' && isPlacementActive(scene)) {
-      connection.send({ action: ClientAction.Unequip, slot: EQUIP_SLOT_HAND });
-      scene.placementHoverTile = null;
-      ev.preventDefault();
-      return;
-    }
-    // No inventory, no quickslot, no placement — Esc opens the in-game
-    // settings menu. Earlier branches above each return on Esc, so they
-    // take priority (open inventory + Esc still closes inventory, etc.).
+    // No inventory, no quickslot — Esc opens the in-game settings menu.
+    // Earlier branches above each return on Esc, so they take priority
+    // (open inventory + Esc still closes inventory, etc.).
     //
     // stopImmediatePropagation: the menu-input listener (registered after
     // this one on the same canvas) gates on `overlay.kind === 'menu'` and
@@ -167,11 +123,6 @@ export function attachKeyboardControls(
     }
     if (ev.key === 'Enter') {
       state.chatActive = true;
-      ev.preventDefault();
-      return;
-    }
-    if (ev.key === 'q' || ev.key === 'Q') {
-      state.debugMode = !state.debugMode;
       ev.preventDefault();
       return;
     }

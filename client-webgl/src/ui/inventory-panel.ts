@@ -16,7 +16,7 @@
 
 import { getBlueprint, BlueprintType } from '@shared/blueprints.js';
 import { getAllRecipes } from '@shared/recipes.js';
-import { canCraft, getWeight, getEquipped, numberToEquipSlot, equipSlotToNumber, type EquipSlot } from '@shared/inventory.js';
+import { canCraft, getWeight, getEquipped, numberToEquipSlot, equipSlotToNumber, MAX_PLAYER_WEIGHT, type EquipSlot } from '@shared/inventory.js';
 import { ClientAction } from '@shared/actions.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import { CANVAS_W, CANVAS_H, GAME_X, GAME_Y, GAME_W, GAME_H } from '../platform/config.js';
@@ -361,9 +361,9 @@ function drawPlayerSection(
   const inv = { items: scene.inventory.map(i => ({
     itemId: i.itemId, blueprintId: i.blueprintId, quantity: i.quantity,
     equippedSlot: numberToEquipSlot(i.equippedSlot),
-  })), maxWeight: 50 };
+  })), maxWeight: MAX_PLAYER_WEIGHT };
   const weight = getWeight(inv);
-  const wtLabel = `Weight  ${weight}/50`;
+  const wtLabel = `Weight  ${weight}/${MAX_PLAYER_WEIGHT}`;
   drawText(gl, sprites, text(factory, `wt:${wtLabel}`, {
     text: wtLabel, fillColor: '#fff', fontPx: 13,
   }), LEFT_X, PANEL_Y + PAD + 102);
@@ -542,6 +542,33 @@ export function drawQuickbarHud(
     cellSize: HUD_QUICKBAR_CELL,
     cellGap: HUD_QUICKBAR_GAP,
   });
+}
+
+/** Canvas-pixel rect of a specific HUD quickbar cell. Mirror of
+ *  `quickslotCellRect` for the in-panel bar. */
+export function hudQuickbarCellRect(slotIndex: number): { x: number; y: number; w: number; h: number } {
+  return {
+    x: HUD_QUICKBAR_X + slotIndex * (HUD_QUICKBAR_CELL + HUD_QUICKBAR_GAP),
+    y: HUD_QUICKBAR_Y,
+    w: HUD_QUICKBAR_CELL,
+    h: HUD_QUICKBAR_CELL,
+  };
+}
+
+/** Hit-test a canvas-pixel point against the HUD quickbar's 9 cells.
+ *  Returns the slot index (0..8) when the point is inside a cell (gaps
+ *  between cells return null), else null. Caller is responsible for
+ *  gating to free-play mode — the HUD bar itself only renders when
+ *  `!isInputCaptured(scene.overlay)`. */
+export function hitTestHudQuickbar(canvasX: number, canvasY: number): number | null {
+  if (canvasY < HUD_QUICKBAR_Y || canvasY >= HUD_QUICKBAR_Y + HUD_QUICKBAR_CELL) return null;
+  const dx = canvasX - HUD_QUICKBAR_X;
+  if (dx < 0) return null;
+  const stride = HUD_QUICKBAR_CELL + HUD_QUICKBAR_GAP;
+  const idx = Math.floor(dx / stride);
+  if (idx < 0 || idx >= QUICKSLOT_COUNT) return null;
+  if (dx - idx * stride >= HUD_QUICKBAR_CELL) return null;
+  return idx;
 }
 
 function drawRecipesSection(
@@ -765,24 +792,47 @@ export function itemInSlot(scene: Scene, slotIndex: number) {
 
 export interface ClickModifiers { button: 'left' | 'right'; shift: boolean }
 
+/** Close the inventory / container overlay. Held stacks are returned to
+ *  their source container (if any) or dropped into the world. Shared by
+ *  the keyboard close paths (`i` / Esc) and the click-outside-panel
+ *  dismiss in `handleInventoryPanelClick`. */
+export function closeInventory(scene: Scene, connection: Connection): void {
+  if (scene.heldStack) {
+    markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
+    const container = getContainer(scene.overlay);
+    if (scene.heldStack.source === 'container' && container) {
+      // Don't accidentally drop a chest item to the world; return it.
+      connection.send({
+        action: ClientAction.Transfer,
+        itemId: scene.heldStack.itemId,
+        containerId: container.entityId,
+        direction: 1,
+        quantity: scene.heldStack.quantity,
+      });
+    } else {
+      connection.send({
+        action: ClientAction.Drop,
+        itemId: scene.heldStack.itemId,
+        quantity: scene.heldStack.quantity,
+      });
+    }
+    scene.heldStack = null;
+  }
+  scene.overlay = { kind: 'none' };
+}
+
 export function handleInventoryPanelClick(
   scene: Scene,
   connection: Connection,
   hit: PanelHit,
   mods: ClickModifiers,
 ): void {
-  // Held-stack released outside the panel = drop into world at player's
-  // tile. The panel stays open; user can continue dragging.
+  // Click on the dimmed backdrop outside the panel rect = dismiss.
+  // Mirrors the `i`/Esc keyboard close so a tap on mobile behaves like a
+  // standard modal dismiss. Any held stack is dropped to world (or
+  // returned to its source container) as part of the close.
   if (hit.kind === 'outside') {
-    if (scene.heldStack) {
-      markPendingDecrement(scene, scene.heldStack.itemId, scene.heldStack.quantity);
-      connection.send({
-        action: ClientAction.Drop,
-        itemId: scene.heldStack.itemId,
-        quantity: scene.heldStack.quantity,
-      });
-      scene.heldStack = null;
-    }
+    closeInventory(scene, connection);
     return;
   }
 
@@ -1086,6 +1136,6 @@ function toLogicalInventory(scene: Scene) {
       quantity: i.quantity,
       equippedSlot: numberToEquipSlot(i.equippedSlot),
     })),
-    maxWeight: 50,
+    maxWeight: MAX_PLAYER_WEIGHT,
   };
 }

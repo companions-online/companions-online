@@ -215,7 +215,6 @@ export interface Scene {
    *  (sent to server when an equippable is selected) and the context-
    *  sensitive right-click mode (placement / cook / consumable). */
   selectedQuickSlot: number | null;
-
   // --- Observer-mode mutator ---
   /** Set the observer's interest center. Pure scene-state set; the
    *  server-side `setObserverFocus` push is the caller's responsibility

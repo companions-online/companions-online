@@ -183,10 +183,10 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
 
     gl.disable(gl.SCISSOR_TEST);
 
-    // Debug overlay: resolve action under mouse cursor.
-    // Sprite-first AABB hit test, then tile-based fallback.
-    let debugLabel: string | null = null;
-    if (keyboard.debugMode) {
+    // Action label: resolve action under mouse cursor (always visible,
+    // top-left of play area). Sprite-first AABB hit test.
+    let actionLabel: string | null = null;
+    {
       const vx = mouseCanvasX / GAME_ZOOM;
       const vy = mouseCanvasY / GAME_ZOOM;
       const hit = hitTestEntities(scene, vx, vy);
@@ -198,22 +198,12 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
         });
         if (ctx) {
           const action = resolveAction(ctx);
-          debugLabel = describeAction(action, ctx);
+          actionLabel = describeAction(action, ctx);
         }
       }
-      // if (!debugLabel) {
-      //   const tile = scene.camera.tileAt(mouseCanvasX, mouseCanvasY);
-      //   if (tile) {
-      //     const ctx = buildCursorContext(scene, tile.tx, tile.ty);
-      //     if (ctx) {
-      //       const action = resolveAction(ctx);
-      //       debugLabel = describeAction(action, ctx);
-      //     }
-      //   }
-      // }
     }
 
-    drawHud(gl, scene, scene.spriteRenderer, keyboard, hudResolution, debugLabel);
+    drawHud(gl, scene, scene.spriteRenderer, keyboard, hudResolution, actionLabel);
 
     // Menu pass — drawn last so it sits on top of the live observer world.
     // The menu controller short-circuits when overlay.kind !== 'menu'.

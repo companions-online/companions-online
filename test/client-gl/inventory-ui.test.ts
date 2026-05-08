@@ -9,6 +9,8 @@ import {
   equipSlotRect,
   recipeRowRectAt,
   quickslotCellRect,
+  hitTestHudQuickbar,
+  hudQuickbarCellRect,
   GRID_SLOT_COUNT,
   QUICKSLOT_COUNT,
   PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
@@ -105,6 +107,32 @@ describe('inventory panel hit-test', () => {
   });
 });
 
+describe('HUD quickbar hit-test', () => {
+  it('returns the slot index for a point inside each cell', () => {
+    for (let i = 0; i < QUICKSLOT_COUNT; i++) {
+      const r = hudQuickbarCellRect(i);
+      expect(hitTestHudQuickbar(r.x + 1, r.y + 1)).toBe(i);
+      expect(hitTestHudQuickbar(r.x + r.w - 1, r.y + r.h - 1)).toBe(i);
+    }
+  });
+
+  it('returns null in the gap between cells', () => {
+    const r0 = hudQuickbarCellRect(0);
+    const r1 = hudQuickbarCellRect(1);
+    const gapX = (r0.x + r0.w + r1.x) / 2;
+    expect(hitTestHudQuickbar(gapX, r0.y + 4)).toBeNull();
+  });
+
+  it('returns null for points outside the bar', () => {
+    const r = hudQuickbarCellRect(0);
+    expect(hitTestHudQuickbar(r.x - 1, r.y + 4)).toBeNull();
+    expect(hitTestHudQuickbar(r.x + 4, r.y - 1)).toBeNull();
+    expect(hitTestHudQuickbar(r.x + 4, r.y + r.h)).toBeNull();
+    const last = hudQuickbarCellRect(QUICKSLOT_COUNT - 1);
+    expect(hitTestHudQuickbar(last.x + last.w + 1, last.y + 4)).toBeNull();
+  });
+});
+
 describe('inventory panel click dispatch', () => {
   async function setup() {
     const { scene, conn } = await createTestScene();
@@ -190,16 +218,54 @@ describe('inventory panel click dispatch', () => {
     expect(conn.sent).toHaveLength(0);
   });
 
-  it('click outside panel with held stack sends Drop with quantity and clears held', async () => {
+  it('click outside panel with held stack sends Drop with quantity, clears held, and closes overlay', async () => {
     const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
     scene.heldStack = { itemId: 1, blueprintId: BlueprintType.Wood, quantity: 4, source: 'inventory' };
     handleInventoryPanelClick(scene, conn, { kind: 'outside' },
       { button: 'left', shift: false });
     expect(scene.heldStack).toBeNull();
+    expect(scene.overlay.kind).toBe('none');
     expect(conn.sent).toHaveLength(1);
     expect(conn.sent[0]).toMatchObject({
       action: ClientAction.Drop, itemId: 1, quantity: 4,
     });
+  });
+
+  it('click outside panel with no held stack closes the overlay (no actions sent)', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
+    handleInventoryPanelClick(scene, conn, { kind: 'outside' },
+      { button: 'left', shift: false });
+    expect(scene.overlay.kind).toBe('none');
+    expect(conn.sent).toHaveLength(0);
+  });
+
+  it('click outside container with held stack from container returns to container and closes', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = {
+      kind: 'container',
+      entityId: 99,
+      items: [{ itemId: 50, blueprintId: BlueprintType.Wood, quantity: 7, equippedSlot: 0 }],
+    };
+    scene.heldStack = { itemId: 50, blueprintId: BlueprintType.Wood, quantity: 7, source: 'container' };
+    handleInventoryPanelClick(scene, conn, { kind: 'outside' },
+      { button: 'left', shift: false });
+    expect(scene.heldStack).toBeNull();
+    expect(scene.overlay.kind).toBe('none');
+    expect(conn.sent).toHaveLength(1);
+    expect(conn.sent[0]).toMatchObject({
+      action: ClientAction.Transfer, itemId: 50, containerId: 99, direction: 1, quantity: 7,
+    });
+  });
+
+  it('click on panel inside-whitespace with no held stack is a no-op (overlay stays open)', async () => {
+    const { scene, conn } = await setup();
+    scene.overlay = { kind: 'inventory' };
+    handleInventoryPanelClick(scene, conn, { kind: 'inside' },
+      { button: 'left', shift: false });
+    expect(scene.overlay.kind).toBe('inventory');
+    expect(conn.sent).toHaveLength(0);
   });
 
   it('right-click on a stack picks up half (ceiling)', async () => {

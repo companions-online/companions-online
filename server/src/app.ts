@@ -88,6 +88,25 @@ export function createApp(world: GameWorld, telemetry: Telemetry) {
     });
   };
 
+  // --- Client-side error reporting ---
+  // Sink for window.onerror / unhandledrejection from index.html. Logs via
+  // world.log.error so client crashes land in data/worlds/<id>/server.log
+  // alongside server warnings. Registered before the static catch-all.
+  // Path is intentionally `/api/log` and not something descriptive like
+  // `/error-handler` or `/errors` — adblock filter lists (EasyPrivacy,
+  // uBlock) match those patterns and kill the request browser-side.
+  app.post('/api/log', async (c) => {
+    let payload: unknown = null;
+    try { payload = await c.req.json(); } catch { /* malformed body */ }
+    world.log.error('client-side error', {
+      clientSide: true,
+      payload,
+      ua: c.req.header('user-agent'),
+      ip: c.req.header('x-forwarded-for'),
+    });
+    return c.body(null, 204);
+  });
+
   // --- Static client (served from client-webgl/) ---
   // Registered LAST so /mcp and the /ws upgrade take precedence. Path is
   // relative to the server's CWD — launch the server from the repo root.

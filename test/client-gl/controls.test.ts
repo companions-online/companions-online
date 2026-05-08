@@ -9,6 +9,7 @@ import { resolveAction } from '@shared/action-resolver.js';
 import { createTestScene } from './harness.js';
 import { buildCursorContext } from '@client-webgl/controls/cursor-context.js';
 import { attachMouseControls } from '@client-webgl/controls/mouse.js';
+import { hudQuickbarCellRect } from '@client-webgl/ui/inventory-panel.js';
 import type { Scene } from '@client-webgl/scene.js';
 import type { FakeConnection } from './fake-connection.js';
 
@@ -318,5 +319,175 @@ describe('attachMouseControls → action dispatch', () => {
     expect(conn.sent[0].action).toBe(ClientAction.Harvest);
     // No MoveTo → no turn prediction.
     expect(me.direction?.dir).toBe(dirBefore);
+  });
+
+  it('left-click on a HUD quickbar cell selects the slot, no MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    // Bind an axe to slot 0.
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 7, blueprintId: BlueprintType.Axe, quantity: 1, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 7;
+    const sentBefore = conn.sent.length;
+
+    const r = hudQuickbarCellRect(0);
+    fireClick(r.x + 4, r.y + 4);
+
+    expect(scene.selectedQuickSlot).toBe(0);
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.Equip, itemId: 7 });
+  });
+
+  // --- Quickslot-driven left-click flow ---
+
+  function findTilePixels(
+    scene: Scene,
+    tx: number,
+    ty: number,
+  ): { x: number; y: number } | null {
+    for (let py = 0; py < 768; py += 4) {
+      for (let px = 0; px < 1024; px += 4) {
+        const t = scene.camera.tileAt(px, py);
+        if (t && t.tx === tx && t.ty === ty) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  it('left-click on bare tile with placement-selected slot fires UseItemAt, no MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: 5, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 11;
+    scene.selectedQuickSlot = 0;
+    const sentBefore = conn.sent.length;
+
+    const t1 = findTilePixels(scene, 33, 32)!;
+    fireClick(t1.x, t1.y);
+    let newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 33, tileY: 32 });
+
+    // Second tap on a different tile — selection still drives placement.
+    const t2 = findTilePixels(scene, 34, 32)!;
+    fireClick(t2.x, t2.y);
+    newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(2);
+    expect(newSent[1]).toEqual({ action: ClientAction.UseItemAt, itemId: 11, tileX: 34, tileY: 32 });
+  });
+
+  it('left-click on a creature with placement-selected slot still resolves to Attack', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 11, blueprintId: BlueprintType.WoodenWall, quantity: 5, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 11;
+    scene.selectedQuickSlot = 0;
+    // Place a deer at (35, 32) and pretend it has been drawn so its AABB is set.
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 77,
+        components: {
+          position: { tileX: 35, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Deer, variant: 0 },
+          statusEffects: { effects: 0 },
+        },
+      },
+    });
+    const deer = scene.entities.get(77)!;
+    deer.screenX = 200; deer.screenY = 200; deer.screenW = 32; deer.screenH = 32;
+
+    // Compute a canvas pixel that lands inside the deer's AABB (account for GAME_ZOOM=2).
+    const sentBefore = conn.sent.length;
+    fireClick(420, 420); // virtual coord 210, 210 — inside [200..232]
+
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.Attack, entityId: 77 });
+  });
+
+  it('left-click on campfire SPRITE (above its tile) with cook-selected slot still cooks', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 88,
+        components: {
+          position: { tileX: 33, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Campfire, variant: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
+        },
+      },
+    });
+    // Place AABB at virtual coords that map to a click pixel ABOVE the
+    // campfire's tile (the click pixel resolves to a different tile than
+    // the campfire's own).
+    const fire = scene.entities.get(88)!;
+    fire.screenX = 200; fire.screenY = 200; fire.screenW = 32; fire.screenH = 64;
+    const sentBefore = conn.sent.length;
+
+    // Pick a click pixel inside the AABB but at the top of the sprite.
+    fireClick(420, 410); // virtual (210, 205) — inside [200..232, 200..264]
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 21, tileX: 33, tileY: 32 });
+  });
+
+  it('left-click adjacent campfire with cook-selected slot fires UseItemAt at campfire', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    // Adjacent campfire at (33, 32).
+    conn.deliver({
+      type: 'entityFullState',
+      data: {
+        entityId: 88,
+        components: {
+          position: { tileX: 33, tileY: 32 },
+          blueprint: { blueprintId: BlueprintType.Campfire, variant: 0 },
+          statusEffects: { effects: StatusEffect.Placed },
+        },
+      },
+    });
+    const sentBefore = conn.sent.length;
+
+    const t = findTilePixels(scene, 33, 32)!;
+    fireClick(t.x, t.y);
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0]).toEqual({ action: ClientAction.UseItemAt, itemId: 21, tileX: 33, tileY: 32 });
+  });
+
+  it('left-click on a distant bare tile with cook-selected slot falls through to MoveTo', async () => {
+    const { scene, conn, fireClick } = await setup(32, 32);
+    conn.deliver({
+      type: 'inventorySync',
+      items: [{ itemId: 21, blueprintId: BlueprintType.RawMeat, quantity: 2, equippedSlot: 0 }],
+    });
+    scene.quickSlots[0] = 21;
+    scene.selectedQuickSlot = 0;
+    const sentBefore = conn.sent.length;
+
+    const t = findTilePixels(scene, 36, 32)!; // far enough that there's no campfire there
+    fireClick(t.x, t.y);
+    const newSent = conn.sent.slice(sentBefore);
+    expect(newSent).toHaveLength(1);
+    expect(newSent[0].action).toBe(ClientAction.MoveTo);
   });
 });

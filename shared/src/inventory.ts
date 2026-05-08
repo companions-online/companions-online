@@ -50,6 +50,9 @@ export function canCraft(recipe: Recipe, inv: Inventory): boolean {
   return true;
 }
 
+export const MAX_PLAYER_WEIGHT = 100;
+export const MAX_CHEST_WEIGHT = 250;
+
 export const EQUIP_SLOT_NONE = 0;
 export const EQUIP_SLOT_HAND = 1;
 export const EQUIP_SLOT_BODY = 2;

@@ -23,9 +23,9 @@ network/standalone-connection.ts Virtual-network peer of the WS connection. Stan
 
 ## Controls
 ```
-controls/mouse.ts            mousedown → cursor-context → resolveAction → connection.send. Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
+controls/mouse.ts            mousedown ladder: overlay-capture → HUD-quickbar select → HUD button (inventory/settings) → right-click contextual mode → left-click world dispatch. Left-click ladder: sprite-AABB hit (entity actions resolve normally; cook-mode + Campfire hit short-circuits to handleCookingClick using the entity's tile so above-tile sprite clicks still cook) → tile-fallback (placement → UseItemAt; cook → handleCookingClick adjacent, else fall through; default → cursor-context → resolveAction). Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
 controls/cursor-context.ts   Build shared ActionContext from scene state (worldMap + entities + inventory).
-controls/keyboard.ts         Keyboard handler — chat input mode, debug, inventory toggle, Esc routing. Mutates scene.overlay for inventory open/close. Early-returns when scene.overlay.kind === 'menu' so menu-input owns input while the main menu is up.
+controls/keyboard.ts         Keyboard handler — chat input mode, inventory toggle (`i` / Esc, delegates to `closeInventory` imported from ui/inventory-panel.ts), Esc routing (clearQuickSlotSelection / open in-game settings), `1`..`9` quickslot select. Early-returns when scene.overlay.kind === 'menu' so menu-input owns input while the main menu is up.
 controls/observer-camera.ts  Autopilot driver for observer mode. 8-dir random walk over float tile coords; 3-5s segments; edge buffer biases turns toward map center. Writes float coords to scene.observerFocus for smooth camera follow; pushes server setObserverFocus only on rounded-tile transitions. Mulberry32 RNG, seedable for tests.
 controls/menu-input.ts       DOM event bridge for the menu. mousemove/mousedown/mouseup/keydown forward to the menu controller when scene.overlay.kind === 'menu'. Always attached at boot — the overlay-kind gate makes attach/detach unnecessary.
 ```
@@ -86,8 +86,9 @@ effects/text-surface.ts      TextSurfaceFactory — rasterized text textures, ca
 
 ## UI
 ```
-ui/hud.ts                    Chat log + input + debug overlay + inventory panel + always-visible quickbar. Quickbar hides whenever any overlay (inventory / container / dialogue / menu) is up via !isInputCaptured(scene.overlay).
-ui/inventory-panel.ts        Drag-and-drop inventory + crafting + chest UI. See memory/client-webgl/inventory-panel.md for the cursor-held mechanics.
+ui/hud.ts                    Chat log + input + always-visible action label (top-left, resolved action under cursor) + inventory panel + always-visible quickbar + bottom-right HUD button bar. Quickbar/buttons hide whenever any overlay (inventory / container / dialogue / menu) is up via !isInputCaptured(scene.overlay).
+ui/inventory-panel.ts        Drag-and-drop inventory + crafting + chest UI + always-visible HUD quickbar (drawQuickbarHud) and its hit-test (hudQuickbarCellRect, hitTestHudQuickbar) — left-clicking a HUD cell calls selectQuickSlot. Exports closeInventory(scene, conn) — the shared close path used by the keyboard `i`/Esc handler and the click-outside-panel dismiss in handleInventoryPanelClick (returns held stack to source container or drops to world, then clears overlay). See memory/client-webgl/inventory-panel.md for the cursor-held mechanics.
+ui/hud-buttons.ts            Bottom-right HUD button bar — [inventory][settings]. Mirrors `i` and Esc keyboard paths. Exports hitTestHudButton, handleHudButtonClick, hudButtonRect. (The legacy "action" button + `scene.armedAction` were retired on 2026-05-07: quickslot+left-click commits placement/cook directly; selecting a consumable quickslot fires UseConsumable per press.)
 ui/quickslot.ts              9-slot quickbar selection (1..9 keys), context-sensitive right-click mode (placement/cook/consumable). selectQuickSlot + clearQuickSlotSelection.
 ui/placement.ts              Placement-mode ghost sprite + UseItemAt click handling. updatePlacementHover / handlePlacementClick / isPlacementActive.
 ui/cooking-highlight.ts      Adjacent-campfire tint + click handling for raw meat/fish.
@@ -113,7 +114,8 @@ test/client-gl/fake-static-assets.ts    Stub terrain/mask/wall texture arrays + 
 test/client-gl/fake-connection.ts       In-memory Connection. deliver(msg) inbound, sent[] outbound.
 test/client-gl/scene.test.ts            Scene mutators, entity factory dispatch, capacity.
 test/client-gl/interpolation.test.ts    Lerp math + re-checkpointing + walk frame animation.
-test/client-gl/controls.test.ts         cursor-context + resolveAction integration + attachMouseControls end-to-end.
+test/client-gl/controls.test.ts         cursor-context + resolveAction integration + attachMouseControls end-to-end (world clicks, HUD-quickbar select, quickslot left-click ladder: placement-on-tile, placement-on-entity-attack, cook-on-campfire-tile, cook-on-campfire-sprite-above-tile, cook-off-target → MoveTo).
+test/client-gl/hud-buttons.test.ts      HUD button bar — hit-test geometry + dispatch (inventory/settings overlays).
 test/client-gl/inventory.test.ts        inventorySync + fishing-rod-on-water + container/dialogue/chat.
 test/client-gl/shadowcast.test.ts       Per-target raycast + blocker behavior, wall occlusion, target-lit-when-blocker.
 test/client-gl/widgets.test.ts          Widget kit — Button click semantics (armed/disarmed), TextInput edit + bubble-Enter / bubble-Esc, Toggle click flips + Space/Enter when focused + bubble-Esc + surface cache, surface cache + dispose, Image / Divider / BackdropDim smoke.
