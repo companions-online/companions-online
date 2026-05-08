@@ -60,3 +60,4 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [harness/variants](harness/variants.md) — compact/baseline/shortened: state shapes, prompt-build differences, when to use each, why no `continue` after tool results
 - [harness/eval](harness/eval.md) — eval-runner, AI-eid snapshot-diff, stop-reason taxonomy, test injection seams
 - [harness/characters](harness/characters.md) — multi-character CLI (`npx characters`), roster format, orchestrator/dashboard split, concurrency model
+- [user-guide/overview](user-guide/overview.md) — Docusaurus site (player + AI companion docs); source dir is `user-guide/`, URL base is `/guide/`; integration seams (copy-assets, prompt link, recipe icons), editorial conventions
