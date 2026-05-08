@@ -1,44 +1,20 @@
 
-Usability:
-* increase max weight carriable by player to 100; max weight in chest to 250
-* remove "q" as debug, the current action command in upper-left should always be visible
+
+walls/floors/buildings can be destroyed by hammer
+* and they break down / drop their components -so eg walls can be moved further away
 
 
-Mobile support
 
-* bottom-right button menu:  [default right-click action] [Inventory] [Settings]
-^^ default right-click action is when a thing is selected in inventory -eg cooked meat- to heal; it should display the action itself. Eg for building, place wooden wall, which then places wherever the user left clicks/taps
-* quickslot items clickable -> switches quickslot item
 
 Remaining assets:
 * wooden wall, floor tile sprites
 * NPCs + new variants for player
 
 
+---
+* trees to also drop saplings / seeds that can be picked up & planted somewhere else -> it grows things over time
 
 ---
-
-user guide sections:
-
-> getting started
-* crafting guide
-* building guide
-> running server
-> running LLMs
-* harness
-* prompts
-* MCP server
-> contribute
----
-
-
-Next, we want to develop a combined landing page - user guide - online instant play, using docusaurus
-* Goes into user-guide/    ; npm run build:guide  builds it
-
-
-Sections:
-* Landing: full-screen, no sidebar; middle: client-webgl/assets/game-logo.png,  below it: play now button
-** on clicking "play now", it turns the entire logo + button into a canvas, dynamically loads the .js, starts the game
 
 
 
@@ -82,7 +58,6 @@ next stage of game design:
 
 
 ---
-bug: can't place a chest on wooden floor?
 mcp: multiple pickups / quantity for craft
 
 ----
@@ -291,3 +266,76 @@ For next step, we want to turn this into an actual product:
 
 
 -----
+context: the idea here is to have one single monorepo for everything, and we're building out a website around the game:
+* docusaurus as cms (devDependencies), user-guide  as directory
+* because we're serving this from gitub, built pages go into docs/      index.html needs to be there probably; npm run build:guide builds it
+
+To start with, section Landing
+
+** top bar: icon + Companions Online (clicking on this will always return to /)  User Guide      right side: GitHub ( -> https://github.com/companions-online/companions-online ), [switch between dark and light mode icon]   [searchbar]
+** middle section: full-screen-width game area, gradient background color
+***** middle: client-webgl/assets/game-logo.png,  below it: play now button
+***** on clicking "play now", it turns the entire logo + button into a canvas, dynamically loads the .js, starts the game
+***** look into client-webgl/rescale-variant-1.html   for canvas rendering -we want to render this in a rescalable way
+** below game section: 3 columns, lorum ipsem for now
+** footer columns: Documentation |   Community
+
+And a few select choices:
+
+Theme: @docusaurus/theme-mermaid
+// In order for Mermaid code blocks in Markdown to work,
+  // you also need to enable the Remark plugin with this option
+  markdown: {
+    mermaid: true,
+  },
+plugins: posthog-docusaurus     (enableInDevelopment: false)
+
+prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+    },
+
+* with structure including:    play now  -which literally just links a compiled .js for the game, and so it's immediately           playable -and the rest of the docs. AND we'll put all into the repo (so you can auto-update it when    things expand) AND we want all of this to stand up as a github.io page. 
+--------
+
+Next, we want to develop a combined landing page - user guide - online instant play, using docusaurus
+* Goes into user-guide/    ; npm run build:guide  builds it
+
+
+Sections:
+* Landing: full-screen, no sidebar; middle: client-webgl/assets/game-logo.png,  below it: play now button
+** on clicking "play now", it turns the entire logo + button into a canvas, dynamically loads the .js, starts the game
+
+
+
+user guide sections:
+
+> getting started
+* crafting guide
+* building guide
+> self-host a server
+> running LLMs / playing with your AI
+* harness
+* prompts
+* MCP server
+* MMO bench   -about the eval we wrote
+> contribute
+
+------
+Mobile support
+
+* bottom-right button menu:  [default right-click action] [Inventory] [Settings]
+^^ default right-click action is when a thing is selected in inventory -eg cooked meat- to heal; it should display the action itself. Eg for building, place wooden wall, which then places wherever the user left clicks/taps
+* quickslot items clickable -> switches quickslot item
+
+
+------
+Usability:
+* increase max weight carriable by player to 100; max weight in chest to 250
+* remove "q" as debug, the current action command in upper-left should always be visible
+
+------
+bug: can't place a chest on wooden floor?
+
+------
+no "quick action" button, rather, if a quick-actionable item is quickslot-selected, left-click always does the action (cooking, placing buildings). if the item is consumable, selecting it on quick-action item automatically: equips it -> consumes 1 unit
