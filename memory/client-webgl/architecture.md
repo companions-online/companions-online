@@ -194,7 +194,10 @@ branch that matches consumes the click:
    (uses hover tile); `cook` → `handleCookingClick` at the clicked tile.
    Right-click never causes movement. Kept for desktop muscle memory.
 5. **Left-click world dispatch.**
-   - Sprite-AABB hit-test runs first (`hitTestEntities`) — clicking on a
+   - Sprite hit-test runs first (`hitTestEntities`) — alpha-aware with
+     pass-through: AABB candidates are walked front-to-back and the
+     first whose sprite pixel is opaque wins, so a transparent corner
+     of one sprite falls through to entities behind it. Clicking on a
      deer attacks even when a wall is selected.
    - If no entity hit (or `resolveAction` returned null for the entity),
      `scene.camera.tileAt(cx, cy)` resolves to a tile.

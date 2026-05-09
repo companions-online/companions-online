@@ -23,7 +23,7 @@ network/standalone-connection.ts Virtual-network peer of the WS connection. Stan
 
 ## Controls
 ```
-controls/mouse.ts            mousedown ladder: overlay-capture → HUD-quickbar select → HUD button (inventory/settings) → right-click contextual mode → left-click world dispatch. Left-click ladder: sprite-AABB hit (entity actions resolve normally; cook-mode + Campfire hit short-circuits to handleCookingClick using the entity's tile so above-tile sprite clicks still cook) → tile-fallback (placement → UseItemAt; cook → handleCookingClick adjacent, else fall through; default → cursor-context → resolveAction). Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
+controls/mouse.ts            mousedown ladder: overlay-capture → HUD-quickbar select → HUD button (inventory/settings) → right-click contextual mode → left-click world dispatch. Left-click ladder: sprite hit-test (alpha-aware via hitTestEntities + isSpritePixelOpaque — AABB candidates walked front-to-back, first opaque-pixel hit wins, transparent corners pass through to entities behind; entity actions resolve normally; cook-mode + Campfire hit short-circuits to handleCookingClick using the entity's tile so above-tile sprite clicks still cook) → tile-fallback (placement → UseItemAt; cook → handleCookingClick adjacent, else fall through; default → cursor-context → resolveAction). Turn prediction on MoveTo. World input gated by isInputCaptured(scene.overlay).
 controls/cursor-context.ts   Build shared ActionContext from scene state (worldMap + entities + inventory).
 controls/keyboard.ts         Keyboard handler — chat input mode, inventory toggle (`i` / Esc, delegates to `closeInventory` imported from ui/inventory-panel.ts), Esc routing (clearQuickSlotSelection / open in-game settings), `1`..`9` quickslot select. Early-returns when scene.overlay.kind === 'menu' so menu-input owns input while the main menu is up.
 controls/observer-camera.ts  Autopilot driver for observer mode. 8-dir random walk over float tile coords; 3-5s segments; edge buffer biases turns toward map center. Writes float coords to scene.observerFocus for smooth camera follow; pushes server setObserverFocus only on rounded-tile transitions. Mulberry32 RNG, seedable for tests.
@@ -32,11 +32,11 @@ controls/menu-input.ts       DOM event bridge for the menu. mousemove/mousedown/
 
 ## Entities
 ```
-entities/client-entity.ts    ClientEntity interface — extends EntityComponents + visual state (visualX/Y, lerpFromX/Y, checkpointMs, spriteSheet, walkFrame).
+entities/client-entity.ts    ClientEntity interface — extends EntityComponents + visual state (visualX/Y, lerpFromX/Y, checkpointMs, spriteSheet, walkFrame) + screen-space AABB (screenX/Y/W/H) + current-frame source coords in sheet-pixel space (spriteSrcX/Y) — both written by the per-entity draw fn and consumed by the alpha-aware hit-test.
 entities/from-network.ts     createEntityFromNetwork (factory dispatch by blueprint category) + applyComponentsToEntity (delta merge + lerp checkpoint).
 entities/creature-entity.ts  Creature/NPC factory. Tick: lerp visualX/Y, advance walk frame. Draw: 8-dir walk-cycle sheet.
 entities/static-entity.ts    Placeable/item/resource factory. Three draw paths: door (2×2 facing+open), animated (sheet.animation → ticked walkFrame, col/row UV slice), single-frame.
-entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block). Unknown-entity fallback.
+entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block, alphaMask = Uint8Array of per-pixel alpha in sheet-pixel space for hit-test sampling). Image pixels are read once via readImagePixels (canvas getImageData) and feed both alphaMask and detectFootFromPixels — no second canvas pass. Unknown-entity fallback.
 entities/sprite-manifest.ts  Per-blueprint sheet metadata (name, frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType.
 entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns). begin(res, lightmap?) / setSpriteTile / setLit for lighting integration.
 entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap via u_spriteTileXY when u_lit=1.

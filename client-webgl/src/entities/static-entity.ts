@@ -48,6 +48,8 @@ export function createStaticEntity(
     screenY: 0,
     screenW: 0,
     screenH: 0,
+    spriteSrcX: 0,
+    spriteSrcY: 0,
 
     draw(self, sprites, gl, offsetX, offsetY, scene) {
       if (self.blueprint?.blueprintId === BlueprintType.WoodenDoor) {
@@ -99,6 +101,8 @@ function drawSingleFrame(
   e.screenY = dstY;
   e.screenW = s.renderW;
   e.screenH = s.renderH;
+  e.spriteSrcX = 0;
+  e.spriteSrcY = 0;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -138,6 +142,8 @@ function drawAnimatedStatic(
   const row = Math.floor(e.walkFrame / a.cols);
   const uvW = s.frameW / s.sheetW;
   const uvH = s.frameH / s.sheetH;
+  e.spriteSrcX = col * s.frameW;
+  e.spriteSrcY = row * s.frameH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);
@@ -192,6 +198,8 @@ function drawDoor(
   e.screenY = dstY;
   e.screenW = s.renderW;
   e.screenH = s.renderH;
+  e.spriteSrcX = isOpen * s.frameW;
+  e.spriteSrcY = facing * s.frameH;
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, s.texture);

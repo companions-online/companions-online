@@ -39,6 +39,12 @@ export interface ClientEntity extends EntityComponents {
   screenW: number;
   screenH: number;
 
+  // Top-left of the current frame in sheet-pixel space, populated during
+  // draw alongside the AABB. Lets alpha-aware hit-test sample
+  // spriteSheet.alphaMask without re-deriving the slice math.
+  spriteSrcX: number;
+  spriteSrcY: number;
+
   // Per-frame logic. Each entity type provides its own.
   tick?: (e: ClientEntity, dt: number, scene: Scene) => void;
   // Per-frame draw. Each entity type owns its sprite math (frame columns/rows, foot anchor).

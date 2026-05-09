@@ -7,13 +7,21 @@ import type { SpriteRegistry, SpriteSheetRef } from '@client-webgl/entities/spri
 
 let handleCounter = 1000;
 
+/** Build a fully-opaque alpha mask for a sheet of the given size — default
+ *  for tests that don't care about alpha-aware hit testing. */
+function opaqueAlphaMask(sheetW: number, sheetH: number): Uint8Array {
+  return new Uint8Array(sheetW * sheetH).fill(255);
+}
+
 function defaultSheet(): SpriteSheetRef {
+  const sheetW = 92 * 7;   // 7 cols: idle + 6 walk frames
+  const sheetH = 92 * 8;   // 8 direction rows
   return {
     // `as unknown` because the real field is WebGLTexture — tests never
     // touch GPU state so a number stands in fine.
     texture: handleCounter++ as unknown as WebGLTexture,
-    sheetW: 92 * 7,   // 7 cols: idle + 6 walk frames
-    sheetH: 92 * 8,   // 8 direction rows
+    sheetW,
+    sheetH,
     frameW: 92,
     frameH: 92,
     renderW: 92,
@@ -21,6 +29,7 @@ function defaultSheet(): SpriteSheetRef {
     footX: 46,
     footY: 82,
     align: 'center',
+    alphaMask: opaqueAlphaMask(sheetW, sheetH),
   };
 }
 
@@ -32,6 +41,7 @@ function fallbackSheet(): SpriteSheetRef {
     renderW: 64, renderH: 64,
     footX: 32, footY: 64,
     align: 'center',
+    alphaMask: opaqueAlphaMask(64, 64),
     isFallback: true,
   };
 }

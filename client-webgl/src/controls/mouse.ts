@@ -41,27 +41,53 @@ export function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
 }
 
 /**
- * Test a virtual-pixel position against all entity AABBs.
- * Returns the frontmost (highest screenY) hit, or null.
+ * Test a virtual-pixel position against all entity AABBs and pick the
+ * frontmost entity whose sprite is opaque at that point. Transparent
+ * pixels pass through to entities behind, so clicking the empty corner
+ * of one sprite can still register on a sprite drawn beneath it.
  */
 export function hitTestEntities(
   scene: Scene,
   virtualX: number,
   virtualY: number,
 ): ClientEntity | null {
-  let best: ClientEntity | null = null;
+  // Collect every AABB candidate, then walk them front-to-back and
+  // return the first whose alpha mask says the clicked pixel is opaque.
+  const candidates: ClientEntity[] = [];
   for (const [eid, e] of scene.entities) {
     if (eid === scene.myEntityId) continue;
     if (!e.blueprint) continue;
     if (e.screenW === 0) continue; // not yet drawn
     if (virtualX >= e.screenX && virtualX < e.screenX + e.screenW &&
         virtualY >= e.screenY && virtualY < e.screenY + e.screenH) {
-      if (!best || e.screenY > best.screenY) {
-        best = e;
-      }
+      candidates.push(e);
     }
   }
-  return best;
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.screenY - a.screenY);
+  for (const e of candidates) {
+    if (isSpritePixelOpaque(e, virtualX, virtualY)) return e;
+  }
+  return null;
+}
+
+/** Sample the entity's sprite alpha at a virtual-pixel point that is
+ *  already known to lie inside its AABB. Returns true when the underlying
+ *  sheet pixel is opaque (alpha > 0). */
+function isSpritePixelOpaque(
+  e: ClientEntity,
+  virtualX: number,
+  virtualY: number,
+): boolean {
+  const sheet = e.spriteSheet;
+  // Map the screen pixel into the entity's current frame, then into
+  // sheet-pixel space. renderW/H may differ from frameW/H when the sheet
+  // declares a render scale, so divide before adding the source origin.
+  const fx = Math.floor((virtualX - e.screenX) * (sheet.frameW / e.screenW));
+  const fy = Math.floor((virtualY - e.screenY) * (sheet.frameH / e.screenH));
+  const sx = e.spriteSrcX + Math.max(0, Math.min(sheet.frameW - 1, fx));
+  const sy = e.spriteSrcY + Math.max(0, Math.min(sheet.frameH - 1, fy));
+  return sheet.alphaMask[sy * sheet.sheetW + sx] > 0;
 }
 
 export function attachMouseControls(

@@ -72,6 +72,8 @@ export function createCreatureEntity(
     screenY: 0,
     screenW: 0,
     screenH: 0,
+    spriteSrcX: 0,
+    spriteSrcY: 0,
 
     tick(self, dt, scene) {
       if (self.position) {
@@ -158,6 +160,8 @@ function drawCreatureSprite(
   sprites.setSpriteTile(e.visualX, e.visualY);
 
   if (sheet.isFallback) {
+    e.spriteSrcX = 0;
+    e.spriteSrcY = 0;
     sprites.drawSprite(dstX, dstY, sheet.renderW, sheet.renderH, 0, 0, 1, 1);
     return;
   }
@@ -167,6 +171,8 @@ function drawCreatureSprite(
   const row = (dir + 1) % 8;
   const sx = col * sheet.frameW;
   const sy = row * sheet.frameH;
+  e.spriteSrcX = sx;
+  e.spriteSrcY = sy;
 
   sprites.drawSprite(
     dstX, dstY, sheet.renderW, sheet.renderH,

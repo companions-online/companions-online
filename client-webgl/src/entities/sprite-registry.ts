@@ -39,6 +39,11 @@ export interface SpriteSheetRef {
   align: SpriteAlign;
   /** Present when this sheet is an animation. */
   animation?: SpriteAnimationRef;
+  /** Per-pixel alpha (sheet-pixel space, sheetW × sheetH, row-major). One
+   *  byte per pixel: > 0 means opaque enough to register a sprite-first
+   *  click; 0 means transparent and the click passes through to the next
+   *  entity behind. */
+  alphaMask: Uint8Array;
   /** True only for the unknown-entity fallback sheet. Draw paths that would
    *  index into a creature walk-cycle layout (8 dir rows × N frame cols)
    *  must special-case this to a single-frame blit instead. */
@@ -64,9 +69,16 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Scan the image for the bounding box of opaque pixels and return the
- *  horizontal center + one-past-the-bottommost-opaque-row as the foot. */
-function detectFootFromImage(img: HTMLImageElement): { footX: number; footY: number } {
+/** Pull every pixel out of `img` once: returns the full RGBA buffer and an
+ *  alpha-only Uint8Array (one byte per pixel) for hit-test sampling. The
+ *  RGBA buffer feeds optional foot detection in the same pass — no second
+ *  canvas read. */
+function readImagePixels(img: HTMLImageElement): {
+  rgba: Uint8ClampedArray;
+  alpha: Uint8Array;
+  width: number;
+  height: number;
+} {
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   const canvas = document.createElement('canvas');
@@ -74,12 +86,25 @@ function detectFootFromImage(img: HTMLImageElement): { footX: number; footY: num
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, 0, 0);
-  const { data } = ctx.getImageData(0, 0, w, h);
+  const rgba = ctx.getImageData(0, 0, w, h).data;
+  const alpha = new Uint8Array(w * h);
+  for (let i = 0; i < alpha.length; i++) {
+    alpha[i] = rgba[i * 4 + 3];
+  }
+  return { rgba, alpha, width: w, height: h };
+}
 
+/** Scan the RGBA buffer for the bounding box of opaque pixels and return the
+ *  horizontal center + one-past-the-bottommost-opaque-row as the foot. */
+function detectFootFromPixels(
+  rgba: Uint8ClampedArray,
+  w: number,
+  h: number,
+): { footX: number; footY: number } {
   let minX = w, maxX = 0, maxY = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] > 0) {
+      if (rgba[(y * w + x) * 4 + 3] > 0) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y > maxY) maxY = y;
@@ -100,8 +125,9 @@ async function loadManifestEntry(
   return Promise.all(
     Array.from({ length: variantCount }, async (_, v) => {
       const img = await loadImage(pathFor(entry, variantCount, v));
+      const pixels = readImagePixels(img);
       const foot = entry.detectFoot
-        ? detectFootFromImage(img)
+        ? detectFootFromPixels(pixels.rgba, pixels.width, pixels.height)
         : { footX: entry.footX, footY: entry.footY };
       // For static single-image entries, foot coords from detectFoot are in
       // image-pixel space. Scale to frame-pixel space when the render frame
@@ -131,6 +157,7 @@ async function loadManifestEntry(
               frameMs: 1000 / entry.animation.fps,
             }
           : undefined,
+        alphaMask: pixels.alpha,
       };
     }),
   );
@@ -138,6 +165,7 @@ async function loadManifestEntry(
 
 async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheetRef> {
   const img = await loadImage('/assets/unknown-entity.png');
+  const pixels = readImagePixels(img);
   // Single-frame sheet: the whole image is one frame, anchored at bottom
   // center. Renderers that index into it (col/row for creature walk cycles)
   // will clamp to this single frame via GL texture clamping.
@@ -152,6 +180,7 @@ async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheet
     footX: Math.round(img.naturalWidth / 2),
     footY: img.naturalHeight,
     align: 'center',
+    alphaMask: pixels.alpha,
     isFallback: true,
   };
 }
