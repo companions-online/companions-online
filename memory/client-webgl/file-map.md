@@ -78,7 +78,7 @@ platform/gl-utils.ts         createImageTexture, linkProgram, createBuffer, crea
 effects/effect.ts            EffectManager + Effect interface. EffectKind: 'damage' | 'pickup' | 'chat' | 'sprite-anim'. Tick+draw in unlit pass.
 effects/sprite-anim.ts       createSpriteAnim — generic one-shot sheet animation Effect. Playable by explicit frameSequence + totalDurationMs; optional scale + alpha multipliers; optional followEntityId to re-anchor each tick.
 effects/effect-sprites.ts    loadEffectSprites — boots smoke / attack / harvest-craft sheets + HP-bar solid-color 1×1 textures. Injected via CreateSceneOptions.effectSprites for tests.
-effects/damage-number.ts     createDamageNumber — red number floats up on HP decrease (largeFont for self).
+effects/damage-number.ts     createDamageNumber(amount, anchorX, anchorY, followEntityId, …) — red number floats up. Spawned from scene.onGameEvent's CombatHitDealt handler (authoritative source); largeFont when target is the local player. Skipped on WS killing hit when target is gone.
 effects/pickup-text.ts       createPickupText — green "+N item" floats up on pickup.
 effects/chat-bubble.ts       createChatBubble — speech bubble fading out.
 effects/text-surface.ts      TextSurfaceFactory — rasterized text textures, cached.

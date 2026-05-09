@@ -141,8 +141,9 @@ describe('scene network wiring', () => {
         attackerId: 50, targetId: 51, damage: 3, targetHp: 5, targetMaxHp: 10,
       }],
     });
-    expect(scene.effects.active).toHaveLength(1);
-    expect(scene.effects.active[0].kind).toBe('sprite-anim');
+    // Slash sprite-anim + damage number, both anchored from the same event.
+    expect(scene.effects.active.some(e => e.kind === 'sprite-anim')).toBe(true);
+    expect(scene.effects.active.some(e => e.kind === 'damage')).toBe(true);
   });
 
   it('EntityDied event spawns a smoke-puff effect at the death tile', async () => {

@@ -9,7 +9,7 @@
 // player's interest range plus a just-in-time overlap margin. Eviction on
 // player movement keeps the working set bounded regardless of map size.
 
-import { CHUNK_SIZE, INTEREST_RANGE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
+import { CHUNK_SIZE, CLIENT_EVICT_RADIUS_CHUNKS, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { WorldMap } from '@shared/world/world-map.js';
 import type {
   DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
@@ -62,12 +62,13 @@ import { generateWallTextures } from './buildings/wall-texture.js';
 import type { WallShape } from './buildings/wall-texture.js';
 import { buildWallDrawablesForChunk, type WallDrawable } from './buildings/wall-sprites.js';
 
-/** Chunks needed in each direction at a given instant: full interest range
- *  plus one extra ring so new chunks load just-in-time as the player's
- *  chunk slides. Squared → peak concurrent chunks. Plus a small margin for
- *  safety. At INTEREST_RANGE=32 CHUNK_SIZE=16 → radius 3, peak 49, +4 = 53. */
-const INTEREST_RADIUS_CHUNKS = Math.ceil(INTEREST_RANGE / CHUNK_SIZE) + 1;
-const PEAK_CONCURRENT_CHUNKS = (2 * INTEREST_RADIUS_CHUNKS + 1) ** 2;
+/** Eviction radius is the shared CLIENT_EVICT_RADIUS_CHUNKS — kept strictly
+ *  greater than the server's needed-radius so a chunk evicted here is
+ *  already absent from the server's `sentChunks` and will be re-streamed on
+ *  re-entry. See the invariant in shared/src/constants.ts. Plus a small
+ *  margin in CHUNK_CAPACITY for safety. At INTEREST_RANGE=32 CHUNK_SIZE=16
+ *  → radius 3, peak 49, +4 = 53. */
+const PEAK_CONCURRENT_CHUNKS = (2 * CLIENT_EVICT_RADIUS_CHUNKS + 1) ** 2;
 const CHUNK_CAPACITY = PEAK_CONCURRENT_CHUNKS + 4;
 const TILES_PER_CHUNK = CHUNK_SIZE * CHUNK_SIZE;
 
@@ -351,7 +352,7 @@ export async function createScene(
     for (const key of [...chunkTerrainData.keys()]) {
       const cx = key % 1024;
       const cy = (key - cx) / 1024;
-      if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > INTEREST_RADIUS_CHUNKS) {
+      if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > CLIENT_EVICT_RADIUS_CHUNKS) {
         chunkTerrainData.delete(key);
         wallDrawablesByChunk.delete(key);
         chunkElevation.delete(key);
@@ -676,20 +677,8 @@ export async function createScene(
     onEntityUpdate(update) {
       const existing = entities.get(update.entityId);
       if (existing) {
-        const prevHp = existing.health?.currentHp;
         const prevActionType = existing.currentAction?.actionType;
         applyComponentsToEntity(existing, update.components, this.time);
-
-        // Damage number: spawn when HP decreased.
-        if (prevHp !== undefined
-          && update.components.health !== undefined
-          && update.components.health.currentHp < prevHp) {
-          const delta = prevHp - update.components.health.currentHp;
-          effects.spawn(createDamageNumber(
-            existing, delta, this.time, textSurfaceFactory,
-            { largeFont: existing.id === this.myEntityId },
-          ));
-        }
 
         // Death smoke puff: currentAction transitioned into Dead. Covers the
         // player-death case where the entity persists (no EntityDied event
@@ -729,9 +718,9 @@ export async function createScene(
         case WireEventType.CombatHitDealt: {
           const attacker = entities.get(event.attackerId);
           const target = entities.get(event.targetId);
-          // Midpoint when both alive; attacker-only on the killing hit (target
-          // already removed by the preceding WorldDelta — smoke puff covers the
-          // moment of kill anyway).
+          // Slash: midpoint when both alive; attacker-only on the killing hit
+          // (target already removed by the preceding WorldDelta on the WS path
+          // — smoke puff covers the moment of kill anyway).
           const ax = target
             ? ((attacker?.visualX ?? target.visualX) + target.visualX) / 2
             : attacker?.visualX;
@@ -747,6 +736,20 @@ export async function createScene(
               scale: 0.5,
               alpha: 0.5,
             }));
+          }
+          // Damage number: only when target still exists. On the WS killing-hit
+          // path the target is already removed; we deliberately skip rather
+          // than anchor on the attacker (would visually attribute damage to
+          // the attacker themselves). EntityDied smoke puff covers the kill.
+          if (target) {
+            effects.spawn(createDamageNumber(
+              event.damage,
+              target.visualX, target.visualY,
+              event.targetId,
+              this.time,
+              textSurfaceFactory,
+              { largeFont: event.targetId === this.myEntityId },
+            ));
           }
           break;
         }
@@ -868,7 +871,7 @@ export async function createScene(
           // received chunks are valid.
           if (lastEvictionChunk) {
             if (Math.max(Math.abs(cx - lastEvictionChunk.cx),
-                         Math.abs(cy - lastEvictionChunk.cy)) > INTEREST_RADIUS_CHUNKS) {
+                         Math.abs(cy - lastEvictionChunk.cy)) > CLIENT_EVICT_RADIUS_CHUNKS) {
               continue;
             }
           }

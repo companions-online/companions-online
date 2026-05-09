@@ -834,13 +834,23 @@ export class GameWorld implements SystemState {
     envPayload: { gameMinute: number; weather: number } | undefined,
     connection: PlayerConnection,
   ): TickDelta {
-    // Stream any unsent chunks now in range
+    // Stream any unsent chunks now in range, and prune chunks no longer
+    // needed so the client's re-entry triggers a fresh onChunkNeeded. The
+    // client evicts at a strictly larger radius (CLIENT_EVICT_RADIUS_CHUNKS
+    // = SERVER_NEEDED_RADIUS_CHUNKS + 1) so a chunk we drop here is still
+    // resident on the client until it too leaves client range — see the
+    // invariant in shared/src/constants.ts.
+    const stillNeeded = new Set<number>();
     for (const [cx, cy] of getNeededChunks(centerX, centerY)) {
       const key = chunkKey(cx, cy);
+      stillNeeded.add(key);
       if (!sentChunks.has(key)) {
         connection.onChunkNeeded(cx, cy, this);
         sentChunks.add(key);
       }
+    }
+    for (const key of sentChunks) {
+      if (!stillNeeded.has(key)) sentChunks.delete(key);
     }
 
     const entered: number[] = [];

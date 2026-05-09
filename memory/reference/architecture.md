@@ -287,6 +287,15 @@ for slot in observers:
   slot.connection.onTick(0, this, delta)
 ```
 
+Each `streamToTarget` call also prunes `sentChunks` to the just-computed
+needed-set so chunks that left interest range are forgotten and re-stream
+on re-entry. The radius invariant in `shared/src/constants.ts`
+(`CLIENT_EVICT_RADIUS_CHUNKS = SERVER_NEEDED_RADIUS_CHUNKS + 1`) keeps
+the client's resident chunk strictly past the server's forget point so
+re-entry never produces a black hole. `sentChunks` size is bounded to
+~9 entries per viewer regardless of map size — supports the long-term
+infinite-map goal without per-client `chunkEviction` wire traffic.
+
 `broadcastEvent`, `setEntityMeta`, and `world-actions.ts::handleSay`
 all gained parallel observer loops range-tested against
 `slot.focusX/focusY` so observers receive nearby visual events,

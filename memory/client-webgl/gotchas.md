@@ -82,8 +82,11 @@ overflow. That's intentional — it means eviction isn't keeping up,
 which is a logic bug, not a data bug. Don't "fix" by raising the
 capacity; find why eviction didn't run.
 
-`CHUNK_CAPACITY` is derived from `INTEREST_RANGE` / `CHUNK_SIZE` in
-shared constants. If those change, capacity auto-adjusts.
+`CHUNK_CAPACITY` is derived from the shared `CLIENT_EVICT_RADIUS_CHUNKS`
+(itself `SERVER_NEEDED_RADIUS_CHUNKS + 1`, both in
+`shared/src/constants.ts`). If `INTEREST_RANGE` or `CHUNK_SIZE` change,
+capacity auto-adjusts. Don't tweak the +1 margin without updating the
+server-side prune in `streamToTarget` — the radii are coupled.
 
 ## `scene.time` is set by the renderer
 
