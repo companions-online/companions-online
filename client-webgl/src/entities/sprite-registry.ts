@@ -3,7 +3,7 @@
 // (blueprintId, variant). No lazy loading.
 //
 // Any blueprint id without a manifest entry resolves to the unknown-entity
-// sheet — a static image at /assets/unknown-entity.png — so that network
+// sheet — a static image at /assets/ui/unknown-entity.png — so that network
 // arrival of a not-yet-supported blueprint type never crashes the renderer.
 
 import { getBlueprint } from '@shared/blueprints.js';
@@ -51,8 +51,8 @@ export interface SpriteRegistry {
 
 function pathFor(entry: SpriteManifestEntry, variantCount: number, variant: number): string {
   return variantCount === 1
-    ? `/assets/${entry.name}.png`
-    : `/assets/${entry.name}-${variant}.png`;
+    ? `/assets/${entry.filename}.png`
+    : `/assets/${entry.filename}-${variant}.png`;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -137,7 +137,7 @@ async function loadManifestEntry(
 }
 
 async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheetRef> {
-  const img = await loadImage('/assets/unknown-entity.png');
+  const img = await loadImage('/assets/ui/unknown-entity.png');
   // Single-frame sheet: the whole image is one frame, anchored at bottom
   // center. Renderers that index into it (col/row for creature walk cycles)
   // will clamp to this single frame via GL texture clamping.

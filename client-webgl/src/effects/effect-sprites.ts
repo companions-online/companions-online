@@ -79,10 +79,10 @@ export function createSolidColorTexture(
 
 export async function loadEffectSprites(gl: WebGL2RenderingContext): Promise<EffectSprites> {
   const [smoke, attack, harvestCraft, healing] = await Promise.all([
-    loadSheet(gl, '/assets/smoke-anim.png',         3, 3, 9),
-    loadSheet(gl, '/assets/attack-anim.png',        3, 3, 6),
-    loadSheet(gl, '/assets/harvest-craft-anim.png', 3, 3, 7),
-    loadSheet(gl, '/assets/healing-anim.png',       3, 3, 9),
+    loadSheet(gl, '/assets/effects/smoke-anim.png',         3, 3, 9),
+    loadSheet(gl, '/assets/effects/attack-anim.png',        3, 3, 6),
+    loadSheet(gl, '/assets/effects/harvest-craft-anim.png', 3, 3, 7),
+    loadSheet(gl, '/assets/effects/healing-anim.png',       3, 3, 9),
   ]);
   return {
     smoke, attack, harvestCraft, healing,
