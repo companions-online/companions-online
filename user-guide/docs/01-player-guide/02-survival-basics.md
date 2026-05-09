@@ -63,7 +63,7 @@ first.
 1. Build a Campfire (Crafting → Placeables) and place it.
 2. Equip the raw food to your hand (drag it to a quickslot, or
    click the slot, or press 1–9).
-3. Stand next to the campfire and right-click it. The food
+3. Stand next to the campfire and click or tap it. The food
    transforms — Raw Meat becomes Cooked Meat, Raw Fish becomes
    Cooked Fish.
 

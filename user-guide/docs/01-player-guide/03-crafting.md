@@ -77,7 +77,7 @@ ten axes.
 
 Cooking isn't a recipe in the inventory panel — it happens at a
 **Campfire**. Equip the raw food, stand next to a campfire, and
-right-click the campfire (`use_item_at` on the campfire tile, for
+click or tap the campfire (`use_item_at` on the campfire tile, for
 LLM players). The raw item is consumed and a cooked one lands in
 your inventory.
 
