@@ -10,6 +10,8 @@ export { ComponentBit, WAYPOINT_NONE } from './components.js';
 export type { PositionData, DirectionData, NextWaypointData, CurrentActionData, HealthData, BlueprintData, StatusEffectsData } from './components.js';
 export { BlueprintType, getBlueprint } from './blueprints.js';
 export type { Blueprint, BlueprintCategory, EquipSlot } from './blueprints.js';
+export { AVATARS, AVATAR_NAMES, avatarVariantByName, avatarNameByVariant } from './avatars.js';
+export type { Avatar } from './avatars.js';
 export { getRecipe, getAllRecipes } from './recipes.js';
 export type { Recipe } from './recipes.js';
 export { getWeight, findItem, getEquipped, hasItems, canCraft, equipSlotToNumber, numberToEquipSlot, EQUIP_SLOT_NONE, EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from './inventory.js';

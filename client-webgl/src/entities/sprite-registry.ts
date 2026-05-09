@@ -50,6 +50,9 @@ export interface SpriteRegistry {
 }
 
 function pathFor(entry: SpriteManifestEntry, variantCount: number, variant: number): string {
+  if (!entry.filename) {
+    throw new Error(`sprite manifest entry for blueprint ${entry.blueprintId} has neither filename nor aliasOf`);
+  }
   return variantCount === 1
     ? `/assets/${entry.filename}.png`
     : `/assets/${entry.filename}-${variant}.png`;
@@ -102,24 +105,26 @@ async function loadManifestEntry(
       const img = await loadImage(pathFor(entry, variantCount, v));
       const foot = entry.detectFoot
         ? detectFootFromImage(img)
-        : { footX: entry.footX, footY: entry.footY };
+        : { footX: entry.footX!, footY: entry.footY! };
       // For static single-image entries, foot coords from detectFoot are in
       // image-pixel space. Scale to frame-pixel space when the render frame
       // differs from the source PNG (e.g. 32×32 frame from a 64×64 PNG).
       // Animation sheets (layout 'sheet') have manual foot values already in
       // frame space — no scaling.
       const isStatic = (entry.layout ?? 'sheet') === 'static';
-      const scaleX = isStatic ? entry.frameW / img.naturalWidth : 1;
-      const scaleY = isStatic ? entry.frameH / img.naturalHeight : 1;
+      const frameW = entry.frameW!;
+      const frameH = entry.frameH!;
+      const scaleX = isStatic ? frameW / img.naturalWidth : 1;
+      const scaleY = isStatic ? frameH / img.naturalHeight : 1;
       const userScale = entry.scale ?? 1;
       return {
         texture: createImageTexture(gl, img),
         sheetW: img.naturalWidth,
         sheetH: img.naturalHeight,
-        frameW: entry.frameW,
-        frameH: entry.frameH,
-        renderW: entry.frameW * userScale,
-        renderH: entry.frameH * userScale,
+        frameW,
+        frameH,
+        renderW: frameW * userScale,
+        renderH: frameH * userScale,
         footX: Math.round(foot.footX * scaleX * userScale),
         footY: Math.round(foot.footY * scaleY * userScale),
         align: entry.align ?? 'center',
@@ -159,12 +164,28 @@ async function loadUnknownSheet(gl: WebGL2RenderingContext): Promise<SpriteSheet
 export async function loadSpriteRegistry(gl: WebGL2RenderingContext): Promise<SpriteRegistry> {
   const sheets = new Map<number, SpriteSheetRef[]>();
 
+  // Two-pass load: PNG-backed entries first, then alias entries can look
+  // up their target's already-resolved sheet. NPC entries (Hermit/Trader/
+  // Wanderer) use this to share the player walk-cycle sheets at fixed
+  // variants without duplicating the asset.
+  const ownEntries = SPRITE_MANIFEST.filter(e => !e.aliasOf);
+  const aliasEntries = SPRITE_MANIFEST.filter(e => e.aliasOf);
+
   const [_, unknown] = await Promise.all([
-    Promise.all(SPRITE_MANIFEST.map(async (entry) => {
+    Promise.all(ownEntries.map(async (entry) => {
       sheets.set(entry.blueprintId, await loadManifestEntry(gl, entry));
     })),
     loadUnknownSheet(gl),
   ]);
+
+  for (const entry of aliasEntries) {
+    const target = entry.aliasOf!;
+    const targetSheets = sheets.get(target.blueprintId);
+    // Missing source / out-of-range variant fall back to the unknown
+    // sheet so a partly-shipped asset set still boots.
+    const aliased = targetSheets?.[target.variant] ?? unknown;
+    sheets.set(entry.blueprintId, [aliased]);
+  }
 
   return {
     resolve(blueprintId, variant) {

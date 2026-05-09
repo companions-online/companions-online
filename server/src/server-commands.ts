@@ -1,5 +1,6 @@
 import { MetaKey } from '@shared/entity-meta.js';
 import { BlueprintType, getBlueprint, getBlueprintByName } from '@shared/blueprints.js';
+import { AVATAR_NAMES, avatarVariantByName } from '@shared/avatars.js';
 import { TICKS_PER_GAME_MINUTE, TICKS_PER_GAME_DAY } from '@shared/constants.js';
 import type { GameWorld, PlayerSlot } from './game-world.js';
 import { initCritterForEntity } from './systems/critter-ai.js';
@@ -78,17 +79,26 @@ registerServerCommand(['nick', 'name'], handleNick);
 
 const handleAvatar: ServerCommandHandler = (world, eid, _slot, parameter) => {
   const raw = parameter.trim();
-  if (!/^\d+$/.test(raw)) {
-    return { ok: false, error: 'usage: /avatar <variant>' };
-  }
-  const variant = parseInt(raw, 10);
   const current = world.entities.blueprint.get(eid);
   if (!current) return { ok: false, error: 'caller has no blueprint' };
 
   const bp = getBlueprint(current.blueprintId);
   if (!bp) return { ok: false, error: 'unknown blueprint' };
-
   const variantCount = bp.variantCount ?? 1;
+
+  // Accept either a name from the shared avatar registry or a 0-indexed
+  // variant integer. Names are the external API; integers are kept for
+  // dev usage and to keep round-trips with the wire format simple.
+  let variant: number;
+  const byName = avatarVariantByName(raw);
+  if (byName !== null) {
+    variant = byName;
+  } else if (/^\d+$/.test(raw)) {
+    variant = parseInt(raw, 10);
+  } else {
+    return { ok: false, error: `usage: /avatar <name|variant> (names: ${AVATAR_NAMES.join(', ')})` };
+  }
+
   if (variant < 0 || variant >= variantCount) {
     return { ok: false, error: `variant must be 0-${variantCount - 1}` };
   }

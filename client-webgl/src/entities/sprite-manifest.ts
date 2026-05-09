@@ -40,12 +40,21 @@ export interface SpriteAnimation {
 export interface SpriteManifestEntry {
   blueprintId: number;
   /** Sprite path relative to client-webgl/assets/, without extension.
-   *  E.g. 'creatures/deer', 'items/tools/axe', 'placeables/storage-chest'. */
-  filename: string;
-  frameW: number;
-  frameH: number;
-  footX: number;
-  footY: number;
+   *  E.g. 'creatures/deer', 'items/tools/axe', 'placeables/storage-chest'.
+   *  Optional when `aliasOf` is set — in that case no PNG is loaded for
+   *  this entry; it borrows another blueprint's already-loaded sheet. */
+  filename?: string;
+  frameW?: number;
+  frameH?: number;
+  footX?: number;
+  footY?: number;
+  /** Reuse another blueprint's already-loaded variant sheet instead of
+   *  loading a fresh PNG. When set, `filename`/`frameW`/`frameH`/foot
+   *  coordinates / `align` / `animation` / `scale` are all ignored — the
+   *  resolved SpriteSheetRef is shared with the aliased entry. The
+   *  aliased blueprint+variant must be a non-alias entry that appears
+   *  earlier in SPRITE_MANIFEST so it's loaded first. */
+  aliasOf?: { blueprintId: number; variant: number };
   /** When true, footX/footY are auto-detected per variant from the loaded
    *  image (horizontal center + bottommost opaque row). The manual footX/footY
    *  above are ignored. Useful for static sprites where the "foot" is simply
@@ -76,6 +85,11 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Wolf,       filename: 'creatures/wolf',     frameW: 92, frameH: 92,  footX: 46, footY: 70 },
   { blueprintId: BlueprintType.Skeleton,   filename: 'creatures/skeleton', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   { blueprintId: BlueprintType.Player,     filename: 'creatures/player',   frameW: 92, frameH: 92,  footX: 46, footY: 82 },
+  // NPCs — reuse player variants. Avatar mapping is the source of truth in
+  // shared/src/avatars.ts: catgirl=0, nomad=1, knight=2, tinkerer=3, beastkin=4.
+  { blueprintId: BlueprintType.Hermit,     aliasOf: { blueprintId: BlueprintType.Player, variant: 4 } }, // beastkin
+  { blueprintId: BlueprintType.Trader,     aliasOf: { blueprintId: BlueprintType.Player, variant: 3 } }, // tinkerer
+  { blueprintId: BlueprintType.Wanderer,   aliasOf: { blueprintId: BlueprintType.Player, variant: 1 } }, // nomad
   // Tall structures — base at tile center. Single static image.
   { blueprintId: BlueprintType.Tree,       filename: 'resources/tree',     frameW: 64, frameH: 128, footX: 32, footY: 128, detectFoot: true, layout: 'static' },
   // Door — has its own drawDoor path (anchors at south vertex internally).

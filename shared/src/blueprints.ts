@@ -97,7 +97,7 @@ export const enum BlueprintType {
 
 const BLUEPRINTS: Blueprint[] = [
   // --- Creatures ---
-  { id: BlueprintType.Player,   name: 'Player',   category: 'creature', sprite: 'player',   maxHp: 100, speed: 3,   damage: 1,  attackSpeed: 2,  collides: true },
+  { id: BlueprintType.Player,   name: 'Player',   category: 'creature', sprite: 'player',   variantCount: 5, maxHp: 100, speed: 3,   damage: 1,  attackSpeed: 2,  collides: true },
   { id: BlueprintType.Deer,     name: 'Deer',     category: 'creature', sprite: 'deer',     maxHp: 12,  speed: 3.5, damage: 0,  attackSpeed: 0,  collides: true },
   { id: BlueprintType.Rabbit,   name: 'Rabbit',   category: 'creature', sprite: 'rabbit',   maxHp: 3,   speed: 4,   damage: 0,  attackSpeed: 0,  collides: true },
   { id: BlueprintType.Fox,      name: 'Fox',      category: 'creature', sprite: 'fox',      maxHp: 10,  speed: 3,   damage: 2,  attackSpeed: 3,  collides: true },
