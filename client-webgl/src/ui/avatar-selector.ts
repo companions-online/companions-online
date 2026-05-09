@@ -35,7 +35,10 @@ export interface AvatarTilesOpts {
   /** Top-left of the row in canvas pixels. */
   x: number;
   y: number;
-  selected: number;
+  /** Live read of the currently-selected variant. Called every frame so
+   *  click → patchValues → next-frame highlight works without a full
+   *  screen rebuild (the create-join screen signature ignores `values`). */
+  getSelected: () => number;
   onSelect: (variant: number) => void;
   spriteRegistry: SpriteRegistry;
 }
@@ -54,7 +57,7 @@ export function buildAvatarTiles(opts: AvatarTilesOpts): Widget[] {
       },
       texture: sheet.texture,
       srcU: uv.srcU, srcV: uv.srcV, srcDU: uv.srcDU, srcDV: uv.srcDV,
-      selected: opts.selected === avatar.variant,
+      selected: () => opts.getSelected() === avatar.variant,
       onClick: () => opts.onSelect(avatar.variant),
     }));
   }

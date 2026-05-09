@@ -12,9 +12,10 @@ export interface Avatar {
 export const AVATARS: readonly Avatar[] = [
   { variant: 0, name: 'catgirl'  },
   { variant: 1, name: 'nomad'    },
-  { variant: 2, name: 'knight'   },
+  { variant: 2, name: 'merchant' },
   { variant: 3, name: 'tinkerer' },
   { variant: 4, name: 'beastkin' },
+  { variant: 5, name: 'herbalist' },
 ] as const;
 
 export const AVATAR_NAMES: readonly string[] = AVATARS.map(a => a.name);

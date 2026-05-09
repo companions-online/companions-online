@@ -86,7 +86,7 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Skeleton,   filename: 'creatures/skeleton', frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   { blueprintId: BlueprintType.Player,     filename: 'creatures/player',   frameW: 92, frameH: 92,  footX: 46, footY: 82 },
   // NPCs — reuse player variants. Avatar mapping is the source of truth in
-  // shared/src/avatars.ts: catgirl=0, nomad=1, knight=2, tinkerer=3, beastkin=4.
+  // shared/src/avatars.ts: catgirl=0, nomad=1, merchant=2, tinkerer=3, beastkin=4, herbalist=5.
   { blueprintId: BlueprintType.Hermit,     aliasOf: { blueprintId: BlueprintType.Player, variant: 4 } }, // beastkin
   { blueprintId: BlueprintType.Trader,     aliasOf: { blueprintId: BlueprintType.Player, variant: 3 } }, // tinkerer
   { blueprintId: BlueprintType.Wanderer,   aliasOf: { blueprintId: BlueprintType.Player, variant: 1 } }, // nomad
@@ -112,6 +112,7 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.WoodenClub,     filename: 'items/weapons/wooden-club',     frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.StoneKnife,     filename: 'items/weapons/stone-knife',     frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.IronSword,      filename: 'items/weapons/iron-sword',      frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.IronSpear,      filename: 'items/weapons/iron-spear',      frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.HideVest,       filename: 'items/armor/hide-vest',         frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.HideCap,        filename: 'items/armor/hide-cap',          frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.IronHelm,       filename: 'items/armor/iron-helm',         frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },

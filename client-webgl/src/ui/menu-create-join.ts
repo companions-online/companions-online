@@ -166,7 +166,10 @@ export function buildCreateJoinScreen(ctx: MenuContext, overlay: Overlay): Scree
   }));
   for (const tile of buildAvatarTiles({
     x: FORM_X, y: AVATAR_TILES_Y,
-    selected: values.avatar,
+    getSelected: () => {
+      const o = ctx.scene.overlay;
+      return o.kind === 'menu' && o.screen === 'create-join' ? o.values.avatar : values.avatar;
+    },
     onSelect: (variant) => patchValues({ avatar: variant }),
     spriteRegistry: ctx.scene.spriteRegistry,
   })) widgets.push(tile);

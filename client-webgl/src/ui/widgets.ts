@@ -573,7 +573,11 @@ export interface SelectableTileOpts {
   srcV?: number;
   srcDU?: number;
   srcDV?: number;
-  selected: boolean;
+  /** A getter is supported so the highlight tracks state changes that
+   *  don't trigger a screen rebuild — e.g. the create-join screen
+   *  patches `values.avatar` per click but its signature deliberately
+   *  ignores `values`, so the tile must re-read on draw. */
+  selected: boolean | (() => boolean);
   onClick: () => void;
   /** Inset around the sprite, in pixels. Default 6. */
   inset?: number;
@@ -584,13 +588,16 @@ export function makeSelectableTile(opts: SelectableTileOpts): Widget {
   const bounds = opts.bounds;
   const inset = opts.inset ?? 6;
   const inB = (x: number, y: number) => pointInBounds(bounds, x, y);
+  const isSelected = () =>
+    typeof opts.selected === 'function' ? opts.selected() : opts.selected;
 
   return {
     bounds,
     hitTest: inB,
     draw(ctx) {
       const hovered = inB(ctx.mouseX, ctx.mouseY);
-      const bg = (opts.selected || hovered) ? ctx.palette.bgHover : ctx.palette.bg;
+      const sel = isSelected();
+      const bg = (sel || hovered) ? ctx.palette.bgHover : ctx.palette.bg;
       drawSolidQuad(ctx, bg, bounds.x, bounds.y, bounds.w, bounds.h);
 
       ctx.gl.activeTexture(ctx.gl.TEXTURE0);
@@ -603,8 +610,8 @@ export function makeSelectableTile(opts: SelectableTileOpts): Widget {
 
       drawBorder(
         ctx, bounds,
-        opts.selected ? 3 : 1,
-        opts.selected ? ctx.palette.accent : ctx.palette.border,
+        sel ? 3 : 1,
+        sel ? ctx.palette.accent : ctx.palette.border,
       );
     },
     onMouseDown(x, y) {
