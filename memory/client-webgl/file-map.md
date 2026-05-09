@@ -36,8 +36,8 @@ entities/client-entity.ts    ClientEntity interface — extends EntityComponents
 entities/from-network.ts     createEntityFromNetwork (factory dispatch by blueprint category) + applyComponentsToEntity (delta merge + lerp checkpoint).
 entities/creature-entity.ts  Creature/NPC factory. Tick: lerp visualX/Y, advance walk frame. Draw: 8-dir walk-cycle sheet.
 entities/static-entity.ts    Placeable/item/resource factory. Three draw paths: door (2×2 facing+open), animated (sheet.animation → ticked walkFrame, col/row UV slice), single-frame.
-entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block). Unknown-entity fallback.
-entities/sprite-manifest.ts  Per-blueprint sheet metadata (filename = path relative to client-webgl/assets/ without extension, e.g. 'creatures/deer', 'items/tools/axe'; frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType.
+entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block). Two-pass loader: PNG-backed entries first, then alias entries borrow their target's already-loaded sheet. Unknown-entity fallback for missing/aliased-but-out-of-range.
+entities/sprite-manifest.ts  Per-blueprint sheet metadata (filename = path relative to client-webgl/assets/ without extension, e.g. 'creatures/deer', 'items/tools/axe'; frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType. Alternative: aliasOf: { blueprintId, variant } reuses another entry's loaded sheet (Hermit/Trader/Wanderer alias to Player variants 4/3/1 — beastkin/tinkerer/nomad).
 entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns). begin(res, lightmap?) / setSpriteTile / setLit for lighting integration.
 entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap via u_spriteTileXY when u_lit=1.
 ```
@@ -102,7 +102,7 @@ ui/menu-main.ts              Landing screen. Logo + 3-button stack (New Game / J
 ui/menu-settings.ts          Music toggle (makeToggle, pure UI placeholder — no persistence/playback) + context-dependent button row. context='main-menu': single Back button (Enter+Esc fire Back). context='in-game': Back to Game + Disconnect (Esc fires Back to Game; Enter unwired to avoid stray Disconnect). Disconnect routes via MenuContext.disconnect.
 ui/menu-create-join.ts       Unified create/join screen. Mode-aware upper section (Seed input for 'new' / Host input + Paste for 'join'); Character lower section (Name input + Avatar tiles); bottom bar with Back + Start World/Join World. Per-keystroke patches go to scene.overlay.values without rebuilding (signature ignores values). Paste handler: clipboard.readText → setValue, on denial focusWidget(hostInput). defaultCreateJoinValues(servedHost) seeds initial entry.
 ui/menu-connect.ts           Connecting + connect-error screens for the Join World flow. Connecting: title + host label, no Enter/Esc default. Connect-error: title + message + host + [Back][Retry]; Enter retries, Esc backs.
-ui/avatar-selector.ts        buildAvatarTiles({x,y,selected,onSelect,spriteRegistry}). KNOWN_VARIANTS is the source of truth for valid variant ids; tile renders south-facing idle frame from the player walk-cycle sheet.
+ui/avatar-selector.ts        buildAvatarTiles({x,y,getSelected,onSelect,spriteRegistry}). Drives off the shared AVATARS registry (shared/src/avatars.ts) — single source of truth for both variant ids and names. getSelected is a per-frame getter so the highlight tracks create-join's per-keystroke patchValues without a screen rebuild. Tile renders south-facing idle frame from the player walk-cycle sheet.
 ```
 
 ## Tests

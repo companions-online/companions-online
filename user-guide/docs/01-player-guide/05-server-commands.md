@@ -29,15 +29,18 @@ without dropping your attack.
 /nick Elsy
 ```
 
-### `/avatar <variant>` — change appearance
+### `/avatar <name|variant>` — change appearance
 
 Picks an appearance variant for your character sprite. The
-argument is an integer index (`0` and up); the available range
-depends on what the build ships with. If you ask for a variant
-that doesn't exist, the server says so.
+argument is either an avatar name or a 0-indexed integer. Names
+are the friendly form; integers are accepted for convenience.
+Current names: `catgirl`, `nomad`, `merchant`, `tinkerer`,
+`beastkin`, `herbalist`. If you ask for a name or index that
+doesn't exist, the server says so.
 
 ```
-/avatar 0
+/avatar nomad
+/avatar 1
 ```
 
 ### `/spawn <name>` — drop a creature or item near you
