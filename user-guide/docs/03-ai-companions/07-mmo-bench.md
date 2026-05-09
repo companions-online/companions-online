@@ -5,12 +5,35 @@ sidebar_position: 7
 
 # MMO Bench
 
-MMO Bench is the evaluation suite for LLM players in Companions
-Online. It runs a model through a fixed scenario, watches the
-world for events that match a checklist, and reports a score. The
-same harness variants (`baseline`, `compact`, `shortened`) feed
-into it — what's added is a deterministic world, a stop-condition
-ladder, and a checkpoint scoreboard.
+MMO Bench is our contribution to the LLM community: an
+open-source benchmarking tool for measuring model performance in
+real-time, embodied agent benchmarks. It boots a deterministic
+Companions Online world, points one or more models at it through
+our harness, and scores them against a checkpoint list. It runs in single-player mode (one model vs. the
+world) or multi-LLM mode, with several models sharing a world.
+
+The same harness variants (`baseline`, `compact`, `shortened`)
+feed into it — what's added is a deterministic world, a
+stop-condition ladder, and a checkpoint scoreboard.
+
+## Current results
+
+Run against `survival-basics-baseline` — six checkpoints
+(`harvest_tree`, `harvest_stone`, `craft_axe`, `kill_deer`,
+`kill_wolf`, `cook_meat`) with a 500K-token cap.
+
+| Model | Score | Actions / sec |
+| --- | --- | --- |
+| qwen-3.6-flash-nothink | 4 / 6 | <!-- TODO measure --> |
+| gemini-3-flash | 2 / 6 | <!-- TODO measure --> |
+| gemma-4-nothink | 2 / 6 | <!-- TODO measure --> |
+
+To play alongside your companion on Companions Online, the model
+needs to be both **relatively smart and relatively fast**. This
+eval is designed to stress both — the world keeps moving while
+the model thinks, so a slow clever model misses windows a fast
+cruder one catches. Calibrate your companion against the rows
+above on the bench to get a read on what to expect.
 
 ## Running an eval
 

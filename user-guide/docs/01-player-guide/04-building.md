@@ -6,9 +6,8 @@ sidebar_position: 4
 # Building
 
 Once you've crafted a few placeables, you can put them down in the
-world. Building uses the same right-click-to-use gesture as
-consumables: equip the placeable, hover over the tile you want,
-right-click to confirm.
+world. Building uses the same gesture as everything else: equip
+the placeable, then click or tap the tile you want it on.
 
 ## Two kinds of placement
 
@@ -31,11 +30,11 @@ you've built.
 
 1. Equip the placeable to your hand (click the quickslot or press
    **1**–**9**).
-2. Move the mouse over the target tile. A translucent ghost shows
-   where it will land and whether the spot is valid (red ghost =
+2. A translucent ghost follows your cursor showing where the
+   placeable will land and whether the spot is valid (red ghost =
    illegal placement).
-3. Right-click to place. The item is consumed from your inventory
-   and the structure appears.
+3. Click or tap the target tile. The item is consumed from your
+   inventory and the structure appears.
 
 You can place a tile or two away from yourself — you don't have
 to be standing on the target. If the tile is unwalkable (e.g. a
@@ -56,8 +55,8 @@ them.
 
 Doors only make sense built into a wall. Place a door tile in the
 gap of a wall row; players (and friendly companions) can then
-**interact** with it (left-click while standing next to it) to
-open and close it.
+**interact** with it (click or tap it while standing next to it)
+to open and close it.
 
 - **Closed** doors block movement, like walls. Light still passes.
 - **Open** doors are walk-through.
@@ -67,7 +66,7 @@ You can't close a door if someone is standing on its tile.
 ## Storage chests
 
 A Storage Chest is a placed entity that holds items. Walk up to
-it and left-click to open its panel; drag items between your
+it and click or tap to open its panel; drag items between your
 inventory and the chest. Chests don't have a per-player lock
 right now — anything left in one is community storage.
 
@@ -75,7 +74,7 @@ right now — anything left in one is community storage.
 
 A campfire lights a 6-tile radius and prevents skeleton spawns
 inside that radius. It also cooks raw food: stand adjacent, equip
-Raw Meat or Raw Fish, right-click the campfire.
+Raw Meat or Raw Fish, then click or tap the campfire.
 
 ## Putting it together
 
