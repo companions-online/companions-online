@@ -69,10 +69,12 @@ export function startAttack(attackerId: number, targetId: number, world: SystemS
 
   world.combatStates.set(attackerId, {
     targetEntityId: targetId,
-    ticksRemaining: 0, // ready to swing immediately if adjacent
     attackSpeed,
     damage,
   });
+  // No cooldown write — first swing is free if adjacent (and not held back
+  // by another system's residue, e.g. movement step cd). Subsequent swings
+  // are paced by the unified cd written from runCombat.
 
   world.entities.currentAction.set(attackerId, { actionType: ActionType.Attacking, targetEntity: targetId });
 
@@ -149,11 +151,8 @@ export function runCombat(world: SystemState): CombatResult {
       continue;
     }
 
-    // Adjacent — swing timer
-    if (state.ticksRemaining > 0) {
-      state.ticksRemaining--;
-      continue;
-    }
+    // Adjacent — swing pacing reads the unified cooldown.
+    if ((world.cooldowns.get(attackerId) ?? 0) > 0) continue;
 
     // Re-face target each swing so the swing animation lines up if the
     // target has moved around the attacker.
@@ -183,7 +182,7 @@ export function runCombat(world: SystemState): CombatResult {
       world.combatStates.delete(attackerId);
       world.entities.currentAction.set(attackerId, { actionType: ActionType.Idle });
     } else {
-      state.ticksRemaining = state.attackSpeed;
+      world.setCooldown(attackerId, state.attackSpeed);
     }
   }
 

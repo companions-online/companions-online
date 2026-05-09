@@ -81,7 +81,6 @@ export function setMoveTarget(
     path: result.path,
     pathIndex: 0,
     waitTicks: 0,
-    cooldownRemaining: 0,
   });
 
   const next = result.path[0];
@@ -122,10 +121,10 @@ export function runMovement(world: SystemState): void {
       continue;
     }
 
-    if (state.cooldownRemaining > 0) {
-      state.cooldownRemaining--;
-      continue;
-    }
+    // Step pacing reads the unified per-entity cooldown. Persists across
+    // setMoveTarget overwrites and clearMoveTarget — that's the property
+    // that closes the click-spam / WASD super-speed exploit.
+    if ((world.cooldowns.get(eid) ?? 0) > 0) continue;
 
     if (state.pathIndex >= state.path.length) {
       clearMoveTarget(eid, world);
@@ -184,7 +183,11 @@ export function runMovement(world: SystemState): void {
     const ticksPerStep = Math.max(1, Math.round(TICK_RATE / speed));
     const diag = dir !== undefined && isDiagonal(dir);
     const stepTicks = diag ? Math.round(ticksPerStep * 1.4) : ticksPerStep;
-    state.cooldownRemaining = stepTicks - 1;
+    // Top-of-tick decrement happens before the gate above on the next tick,
+    // so writing `stepTicks` lands the next step exactly stepTicks ticks
+    // from now (1 step / stepTicks ticks). Survives moveState destruction
+    // on path-final step, which is what gates re-issued MoveTos.
+    world.setCooldown(eid, stepTicks);
 
     world.entities.currentAction.set(eid, { actionType: ActionType.Walking });
     world.entities.nextWaypoint.set(eid, { tileX: state.targetX, tileY: state.targetY });

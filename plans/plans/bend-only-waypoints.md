@@ -1,5 +1,11 @@
 # Bend-Only Waypoint Sync (deferred)
 
+> NOTE (2026-05-08): references in this plan to `MovementState.cooldownRemaining`
+> are stale — the unified-cooldown branch replaced per-state timers with
+> `world.cooldowns: Map<eid, ticks>`. The plan's bend-only optimization is
+> unchanged in spirit; substitute "world.cooldowns gates per-tile advancement"
+> wherever the original text says "internal `cooldownRemaining`".
+
 ## Status
 
 Deferred. During client-webgl network integration we keep the current per-tile

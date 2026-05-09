@@ -42,6 +42,7 @@ GameWorld implements SystemState {
   // System state Maps
   moveStates, harvestStates, combatStates, consumableStates, critterStates
   treeResources, respawnQueue, playerRespawnTimers
+  cooldowns                  // unified per-entity action cooldown — see "Unified Action Cooldown"
 
   // Pending async actions (walk-to-then-do): pickup, interact, transfer,
   // trade, dialogue_select, use_item_at — one queue, one resolver
@@ -146,11 +147,20 @@ Sample checkpoints (see `configs/survival-basics.json`): `harvest_yield {resourc
 
 ## SystemState Interface
 
-`server/src/system-state.ts` — subset of GameWorld that system functions accept. Unit tests can create plain objects satisfying it without needing full GameWorld. Exposes `players` for efficient critter AI (iterates players, not all entities).
+`server/src/system-state.ts` — subset of GameWorld that system functions accept. Unit tests can create plain objects satisfying it without needing full GameWorld. Exposes `players` for efficient critter AI (iterates players, not all entities). Carries `cooldowns: Map<eid, ticks>` + `setCooldown` / `clearCooldown` helpers; per-system test mocks pick up the shape via `test/system-state-mock.ts::attachCooldowns`.
+
+## Unified Action Cooldown
+
+`world.cooldowns: Map<entityId, ticks>` is the single source of action pacing. Decremented once per tick at the top of `runTick`, before any system runs. Read as a gate by `runMovement` / `runHarvest` / `runCombat` / `runConsume`; written by every committing time-taking action: movement step (`stepTicks`), harvest yield (`tickCost`), combat swing (`attackSpeed`), consume start / harvest pathfinding→active / harvest adjacent-immediate (`value - 1`, "pre-commit channel" semantics — the start tick already counts as tick 1). `setCooldown` is a max-write so same-tick writers compose intuitively (longest commit wins).
+
+Cleared by `cancelConsume` and explicit `handleCancel` only — those represent in-flight channels with no commit yet; `cancelHarvest` / `cancelCombat` deliberately preserve cd to keep rate residue intact. Cleanup at `removePlayer` / `handlePlayerDeath` / end-of-tick destroyed-entity sweep.
+
+Replaces four prior per-state timer fields (`MovementState.cooldownRemaining`, `HarvestState.ticksRemaining`, `CombatState.ticksRemaining`, `ConsumableState.ticksRemaining`). Closes the click-spam / WASD super-speed exploit: the cd survives `setMoveTarget` overwrite and `clearMoveTarget` on path-final step, which is what gates re-issued MoveTos. Dispatch is intentionally NOT gated — `processAction` always reaches the handler, `cancelConflictingStates` swaps state, only the *commit* waits on cd. That preserves the "click-tree-then-click-deer" UX (no rejections, smooth re-aim; combat state registers immediately, the first swing waits for cd to clear).
 
 ## Tick Loop Order
 
 ```
+-1. Decrement entity cooldowns — one pass over `world.cooldowns`, entries hitting 0 dropped (see Unified Action Cooldown)
 0. Process player respawns (dead → alive after 5s timer)
 1. Process pending player actions (switch dispatch → 17 handler methods)
 2. Critter AI (wander / flee / aggro decisions) → returns CritterBehaviorChange[]

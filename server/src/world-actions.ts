@@ -143,6 +143,10 @@ function handleMoveTo(world: GameWorld, eid: number, action: DecodedAction): voi
 
 function handleCancel(world: GameWorld, eid: number): void {
   clearMoveTarget(eid, world);
+  // Explicit cancel drops any pacing residue so the next action commits
+  // immediately. Implicit re-aim (setMoveTarget overwrite) does not — the
+  // step rate-limit must persist there to close the click-spam exploit.
+  world.clearCooldown(eid);
 }
 
 function handlePickup(world: GameWorld, eid: number, slot: PlayerSlot, action: DecodedAction): void {

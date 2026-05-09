@@ -93,6 +93,9 @@ export class GameWorld implements SystemState {
   readonly respawnQueue: { tick: number; blueprintType: number }[] = [];
   readonly playerRespawnTimers = new Map<number, number>();
   readonly entityMeta = new Map<number, Map<MetaKey, string>>();
+  /** See SystemState.cooldowns. Ephemeral — not persisted; a save/restart
+   *  drops at most ~500 ms of action pacing, which is fine. */
+  readonly cooldowns = new Map<number, number>();
 
   readonly telemetry = new Telemetry();
 
@@ -200,6 +203,19 @@ export class GameWorld implements SystemState {
 
   bpName(blueprintId: number): string {
     return getBlueprint(blueprintId)?.name ?? 'Unknown';
+  }
+
+  // --- Unified action cooldown ---
+
+  /** Max-write the per-entity action cooldown. See SystemState.setCooldown. */
+  setCooldown(eid: number, ticks: number): void {
+    const cur = this.cooldowns.get(eid) ?? 0;
+    if (ticks > cur) this.cooldowns.set(eid, ticks);
+  }
+
+  /** Drop the cooldown entry. See SystemState.clearCooldown. */
+  clearCooldown(eid: number): void {
+    this.cooldowns.delete(eid);
   }
 
   // --- Entity meta (names, titles, ownership, etc.) ---
@@ -315,6 +331,7 @@ export class GameWorld implements SystemState {
     this.pendingActions.delete(entityId);
     this.inventoryMgr.destroy(entityId);
     this.entityMeta.delete(entityId);
+    this.cooldowns.delete(entityId);
     this.players.delete(entityId);
     this.log.info('player disconnected', { entityId });
   }
@@ -373,6 +390,13 @@ export class GameWorld implements SystemState {
   runTick(): void {
     this._tick++;
     const t = this.telemetry;
+
+    // Decrement the unified action cooldown once per tick before any system
+    // runs, so every gate this tick reads the post-decrement value.
+    for (const [eid, ticks] of this.cooldowns) {
+      if (ticks <= 1) this.cooldowns.delete(eid);
+      else this.cooldowns.set(eid, ticks - 1);
+    }
 
     // 0. Process player respawns
     for (const [eid, respawnTick] of this.playerRespawnTimers) {
@@ -568,6 +592,10 @@ export class GameWorld implements SystemState {
 
     // 9. Cleanup
     t.beginPhase('cleanup');
+    // Sweep cooldown entries for entities that died this tick (creatures
+    // killed in combat, lifecycle deaths, etc.). Player-death already drops
+    // the entry in handlePlayerDeath; this catches the destroyed-entity path.
+    for (const eid of this.entities.getDestroyed()) this.cooldowns.delete(eid);
     this.entities.clearDirty();
     this.entities.clearDestroyed();
     this.map.clearDirtyTiles();
@@ -674,6 +702,7 @@ export class GameWorld implements SystemState {
     cancelCombat(entityId, this);
     cancelConsume(entityId, this);
     this.pendingActions.delete(entityId);
+    this.cooldowns.delete(entityId);
 
     // Set dead state
     this.entities.currentAction.set(entityId, { actionType: ActionType.Dead });

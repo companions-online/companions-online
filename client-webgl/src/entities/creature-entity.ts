@@ -85,8 +85,19 @@ export function createCreatureEntity(
         const ticksPerStep = Math.max(1, Math.round(TICK_RATE / speed));
         const dir = self.direction?.dir;
         const diag = dir !== undefined && isDiagonal(dir);
-        const stepTicks = diag ? Math.round(ticksPerStep * 1.4) : ticksPerStep;
-        const durationMs = stepTicks * (1000 / TICK_RATE);
+        // Scale lerp duration by Chebyshev distance so batched server deltas
+        // (e.g. multiple ticks of WS messages arriving in one client frame)
+        // slide at a constant tiles-per-second instead of teleporting through
+        // the gap in a fixed `stepTicks * 50ms` window — that's the source
+        // of the "wild jumps in rendered area" during click-spam.
+        const dist = Math.max(
+          Math.abs(targetX - fromX),
+          Math.abs(targetY - fromY),
+        );
+        const baseDurationMs = ticksPerStep * (1000 / TICK_RATE);
+        const durationMs = dist > 1
+          ? dist * baseDurationMs
+          : (diag ? Math.round(baseDurationMs * 1.4) : baseDurationMs);
         const elapsed = scene.time - checkpoint;
         const t = Math.min(Math.max(elapsed / durationMs, 0), 1);
         self.visualX = fromX + (targetX - fromX) * t;

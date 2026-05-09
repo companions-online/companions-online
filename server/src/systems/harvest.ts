@@ -80,12 +80,18 @@ export function startHarvest(eid: number, tileX: number, tileY: number, world: S
     targetX: tileX,
     targetY: tileY,
     targetEntityId: result.targetEntityId,
-    ticksRemaining: result.context.tickCost,
     context: result.context,
     pathfinding: !adjacent,
     rng: (eid * 2654435761 + tileX * 7 + tileY) >>> 0,
     yieldsSoFar: 0,
   });
+
+  // Adjacent-immediate path: write the first-yield cooldown now. Pathfinding
+  // path defers the cd write to the pathfinding→active transition in
+  // runHarvest so the cooldown clock doesn't burn while walking to the tree.
+  // Pre-commit cd: write tickCost-1 because the start tick is already tick 1
+  // of the channel (see consumable.ts startConsume for the same shape).
+  if (adjacent) world.setCooldown(eid, Math.max(0, result.context.tickCost - 1));
 
   if (!adjacent) {
     const candidates: { ax: number; ay: number; dist: number }[] = [];
@@ -154,7 +160,11 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
       if (hasMoveTarget(eid, world)) continue;
       if (isAdjacent(pos.tileX, pos.tileY, state.targetX, state.targetY)) {
         state.pathfinding = false;
-        state.ticksRemaining = state.context.tickCost;
+        // First-yield cooldown starts now. Pre-commit cd: write tickCost-1
+        // because the transition tick is already tick 1 of the channel.
+        // Max-write composes with movement's same-tick stepTicks write on
+        // the arrival tick (tickCost-1 typically wins).
+        world.setCooldown(eid, Math.max(0, state.context.tickCost - 1));
         world.entities.currentAction.set(eid, { actionType: ActionType.Harvesting });
         faceHarvestTarget(eid, state, world);
       } else {
@@ -164,8 +174,7 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
       continue;
     }
 
-    state.ticksRemaining--;
-    if (state.ticksRemaining > 0) continue;
+    if ((world.cooldowns.get(eid) ?? 0) > 0) continue;
 
     const added = world.inventoryMgr.addItem(eid, state.context.yieldBlueprintId, 1);
     if (!added.success) {
@@ -214,7 +223,7 @@ export function runHarvest(world: SystemState): HarvestEvent[] {
       continue;
     }
 
-    state.ticksRemaining = state.context.tickCost;
+    world.setCooldown(eid, state.context.tickCost);
   }
 
   return events;

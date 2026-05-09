@@ -12,6 +12,7 @@ import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import type { SystemState } from '../server/src/system-state.js';
+import { attachCooldowns, tickCooldowns } from './system-state-mock.js';
 
 function makeWorld(): SystemState {
   const map = new WorldMap(MAP_SIZE, MAP_SIZE);
@@ -21,7 +22,7 @@ function makeWorld(): SystemState {
     map.setTerrain(i, 0, Terrain.Water);
     map.setTerrain(i, MAP_SIZE - 1, Terrain.Water);
   }
-  return {
+  return attachCooldowns({
     map,
     entities: new EntityManager(),
     occupancy: new OccupancyGrid(MAP_SIZE, MAP_SIZE),
@@ -36,7 +37,7 @@ function makeWorld(): SystemState {
     players: new Map(),
     respawnRng: 0,
     currentTick: 0,
-  };
+  }) as unknown as SystemState;
 }
 
 function createCritter(w: SystemState, bp: BlueprintType, x: number, y: number, speed: number): number {

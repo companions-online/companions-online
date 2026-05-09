@@ -10,6 +10,7 @@ import { ActionType } from '@shared/actions.js';
 import { BlueprintType } from '@shared/blueprints.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import type { SystemState } from '../server/src/system-state.js';
+import { attachCooldowns, tickCooldowns } from './system-state-mock.js';
 
 // --- A* pathfinding tests ---
 
@@ -106,7 +107,7 @@ describe('Occupancy + movement collision', () => {
   }
 
   beforeEach(() => {
-    w = {
+    w = attachCooldowns({
       map: new WorldMap(SIZE, SIZE),
       entities: new EntityManager(),
       occupancy: new OccupancyGrid(SIZE, SIZE),
@@ -121,7 +122,7 @@ describe('Occupancy + movement collision', () => {
       players: new Map(),
       respawnRng: 0,
       currentTick: 0,
-    };
+    }) as unknown as SystemState;
   });
 
   it('occupancy updated on move', () => {
@@ -144,6 +145,7 @@ describe('Occupancy + movement collision', () => {
     setMoveTarget(a, 7, 5, w);
 
     for (let i = 0; i < 5; i++) {
+      tickCooldowns(w);
       runMovement(w);
       w.entities.clearDirty();
     }
@@ -161,6 +163,7 @@ describe('Occupancy + movement collision', () => {
     setMoveTarget(a, 8, 5, w);
 
     for (let i = 0; i < 50; i++) {
+      tickCooldowns(w);
       runMovement(w);
       w.entities.clearDirty();
     }
@@ -182,6 +185,7 @@ describe('Occupancy + movement collision', () => {
     setMoveTarget(player, 8, 5, w);
 
     for (let i = 0; i < 30; i++) {
+      tickCooldowns(w);
       runMovement(w);
       w.entities.clearDirty();
     }
@@ -200,6 +204,7 @@ describe('Occupancy + movement collision', () => {
     setMoveTarget(b, 5, 5, w);
 
     for (let i = 0; i < 30; i++) {
+      tickCooldowns(w);
       runMovement(w);
       w.entities.clearDirty();
     }

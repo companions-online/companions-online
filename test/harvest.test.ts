@@ -13,12 +13,13 @@ import { startHarvest, runHarvest, cancelHarvest, isHarvesting } from '../server
 import { initTreeResource, runResourceRespawns } from '../server/src/systems/resources.js';
 import { runMovement } from '../server/src/systems/movement.js';
 import type { SystemState } from '../server/src/system-state.js';
+import { attachCooldowns, tickCooldowns } from './system-state-mock.js';
 import {
   encodeAction, decodeClientMessage, ClientAction,
 } from '@shared/index.js';
 
 function makeWorld(): SystemState {
-  return {
+  return attachCooldowns({
     map: new WorldMap(MAP_SIZE, MAP_SIZE),
     entities: new EntityManager(),
     occupancy: new OccupancyGrid(MAP_SIZE, MAP_SIZE),
@@ -33,7 +34,7 @@ function makeWorld(): SystemState {
     players: new Map(),
     respawnRng: 12345,
     currentTick: 0,
-  };
+  }) as unknown as SystemState;
 }
 
 function createPlayer(w: SystemState, x: number, y: number): number {
@@ -77,7 +78,7 @@ describe('Harvest system', () => {
     expect(startHarvest(player, 11, 10, w).ok).toBe(true);
     expect(isHarvesting(player, w)).toBe(true);
 
-    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) { tickCooldowns(w); runHarvest(w); }
 
     const inv = w.inventoryMgr.get(player)!;
     expect(inv.items.some(i => i.blueprintId === BlueprintType.Wood)).toBe(true);
@@ -92,7 +93,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 4 * ACTION_BASE_TICKS; i++) runHarvest(w);
+    for (let i = 0; i < 4 * ACTION_BASE_TICKS; i++) { tickCooldowns(w); runHarvest(w); }
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
@@ -105,7 +106,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
+    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) { tickCooldowns(w); runHarvest(w); }
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood?.quantity).toBe(5);
@@ -131,7 +132,7 @@ describe('Harvest system', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS; i++) { tickCooldowns(w); runHarvest(w); }
 
     const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock).toBeDefined();
@@ -147,7 +148,7 @@ describe('Harvest system', () => {
 
     startHarvest(player, 11, 10, w);
     // Pickaxe base tickCost 4 → resolves to 4 × ACTION_BASE_TICKS. 5 yields needs 20 × ACTION_BASE_TICKS; loop slack is generous.
-    for (let i = 0; i < 5 * 4 * ACTION_BASE_TICKS + 20; i++) runHarvest(w);
+    for (let i = 0; i < 5 * 4 * ACTION_BASE_TICKS + 20; i++) { tickCooldowns(w); runHarvest(w); }
 
     const rock = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Rock);
     expect(rock?.quantity).toBe(MAX_HARVEST_YIELDS);
@@ -165,12 +166,13 @@ describe('Harvest system', () => {
     expect(startHarvest(player, 11, 10, w).ok).toBe(true);
 
     for (let i = 0; i < 30; i++) {
-      runHarvest(w);
+      tickCooldowns(w);
       runMovement(w);
+      runHarvest(w);
       w.entities.clearDirty();
     }
 
-    for (let i = 0; i < 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
+    for (let i = 0; i < 10 * ACTION_BASE_TICKS + 10; i++) { tickCooldowns(w); runHarvest(w); }
 
     const wood = w.inventoryMgr.get(player)!.items.find(i => i.blueprintId === BlueprintType.Wood);
     expect(wood).toBeDefined();
@@ -184,7 +186,7 @@ describe('Tree respawning', () => {
     w.entities.clearDirty();
 
     startHarvest(player, 11, 10, w);
-    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) runHarvest(w);
+    for (let i = 0; i < 5 * 10 * ACTION_BASE_TICKS + 10; i++) { tickCooldowns(w); runHarvest(w); }
 
     const countBefore = w.entities.getEntityCount();
 

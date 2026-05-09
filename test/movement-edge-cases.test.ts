@@ -31,6 +31,7 @@ import { StatusEffect } from '@shared/status-effects.js';
 import { WAYPOINT_NONE } from '@shared/components.js';
 import { MAP_SIZE } from '@shared/constants.js';
 import type { SystemState } from '../server/src/system-state.js';
+import { attachCooldowns, tickCooldowns } from './system-state-mock.js';
 
 // -- Helpers -----------------------------------------------------------------
 
@@ -40,7 +41,7 @@ function makeGameWorld(): GameWorld {
 }
 
 function makeBareWorld(): SystemState {
-  return {
+  return attachCooldowns({
     map: new WorldMap(MAP_SIZE, MAP_SIZE),
     entities: new EntityManager(),
     occupancy: new OccupancyGrid(MAP_SIZE, MAP_SIZE),
@@ -55,7 +56,7 @@ function makeBareWorld(): SystemState {
     players: new Map(),
     respawnRng: 0,
     currentTick: 0,
-  };
+  }) as unknown as SystemState;
 }
 
 function placePlayerAt(w: GameWorld, conn: HeadlessConnection, x: number, y: number): number {
@@ -214,7 +215,7 @@ describe('Movement edge cases — critter stuck animation', () => {
       w.map.setBuilding(34, y, Building.Wall);
     }
 
-    for (let i = 0; i < 60; i++) runMovement(w);
+    for (let i = 0; i < 60; i++) { tickCooldowns(w); runMovement(w); }
 
     expect(hasMoveTarget(c, w)).toBe(false);
     const ca = w.entities.currentAction.get(c);

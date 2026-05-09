@@ -7,7 +7,6 @@ import { Ok, Err, type ActionResult } from '../action-rejection.js';
 export interface ConsumableState {
   itemId: number;
   blueprintId: number;
-  ticksRemaining: number;
   healAmount: number;
 }
 
@@ -24,9 +23,13 @@ export function startConsume(eid: number, itemId: number, world: SystemState): A
   world.consumableStates.set(eid, {
     itemId,
     blueprintId: item.blueprintId,
-    ticksRemaining: bp.consumeTicks,
     healAmount: bp.consumeHeal,
   });
+  // Pre-commit (channel) cd: write consumeTicks-1 because the start tick
+  // is already "tick 1 of the channel" — the runConsume gate won't see
+  // the cd until the next top-of-tick decrement runs. Writing the full
+  // consumeTicks would push the heal one tick past the configured budget.
+  world.setCooldown(eid, Math.max(0, bp.consumeTicks - 1));
   world.entities.currentAction.set(eid, { actionType: ActionType.Consuming });
   return Ok;
 }
@@ -34,6 +37,11 @@ export function startConsume(eid: number, itemId: number, world: SystemState): A
 export function cancelConsume(eid: number, world: SystemState): void {
   if (!world.consumableStates.has(eid)) return;
   world.consumableStates.delete(eid);
+  // Consume's cooldown represents the in-flight channel, not a post-commit
+  // residue, so cancelling drops it. Without this, cancelling a Bandage
+  // (consumeTicks=10 = 500ms) would leave the player frozen for that long
+  // before any next action could commit.
+  world.clearCooldown(eid);
   world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
 }
 
@@ -57,8 +65,7 @@ export function runConsume(world: SystemState): ConsumeEvent[] {
       world.consumableStates.delete(eid);
       continue;
     }
-    state.ticksRemaining--;
-    if (state.ticksRemaining <= 0) {
+    if ((world.cooldowns.get(eid) ?? 0) === 0) {
       // Apply heal
       const health = world.entities.health.get(eid);
       let currentHp = 0;

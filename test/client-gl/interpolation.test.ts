@@ -115,9 +115,12 @@ describe('creature-entity interpolation', () => {
         tileUpdates: [],
       },
     });
-    // Checkpoint was set at scene.time = DURATION_MS / 2. lerpFrom = ~0.5.
-    // Advance another half-duration — should be halfway between 0.5 and 2 = 1.25.
-    scene.time = DURATION_MS;
+    // Checkpoint was set at scene.time = DURATION_MS / 2. lerpFrom = ~0.5,
+    // target = 2, distance = 1.5. The lerp duration scales with distance
+    // (constant tiles/sec) so half-progress takes 1.5 × DURATION_MS / 2 from
+    // the checkpoint. Advance to that point and assert visualX is halfway
+    // between fromX (0.5) and targetX (2) = 1.25.
+    scene.time = DURATION_MS / 2 + (1.5 * DURATION_MS) / 2;
     tickEntity(scene, e, 0);
     expect(e.visualX).toBeCloseTo(1.25, 2);
   });

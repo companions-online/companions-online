@@ -28,12 +28,21 @@ ever becomes a hot path, sub-data into dense-packed slots + swap-
 with-last eviction is the next step; the infrastructure is set up to
 support it (chunk keys, dirty tracking).
 
-## Diagonal interp is not sqrt(2)-compensated
+## Lerp duration scales with delta size
 
-Server movement uses alternating diagonal cooldown so diagonals take
-~1.414× the time of cardinals. Client lerps at uniform `1/speed`
-seconds per tile regardless of direction → visuals run ~30 % fast on
-diagonals. Flagged in `creature-entity.ts`; acceptable for now.
+`creature-entity.ts` computes lerp duration from the Chebyshev distance
+between `lerpFromX/Y` and the freshly-arrived `position`. For 1-tile
+deltas it matches the server's per-step time (`stepTicks × 50 ms`,
+×1.4 on diagonals to match the server's diagonal cooldown). For
+≥2-tile batched deltas — when the WS layer ships multiple ticks of
+position updates between client frames (network jitter / TCP buffer /
+60 Hz frame loop reading off a 20 Hz tick stream) — the lerp covers
+`dist × stepTicks × 50 ms` so the visual stays at constant
+tiles-per-second instead of teleporting through the gap in 350 ms.
+The diagonal 1.4× multiplier is dropped for `dist > 1` (multi-tile
+lerps don't have one direction). Pre-fix this looked like "wild
+jumps in rendered area" during click-spam — server position outran
+the fixed-duration lerp window.
 
 ## Door facing at draw time, not at create time
 
