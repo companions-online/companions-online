@@ -28,7 +28,9 @@ const MIRROR_OPPOSITE: Record<string, string> = {
 };
 
 const IMPORT_DIR = path.resolve(import.meta.dirname!, '../assets/import');
-const OUTPUT_DIR = path.resolve(import.meta.dirname!, '../client-webgl/assets');
+// Creature sprite sheets land under client-webgl/assets/creatures/. (Other
+// asset categories live in sibling sub-folders — see sprite-manifest.ts.)
+const OUTPUT_DIR = path.resolve(import.meta.dirname!, '../client-webgl/assets/creatures');
 
 interface CreatureConfig {
   /** Filename prefix shared by the rotations and walk GIFs. */

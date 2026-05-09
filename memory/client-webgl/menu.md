@@ -51,10 +51,14 @@ the "Game-start orchestration" section below.
   bottom bar with Back + Start World / Join World.
 - `ui/menu-connect.ts` — connecting + connect-error screens for the
   Join World flow.
-- `ui/avatar-selector.ts` — `buildAvatarTiles(opts)`. `KNOWN_VARIANTS`
-  is the single source of truth for variant ids; tiles render the
-  south-facing idle frame from the player walk-cycle sheet via
-  `spriteRegistry.resolve(BlueprintType.Player, variant)`.
+- `ui/avatar-selector.ts` — `buildAvatarTiles({x, y, getSelected,
+  onSelect, spriteRegistry})`. The shared `AVATARS` registry in
+  `shared/src/avatars.ts` is the single source of truth for variant
+  ids and names. Tiles render the south-facing idle frame from the
+  player walk-cycle sheet via
+  `spriteRegistry.resolve(BlueprintType.Player, variant)`. `getSelected`
+  is a getter (not a snapshot) so the highlight tracks `patchValues`
+  state changes that don't trigger a screen rebuild.
 - `controls/menu-input.ts` — DOM event bridge. mousemove / mousedown /
   mouseup / keydown forward to the controller when
   `scene.overlay.kind === 'menu'`. `controls/keyboard.ts` early-returns
@@ -172,13 +176,20 @@ same tick — closing the menu we just opened.
 ## Server `/avatar` command
 
 Avatar selection wires through the existing `BlueprintData.variant`
-component, not a new MetaKey. `/avatar <n>` validates `n` against
-`getBlueprint(player.blueprintId).variantCount` (default 1) and calls
-`entities.blueprint.set(eid, {blueprintId, variant})` — the
+component, not a new MetaKey. `/avatar <name|variant>` accepts either
+a name from the shared `AVATARS` registry (`shared/src/avatars.ts` —
+catgirl/nomad/merchant/tinkerer/beastkin/herbalist) or a 0-indexed
+integer. Names are the external API; integers are kept for dev usage
+and round-trips with the wire format. The handler validates the
+resolved variant against `getBlueprint(player.blueprintId).variantCount`
+and calls `entities.blueprint.set(eid, {blueprintId, variant})` — the
 ComponentStore's auto-dirty marks the entity for the next WorldDelta.
-New avatars: bump `variantCount` in `shared/src/blueprints.ts` for the
-Player entry, ship `player-<n>.png`, add an entry to `KNOWN_VARIANTS`
-in `avatar-selector.ts`.
+
+New avatars: add an entry to `AVATARS` in `shared/src/avatars.ts`,
+bump `variantCount` on the Player entry in `shared/src/blueprints.ts`,
+and ship `player-<n>.png` under `client-webgl/assets/creatures/`. The
+menu, `/avatar`, and the MCP `identify` tool all pick up the new name
+automatically.
 
 ## Build version
 
@@ -219,5 +230,5 @@ when `navigator.clipboard.readText()` is denied.
 - `test/client-gl/host-normalizer.test.ts` — schemes, ports, paths,
   local-host heuristic, malformed input.
 - `test/e2e/server-commands.test.ts` — `/avatar` validation
-  (`variant 0` round-trips, out-of-range / non-numeric / negative
-  rejection).
+  (`variant 0` round-trips, name acceptance, out-of-range integer /
+  unknown name / negative rejection).

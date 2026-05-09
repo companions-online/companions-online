@@ -111,13 +111,27 @@ they pick one via `identify(name)`.
 ## identify tool (MCP)
 
 Callable exactly once per session. Skips the `guarded(...)` wrapper
-that rejects every other tool when `conn.entityId === 0`. Validates
-`name` with `validateName` (shared with `/nick`), calls
-`world.addPlayer(conn)` to spawn, `world.setEntityMeta(...)` to name
-(broadcasts), and `setSessionEntity(sessionId, entityId)` to promote
-the tracked session. Second call while identified returns `[error]
-already identified as "<name>"; use server_command(nick) to rename`
-with `isError: true`. Reasons to reject re-identify rather than allow
+that rejects every other tool when `conn.entityId === 0`. Schema:
+`{ name: string; avatar?: string }` — name validated with
+`validateName` (shared with `/nick`); `avatar` is optional and
+resolved via `avatarVariantByName` from the shared `AVATARS`
+registry (`shared/src/avatars.ts`). The tool description embeds
+`AVATAR_NAMES.join(', ')` so MCP clients see the valid names without
+guessing.
+
+Handler order: `world.addPlayer(conn)` → `setEntityMeta(Name)` →
+`setSessionEntity(sessionId, entityId)` → if `avatar` is set,
+resolve and apply via `entities.blueprint.set(eid,
+{blueprintId: Player, variant})` (rides the existing
+component-bitmask delta channel — same path `/avatar` uses; no new
+opcode). Unknown avatar name is **best-effort**: the player stays
+identified, the response includes the avatar error inline, and the
+variant stays at the default (0). Rationale: name was the required
+field; the LLM can correct the avatar later via `server_command(avatar, …)`.
+
+Second call while identified returns `[error] already identified as
+"<name>"; use server_command(nick) to rename` with `isError: true`.
+Reasons to reject re-identify rather than allow
 silent re-spawn: it's not idempotent (would leak the old entity), and
 the intent is almost always "rename".
 
@@ -234,8 +248,10 @@ If you want it to render above the entity, add a draw path similar to
 
 Two tools touch identity:
 
-- **`identify { name }`** — one-shot spawn + name; required before any
-  other tool. See the "identify tool" section above.
+- **`identify { name; avatar? }`** — one-shot spawn + name + optional
+  avatar (catgirl/nomad/merchant/tinkerer/beastkin/herbalist; defaults
+  to catgirl). Required before any other tool. See the "identify tool"
+  section above.
 - **`server_command { command: string; parameter: string }`** —
   post-identify only (guard rejects pre-identify with `isError: true`).
   Does **not** route through `setAction` + `awaitAction`; it calls

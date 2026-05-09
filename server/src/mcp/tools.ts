@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ClientAction } from '@shared/actions.js';
 import { EQUIP_SLOT_HAND, EQUIP_SLOT_BODY, EQUIP_SLOT_HEAD } from '@shared/inventory.js';
-import { getBlueprint } from '@shared/blueprints.js';
+import { BlueprintType, getBlueprint } from '@shared/blueprints.js';
+import { AVATAR_NAMES, avatarVariantByName } from '@shared/avatars.js';
 import { MetaKey } from '@shared/entity-meta.js';
 import type { McpConnection } from '../connections/mcp-connection.js';
 import type { GameWorld } from '../game-world.js';
@@ -60,10 +61,15 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
 
   // --- Identify (only tool that skips the guard) ---
 
+  const identifyDescription =
+    'Register your player. Must be called before any other tool. ' +
+    'Takes a display name (1-16 chars; letters, digits, underscore, or hyphen) ' +
+    `and an optional avatar (one of: ${AVATAR_NAMES.join(', ')}; defaults to ${AVATAR_NAMES[0]}).`;
+
   server.tool('identify',
-    'Register your player. Must be called before any other tool. Takes a display name (1-16 chars; letters, digits, underscore, or hyphen).',
-    { name: z.string() },
-    async ({ name }) => {
+    identifyDescription,
+    { name: z.string(), avatar: z.string().optional() },
+    async ({ name, avatar }) => {
       if (conn.entityId !== 0) {
         const existing = world.getEntityMeta(conn.entityId, MetaKey.Name) ?? 'unknown';
         return text(
@@ -79,7 +85,23 @@ export function registerTools(server: McpServer, conn: McpConnection, world: Gam
       if (conn.sessionId) setSessionEntity(conn.sessionId, entityId);
       conn.entityId = entityId;
 
-      return text(formatEnvelope(conn, `Identified as ${check.name}`, ResponseShape.Full));
+      let avatarMsg = '';
+      if (avatar !== undefined && avatar !== '') {
+        const variant = avatarVariantByName(avatar);
+        if (variant === null) {
+          // Best-effort: name was the required field, so we keep the
+          // player identified and surface the avatar error in the reply.
+          avatarMsg = ` (avatar "${avatar}" unknown; valid: ${AVATAR_NAMES.join(', ')})`;
+        } else {
+          world.entities.blueprint.set(entityId, {
+            blueprintId: BlueprintType.Player,
+            variant,
+          });
+          avatarMsg = ` as ${avatar}`;
+        }
+      }
+
+      return text(formatEnvelope(conn, `Identified as ${check.name}${avatarMsg}`, ResponseShape.Full));
     },
   );
 

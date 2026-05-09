@@ -31,6 +31,7 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [Server Commands + Entity Meta](reference/server-commands.md) — `/nick` dispatcher, `MetaKey` sync channel, nameplates
 - [Occupancy + Logger](reference/occupancy-and-logger.md) — occupancy = single-blocker invariant; per-world WorldLogger (file/memory) + assertions
 - [Debug Tools](reference/debug-tools.md) — `d`-key world dumps + `scripts/world-dump-view.ts` forensic CLI (stuck-state scan, near/entity/find queries) + server.log grep
+- [Asset Import](reference/asset-import.md) — `import-character.ts` (Pixellab v2 dir tree) vs legacy `import-sprite.ts` (GIFs); how to add a player variant or item
 
 ### User — who I work with
 - [Collaboration](user/collaboration.md) — steered build, plan→approve→implement, code prefs, corrections

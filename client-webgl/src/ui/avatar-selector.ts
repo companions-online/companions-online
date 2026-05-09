@@ -1,8 +1,7 @@
 // Avatar tile row for the create-join screen. One tile per known player
-// variant — currently just catgirl (variant 0). New variants drop in by
-// adding entries to KNOWN_VARIANTS and shipping a `player-<n>.png` next
-// to the existing `player.png`; the sprite-registry's per-variant load
-// path (sprite-registry.ts::pathFor) handles the file resolution.
+// variant. The list is the shared `AVATARS` registry in
+// shared/src/avatars.ts — same source the /avatar server command and
+// the MCP `identify` tool use, so adding a new avatar is one edit there.
 //
 // Each tile shows the south-facing idle frame of the player walk-cycle
 // sheet (col 0 of the dir=S row), cropped to the tile inset. The
@@ -10,23 +9,12 @@
 
 import { BlueprintType } from '@shared/blueprints.js';
 import { Direction } from '@shared/direction.js';
+import { AVATARS } from '@shared/avatars.js';
 import type { SpriteRegistry } from '../entities/sprite-registry.js';
 import { makeSelectableTile, type Widget } from './widgets.js';
 
 const TILE_SIZE = 72;
 const TILE_GAP = 8;
-
-interface AvatarVariant {
-  id: number;
-  label: string;
-}
-
-/** Variants the avatar selector can offer. Add new entries as new
- *  player-<n>.png sheets land. The id matches the BlueprintVariant
- *  carried over the wire by the /avatar server command (Phase 4). */
-const KNOWN_VARIANTS: AvatarVariant[] = [
-  { id: 0, label: 'catgirl' },
-];
 
 /** Number of frames in the player walk cycle, used to figure out where
  *  the south-facing idle frame sits in the sheet. The drawCreatureSprite
@@ -47,16 +35,19 @@ export interface AvatarTilesOpts {
   /** Top-left of the row in canvas pixels. */
   x: number;
   y: number;
-  selected: number;
+  /** Live read of the currently-selected variant. Called every frame so
+   *  click → patchValues → next-frame highlight works without a full
+   *  screen rebuild (the create-join screen signature ignores `values`). */
+  getSelected: () => number;
   onSelect: (variant: number) => void;
   spriteRegistry: SpriteRegistry;
 }
 
 export function buildAvatarTiles(opts: AvatarTilesOpts): Widget[] {
   const widgets: Widget[] = [];
-  for (let i = 0; i < KNOWN_VARIANTS.length; i++) {
-    const variant = KNOWN_VARIANTS[i];
-    const sheet = opts.spriteRegistry.resolve(BlueprintType.Player, variant.id);
+  for (let i = 0; i < AVATARS.length; i++) {
+    const avatar = AVATARS[i];
+    const sheet = opts.spriteRegistry.resolve(BlueprintType.Player, avatar.variant);
     const uv = southIdleUv(sheet);
     widgets.push(makeSelectableTile({
       bounds: {
@@ -66,8 +57,8 @@ export function buildAvatarTiles(opts: AvatarTilesOpts): Widget[] {
       },
       texture: sheet.texture,
       srcU: uv.srcU, srcV: uv.srcV, srcDU: uv.srcDU, srcDV: uv.srcDV,
-      selected: opts.selected === variant.id,
-      onClick: () => opts.onSelect(variant.id),
+      selected: () => opts.getSelected() === avatar.variant,
+      onClick: () => opts.onSelect(avatar.variant),
     }));
   }
   return widgets;
@@ -76,6 +67,6 @@ export function buildAvatarTiles(opts: AvatarTilesOpts): Widget[] {
 /** Total width occupied by all variant tiles, used by the create-join
  *  screen to position adjacent labels. */
 export function avatarRowWidth(): number {
-  const n = KNOWN_VARIANTS.length;
+  const n = AVATARS.length;
   return n * TILE_SIZE + (n - 1) * TILE_GAP;
 }

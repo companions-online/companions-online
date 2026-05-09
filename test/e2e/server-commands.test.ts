@@ -330,10 +330,19 @@ describe('server commands', () => {
       expect(world.entities.blueprint.get(entityId)?.variant).toBe(0);
     });
 
+    it('accepts a known avatar name', () => {
+      const world = createTestWorld();
+      const { entityId } = addTestPlayer(world, 10, 10);
+
+      world.setAction(entityId, {
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: 'nomad',
+      });
+      world.runTick();
+
+      expect(world.entities.blueprint.get(entityId)?.variant).toBe(1);
+    });
+
     it('rejects out-of-range variant via system chat', () => {
-      // Player blueprint currently has variantCount=1 (default), so any
-      // variant > 0 is out of range. Once player-1.png lands, raise
-      // variantCount and update this assertion.
       const world = createTestWorld();
       const { entityId, connection } = addTestPlayer(world, 10, 10);
 
@@ -346,12 +355,12 @@ describe('server commands', () => {
       expect(chat?.chatMessage).toMatch(/variant must be/);
     });
 
-    it('rejects non-numeric parameter via system chat', () => {
+    it('rejects unknown name via system chat', () => {
       const world = createTestWorld();
       const { entityId, connection } = addTestPlayer(world, 10, 10);
 
       world.setAction(entityId, {
-        action: ClientAction.ServerCommand, command: 'avatar', parameter: 'catgirl',
+        action: ClientAction.ServerCommand, command: 'avatar', parameter: 'wizard',
       });
       world.runTick();
 

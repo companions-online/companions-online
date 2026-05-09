@@ -295,7 +295,7 @@ export interface CreateSceneOptions {
    *  boots the real loader from /assets/. */
   effectSprites?: EffectSprites;
   /** Pre-loaded logo. Tests omit this (menuLogo stays null and the menu
-   *  isn't exercised); production loads from /assets/game-logo.png. */
+   *  isn't exercised); production loads from /assets/ui/game-logo.png. */
   menuLogo?: MenuLogo | null;
 }
 

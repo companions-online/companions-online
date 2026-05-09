@@ -207,19 +207,28 @@ Client-side effects wired onto the channel:
   traffic until `onMessage` is wired, replaying in arrival order so
   `wireSceneToConnection` initializes scene state normally.
   Avatar selection wires through the existing `BlueprintData.variant`
-  component — new `/avatar <n>` server command validates against the
-  Player blueprint's `variantCount`, sets the variant via
+  component — `/avatar <name|variant>` server command resolves a name
+  against the shared `AVATARS` registry (`shared/src/avatars.ts`:
+  catgirl/nomad/merchant/tinkerer/beastkin/herbalist) or parses a
+  0-indexed integer, validates against `variantCount`, and sets via
   `entities.blueprint.set` (auto-dirty marks for the next WorldDelta).
-  No new MetaKey, no protocol change. Adding new player variants:
-  bump `variantCount` in `shared/src/blueprints.ts`, ship
-  `player-<n>.png`, add an entry to `KNOWN_VARIANTS` in
-  `client-webgl/src/ui/avatar-selector.ts`. Keyboard polish (no Tab
-  cycle, but Enter triggers screen `defaultAction`, Esc triggers
-  `escapeAction`, clipboard-paste-denial focuses the host input).
-  HUD quickbar hides whenever any overlay is up. Coverage:
-  `test/client-gl/widgets.test.ts` (28), `test/client-gl/host-normalizer.test.ts`
-  (18), `test/e2e/server-commands.test.ts` `/avatar` cases (4).
-  Detail in `memory/client-webgl/menu.md`.
+  No new MetaKey, no protocol change. The MCP `identify` tool also
+  accepts an optional `avatar` parameter; its description embeds
+  `AVATAR_NAMES` so MCP clients see the valid names. NPCs
+  (Hermit/Trader/Wanderer) reuse player variant sheets via the new
+  `aliasOf` field on sprite-manifest entries (Player variants 4/3/1 —
+  beastkin/tinkerer/nomad), with a two-pass loader resolving aliases
+  after PNG-backed entries; NPC dispatch (dialogue, AI, trade) still
+  keys on their distinct blueprint ids. Adding new player variants:
+  add an entry to `AVATARS`, bump `variantCount` on the Player entry
+  in `shared/src/blueprints.ts`, ship `player-<n>.png`. Keyboard polish
+  (no Tab cycle, but Enter triggers screen `defaultAction`, Esc
+  triggers `escapeAction`, clipboard-paste-denial focuses the host
+  input). HUD quickbar hides whenever any overlay is up. Coverage:
+  `test/client-gl/widgets.test.ts`, `test/client-gl/host-normalizer.test.ts`,
+  `test/e2e/server-commands.test.ts` `/avatar` cases (variant 0
+  round-trip, name acceptance, out-of-range integer, unknown name,
+  negative). Detail in `memory/client-webgl/menu.md`.
 
 ## Tests — all passing
 
