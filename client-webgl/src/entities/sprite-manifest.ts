@@ -95,11 +95,13 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   { blueprintId: BlueprintType.Pickaxe,    filename: 'items/tools/pickaxe',          frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.Hammer,     filename: 'items/tools/hammer',           frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.FishingRod, filename: 'items/tools/fishing-rod',      frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
-  { blueprintId: BlueprintType.WoodenClub, filename: 'items/weapons/wooden-club',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
-  { blueprintId: BlueprintType.StoneKnife, filename: 'items/weapons/stone-knife',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
-  { blueprintId: BlueprintType.HideVest,   filename: 'items/armor/hide-vest',        frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
-  { blueprintId: BlueprintType.HideCap,    filename: 'items/armor/hide-cap',         frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
-  { blueprintId: BlueprintType.IronHelm,   filename: 'items/armor/iron-helm',        frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.WoodenClub,     filename: 'items/weapons/wooden-club',     frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.StoneKnife,     filename: 'items/weapons/stone-knife',     frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.IronSword,      filename: 'items/weapons/iron-sword',      frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.HideVest,       filename: 'items/armor/hide-vest',         frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.HideCap,        filename: 'items/armor/hide-cap',          frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.IronHelm,       filename: 'items/armor/iron-helm',         frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.IronChestplate, filename: 'items/armor/iron-chestplate',   frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.CookedFish, filename: 'items/consumables/cooked-fish', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.CookedMeat, filename: 'items/consumables/cooked-meat', frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
   { blueprintId: BlueprintType.Bandage,    filename: 'items/consumables/bandage',    frameW: 32, frameH: 32, footX: 16, footY: 32, detectFoot: true, align: 'south', layout: 'static' },
@@ -109,7 +111,7 @@ export const SPRITE_MANIFEST: SpriteManifestEntry[] = [
   // entry only feeds the inventory icon and placement preview.
   { blueprintId: BlueprintType.WoodenWall,   filename: 'placeables/wooden-wall',   frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
   // WoodenFloor / StoneFloor are building tiles rendered by the terrain system
-  // in-world. Inventory-icon entries kept commented until they're wired up.
-  // { blueprintId: BlueprintType.WoodenFloor,  filename: 'placeables/wooden-floor', frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
-  // { blueprintId: BlueprintType.StoneFloor,   filename: 'placeables/stone-floor',  frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
+  // in-world; these manifest entries feed the inventory icon and placement preview.
+  { blueprintId: BlueprintType.WoodenFloor,  filename: 'placeables/wooden-floor',  frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
+  { blueprintId: BlueprintType.StoneFloor,   filename: 'placeables/stone-floor',   frameW: 64, frameH: 64, footX: 32, footY: 64, detectFoot: true, align: 'south', layout: 'static' },
 ];

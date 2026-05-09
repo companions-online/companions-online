@@ -37,7 +37,7 @@ entities/from-network.ts     createEntityFromNetwork (factory dispatch by bluepr
 entities/creature-entity.ts  Creature/NPC factory. Tick: lerp visualX/Y, advance walk frame. Draw: 8-dir walk-cycle sheet.
 entities/static-entity.ts    Placeable/item/resource factory. Three draw paths: door (2×2 facing+open), animated (sheet.animation → ticked walkFrame, col/row UV slice), single-frame.
 entities/sprite-registry.ts  Load sprite sheets at boot. resolve(bpId, variant) → SpriteSheetRef (frameW/H = src slice, renderW/H = frameW * scale, scaled foot, optional animation block). Unknown-entity fallback.
-entities/sprite-manifest.ts  Per-blueprint sheet metadata (name, frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType.
+entities/sprite-manifest.ts  Per-blueprint sheet metadata (filename = path relative to client-webgl/assets/ without extension, e.g. 'creatures/deer', 'items/tools/axe'; frameW/H, footX/Y, optional scale + animation { cols, rows, frameCount, fps }). Keyed off shared BlueprintType.
 entities/sprite-renderer.ts  Sprite GL program + drawSprite quad draws (bound once, invoked by entity draw fns). begin(res, lightmap?) / setSpriteTile / setLit for lighting integration.
 entities/shaders.ts          Sprite VS/FS source strings. FS samples u_lightmap via u_spriteTileXY when u_lit=1.
 ```
@@ -96,7 +96,7 @@ ui/cooking-highlight.ts      Adjacent-campfire tint + click handling for raw mea
 # Menu (orientation: memory/client-webgl/menu.md)
 ui/widget-palette.ts         Pre-baked 1×1 solid-color textures used by the menu/widget kit (bg, bgHover, bgPressed, border, inputBg, dim, accent, textSecondary). Mirrors effect-sprites' hpBar pattern.
 ui/widgets.ts                Closure-factory widget kit: makeButton, makeTextInput (TextInputWidget extends Widget with getValue/setValue), makeLabel, makeDivider, makeImage, makeBackdropDim, makeSelectableTile, makeToggle (focusable on/off; click + Space + Enter flip; closure-local state, no persistence). Widget interface (bounds, draw, hitTest, optional onMouseDown/Up/Key/setFocus, dispose). KeyEvent shape. TextInput Enter bubbles when no onSubmit wired so screen-level defaultAction fires; Esc always bubbles.
-ui/logo.ts                   loadMenuLogo(gl) — one-shot loader for /assets/game-logo.png.
+ui/logo.ts                   loadMenuLogo(gl) — one-shot loader for /assets/ui/game-logo.png.
 ui/menu.ts                   Menu orchestrator — createMenuController. Owns active screen widgets, focus, mouse + key dispatch, screen rebuild on signature change. Defines MenuContext (passed to screens — goTo/close/openUrl/startWorld/joinWorld/disconnect/focusWidget) and ScreenBuild (factory return: widgets + optional defaultAction/escapeAction/initialFocus). Settings overlay context is part of the screen signature so a context flip rebuilds the button row.
 ui/menu-main.ts              Landing screen. Logo + 3-button stack (New Game / Join Game / Settings) + footer link bottom-left + build NNN bottom-right.
 ui/menu-settings.ts          Music toggle (makeToggle, pure UI placeholder — no persistence/playback) + context-dependent button row. context='main-menu': single Back button (Enter+Esc fire Back). context='in-game': Back to Game + Disconnect (Esc fires Back to Game; Enter unwired to avoid stray Disconnect). Disconnect routes via MenuContext.disconnect.
@@ -129,7 +129,7 @@ test/persistence.test.ts                Save/load round-trips tickOffset + new-w
 ```
 client-webgl/index.html             Networked-mode entry. Inline script sets window.GAME_SERVER_HOST = window.location.host so the menu autofills the Join Game host field.
 client-webgl/index-standalone.html  Standalone-mode entry. No GAME_SERVER_HOST → menu's host field starts empty.
-client-webgl/assets/                deer, player, tree-0/1/2, door, unknown-entity PNGs; smoke-anim / attack-anim / harvest-craft-anim / healing-anim effect sheets; game-logo.png for the main menu.
+client-webgl/assets/                Sprite PNGs in sub-folders mirroring Blueprint.category: creatures/, npcs/, items/{tools,weapons,armor,consumables,misc}/, resources/, placeables/ — plus sibling effects/ (anim sheets) and ui/ (game-logo, unknown-entity). Filenames are kebab-case; sprite-manifest.ts::filename holds the full relative path.
 client-webgl/build-shared.ts        Shared esbuild plumbing — makeAliasPlugin resolving @shared/*, @server/*, @client-webgl/*. Also exports readBuildNumber(clientWebglDir) for the __BUILD_VERSION__ define.
 client-webgl/build.ts               esbuild one-shot build. Defines __BUILD_VERSION__ from .build-number.
 client-webgl/dev.ts                 esbuild --watch. No dev server — game server (npm run dev) serves the built bundle. Defines __BUILD_VERSION__.
