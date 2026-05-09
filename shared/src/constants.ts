@@ -7,6 +7,25 @@ export const CHUNK_SIZE = 16;
 export const VIEW_RANGE = 24;
 export const INTEREST_RANGE = 32;
 
+/**
+ * Chunk-streaming radii. The two are coupled by an invariant: the client's
+ * eviction radius must be strictly greater than the server's needed radius,
+ * so that any chunk evicted by the client has already been forgotten by the
+ * server. Otherwise, when the player walks back into range, the server's
+ * `sentChunks` would still claim the client has the chunk and skip the
+ * re-stream, leaving a black hole on the client.
+ *
+ * SERVER_NEEDED_RADIUS_CHUNKS — chunks the server actively streams + retains
+ *   in `sentChunks`. Each tick, anything outside this radius is dropped from
+ *   `sentChunks` so re-entry triggers a fresh `onChunkNeeded`.
+ * CLIENT_EVICT_RADIUS_CHUNKS — chunks the client keeps resident. Anything
+ *   outside this radius is dropped from `chunkTerrainData`. The +1 margin
+ *   guarantees the client still has the chunk while the server still tracks
+ *   it; the client only releases it once the server has too.
+ */
+export const SERVER_NEEDED_RADIUS_CHUNKS = Math.ceil(INTEREST_RANGE / CHUNK_SIZE);
+export const CLIENT_EVICT_RADIUS_CHUNKS = SERVER_NEEDED_RADIUS_CHUNKS + 1;
+
 export const SPAWN_X = Math.floor(MAP_SIZE / 2);
 export const SPAWN_Y = Math.floor(MAP_SIZE / 2);
 

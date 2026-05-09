@@ -2,16 +2,15 @@ import { tileToScreen } from '@shared/coordinates.js';
 import { TILE_W, TILE_H } from '../platform/config.js';
 import type { SpriteRenderer } from '../entities/sprite-renderer.js';
 import type { Scene } from '../scene.js';
-import type { ClientEntity } from '../entities/client-entity.js';
 import type { Effect } from './effect.js';
 import type { TextSurface, TextSurfaceFactory } from './text-surface.js';
 
 const DAMAGE_DURATION_MS = 1200;
 const FLOAT_SPEED_PX_PER_MS = 0.04;
-const DAMAGE_FONT_PX = 16;
-const DAMAGE_FONT_PX_SELF = 22;
+const DAMAGE_FONT_PX = 8;
+const DAMAGE_FONT_PX_SELF = 11;
 /** Base vertical offset above entity tile center (px). */
-const BASE_OFFSET_Y = 36;
+const BASE_OFFSET_Y = 18;
 /** Starting opacity — fades further toward end of life. */
 const BASE_ALPHA = 0.6;
 
@@ -42,18 +41,25 @@ export interface DamageNumberOpts {
   largeFont: boolean;
 }
 
+/**
+ * Spawn a floating damage number anchored at a tile-space position.
+ *
+ * If `followEntityId` is non-null, the anchor tracks that entity's
+ * `visualX/Y` each tick while it remains in `scene.entities`; when the
+ * entity is removed, the anchor sticks at its last known position.
+ */
 export function createDamageNumber(
-  entity: ClientEntity,
   amount: number,
+  initialAnchorX: number,
+  initialAnchorY: number,
+  followEntityId: number | null,
   startTime: number,
   factory: TextSurfaceFactory,
   opts: DamageNumberOpts,
 ): Effect {
   const surface = createDamageSurface(factory, amount, opts.largeFont);
-  // Snapshot entity position at spawn so if the entity disappears we still
-  // have a location to float from.
-  let anchorX = entity.visualX;
-  let anchorY = entity.visualY;
+  let anchorX = initialAnchorX;
+  let anchorY = initialAnchorY;
 
   return {
     kind: 'damage',
@@ -62,11 +68,12 @@ export function createDamageNumber(
     done: false,
 
     tick(scene) {
-      // Follow entity if still alive.
-      const live = scene.entities.get(entity.id);
-      if (live) {
-        anchorX = live.visualX;
-        anchorY = live.visualY;
+      if (followEntityId !== null) {
+        const live = scene.entities.get(followEntityId);
+        if (live) {
+          anchorX = live.visualX;
+          anchorY = live.visualY;
+        }
       }
     },
 

@@ -62,13 +62,21 @@ world uses the same GPU memory as a 128×128 one.
 ### Capacity
 
 ```ts
-INTEREST_RADIUS_CHUNKS = ceil(INTEREST_RANGE / CHUNK_SIZE) + 1   // +1 for JIT overlap
-PEAK_CONCURRENT_CHUNKS = (2 * INTEREST_RADIUS_CHUNKS + 1) ** 2
-CHUNK_CAPACITY         = PEAK_CONCURRENT_CHUNKS + 4              // small margin
+CLIENT_EVICT_RADIUS_CHUNKS = SERVER_NEEDED_RADIUS_CHUNKS + 1     // shared/src/constants.ts
+PEAK_CONCURRENT_CHUNKS     = (2 * CLIENT_EVICT_RADIUS_CHUNKS + 1) ** 2
+CHUNK_CAPACITY             = PEAK_CONCURRENT_CHUNKS + 4          // small margin
 ```
 
-Current constants: `INTEREST_RANGE=32`, `CHUNK_SIZE=16` → radius 3,
-peak 49, capacity **53**. See `scene.ts:46-49`.
+Current constants: `INTEREST_RANGE=32`, `CHUNK_SIZE=16` →
+`SERVER_NEEDED_RADIUS_CHUNKS=2`, `CLIENT_EVICT_RADIUS_CHUNKS=3`, peak
+49, capacity **53**.
+
+The two radii are coupled by an invariant: client evicts strictly
+later than the server forgets. Server-side `streamToTarget` prunes
+`sentChunks` to the needed-set every tick, so a chunk evicted by the
+client is already absent from the server's set and gets re-streamed
+on re-entry. See `shared/src/constants.ts` for the contract;
+`server/src/game-world.ts::streamToTarget` for the prune.
 
 Over-capacity is a **bug**, not a data issue. `uploadTerrain()` throws
 when it sees `chunkTerrainData.size > CHUNK_CAPACITY` — that means
@@ -83,8 +91,8 @@ eviction is broken.
 `processDirtyChunks()` runs at the start of each frame via
 `renderer.ts`:
 1. Eviction sweep — when the player's containing chunk changes, drop
-   any chunk outside `INTEREST_RADIUS_CHUNKS`. Only re-runs when the
-   player chunk actually changes, not every frame.
+   any chunk outside `CLIENT_EVICT_RADIUS_CHUNKS`. Only re-runs when
+   the player chunk actually changes, not every frame.
 2. For each dirty chunk still in-interest: rebuild elevation →
    build terrain instances + wall drawables.
 3. If anything changed, concat all `chunkTerrainData` values into four
@@ -281,9 +289,21 @@ happened" (ephemeral).
 `wire-scene.ts` routes each decoded event to `scene.onGameEvent(event,
 tick)`, which spawns short-lived `createSpriteAnim` effects:
 
-- `CombatHitDealt` → `attack-anim` at midpoint between attacker and
-  target (attacker-only on killing hits — target already removed by the
-  preceding WorldDelta). `scale: 0.5, alpha: 0.5`, 280ms.
+- `CombatHitDealt` → two effects from the same handler:
+  - `attack-anim` slash at the attacker↔target midpoint. On WS killing
+    hits the target is already removed by the preceding `WorldDelta`,
+    so the slash falls back to attacker position. (Standalone delivers
+    the event synchronously *before* the removal, so target is still
+    alive in `scene.entities` even on the killing hit.) `scale: 0.5,
+    alpha: 0.5`, 280ms.
+  - `createDamageNumber` anchored at the target with `followEntityId
+    = event.targetId`. `largeFont` when target is the local player.
+    Skipped entirely when target is gone — the smoke puff from
+    `EntityDied` covers the moment of kill, and anchoring the number
+    on the attacker would visually attribute damage to the attacker.
+    Damage source is the wire event (`event.damage`), not the
+    WorldDelta HP-diff, so it never depends on the entity's local HP
+    history.
 - `HarvestYield` → `harvest-craft-anim` at harvester↔target midpoint
   (harvester-only when `targetId === 0xFFFF`). Same scale/alpha, 420ms.
 - `CraftComplete` → `harvest-craft-anim` at crafter's tile, 420ms.
