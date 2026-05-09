@@ -28,6 +28,8 @@
 
 **Hono server on one port** — MCP Streamable HTTP + WebSocket + static files all served from port 3001. Hono app created via factory function (`createApp(world)`) for testability.
 
+**Chunk streaming: server prunes `sentChunks` to needed-set per tick** — `sentChunks` was previously monotonic (once-sent, never-forgotten), which caused stochastic black holes when the client evicted a chunk and walked back into range without the server re-streaming. The fix prunes `sentChunks` each tick in `streamToTarget`. The contract is encoded in `shared/src/constants.ts`: `CLIENT_EVICT_RADIUS_CHUNKS = SERVER_NEEDED_RADIUS_CHUNKS + 1`. Bounds server memory to ~9 chunk keys per player at any map size — supports the long-term infinite-map goal without a `chunkEviction` wire event. Coverage: `test/e2e/chunk-streaming.test.ts` locks the radius invariant + the re-stream-on-re-entry behavior.
+
 ## MCP Design
 
 **Events emitted at authoritative source** — NOT reverse-engineered from deltas. GameWorld handlers emit directly via `onGameEvent`. System functions return enriched data (CombatResult with hits, HarvestEvent[], ConsumeEvent[], CritterBehaviorChange[]). GameWorld translates system returns to events.

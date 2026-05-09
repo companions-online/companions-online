@@ -96,10 +96,13 @@ describe('GameWorld observer mode', () => {
     world.setObserverFocus(oid, 100, 100); // far away
     world.runTick();
 
-    // New chunks added; initial ones still present (we only ever grow this
-    // set today — eviction lives client-side).
-    expect(slot.sentChunks.size).toBeGreaterThan(initialChunks.size);
-    for (const k of initialChunks) expect(slot.sentChunks.has(k)).toBe(true);
+    // sentChunks now reflects the new focus. Per the streaming invariant
+    // (see shared/src/constants.ts), chunks outside the server's needed
+    // radius are pruned each tick so re-entry triggers a fresh stream — so
+    // the original top-left chunks should be gone after the focus jump.
+    const stillHasInitial = [...initialChunks].some(k => slot.sentChunks.has(k));
+    expect(stillHasInitial).toBe(false);
+    expect(slot.sentChunks.size).toBeGreaterThan(0);
   });
 
   it('removeObserver stops further deliveries', () => {

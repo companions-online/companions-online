@@ -9,7 +9,7 @@
 // player's interest range plus a just-in-time overlap margin. Eviction on
 // player movement keeps the working set bounded regardless of map size.
 
-import { CHUNK_SIZE, INTEREST_RANGE, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
+import { CHUNK_SIZE, CLIENT_EVICT_RADIUS_CHUNKS, MAP_SIZE, SPAWN_X, SPAWN_Y } from '@shared/constants.js';
 import { WorldMap } from '@shared/world/world-map.js';
 import type {
   DecodedChunk, DecodedEntityFullState, DecodedEntityUpdate, DecodedTileUpdate,
@@ -62,12 +62,13 @@ import { generateWallTextures } from './buildings/wall-texture.js';
 import type { WallShape } from './buildings/wall-texture.js';
 import { buildWallDrawablesForChunk, type WallDrawable } from './buildings/wall-sprites.js';
 
-/** Chunks needed in each direction at a given instant: full interest range
- *  plus one extra ring so new chunks load just-in-time as the player's
- *  chunk slides. Squared → peak concurrent chunks. Plus a small margin for
- *  safety. At INTEREST_RANGE=32 CHUNK_SIZE=16 → radius 3, peak 49, +4 = 53. */
-const INTEREST_RADIUS_CHUNKS = Math.ceil(INTEREST_RANGE / CHUNK_SIZE) + 1;
-const PEAK_CONCURRENT_CHUNKS = (2 * INTEREST_RADIUS_CHUNKS + 1) ** 2;
+/** Eviction radius is the shared CLIENT_EVICT_RADIUS_CHUNKS — kept strictly
+ *  greater than the server's needed-radius so a chunk evicted here is
+ *  already absent from the server's `sentChunks` and will be re-streamed on
+ *  re-entry. See the invariant in shared/src/constants.ts. Plus a small
+ *  margin in CHUNK_CAPACITY for safety. At INTEREST_RANGE=32 CHUNK_SIZE=16
+ *  → radius 3, peak 49, +4 = 53. */
+const PEAK_CONCURRENT_CHUNKS = (2 * CLIENT_EVICT_RADIUS_CHUNKS + 1) ** 2;
 const CHUNK_CAPACITY = PEAK_CONCURRENT_CHUNKS + 4;
 const TILES_PER_CHUNK = CHUNK_SIZE * CHUNK_SIZE;
 
@@ -351,7 +352,7 @@ export async function createScene(
     for (const key of [...chunkTerrainData.keys()]) {
       const cx = key % 1024;
       const cy = (key - cx) / 1024;
-      if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > INTEREST_RADIUS_CHUNKS) {
+      if (Math.max(Math.abs(cx - playerChunkX), Math.abs(cy - playerChunkY)) > CLIENT_EVICT_RADIUS_CHUNKS) {
         chunkTerrainData.delete(key);
         wallDrawablesByChunk.delete(key);
         chunkElevation.delete(key);
@@ -870,7 +871,7 @@ export async function createScene(
           // received chunks are valid.
           if (lastEvictionChunk) {
             if (Math.max(Math.abs(cx - lastEvictionChunk.cx),
-                         Math.abs(cy - lastEvictionChunk.cy)) > INTEREST_RADIUS_CHUNKS) {
+                         Math.abs(cy - lastEvictionChunk.cy)) > CLIENT_EVICT_RADIUS_CHUNKS) {
               continue;
             }
           }
