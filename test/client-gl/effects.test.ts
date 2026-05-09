@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BlueprintType } from '@shared/blueprints.js';
+import { WireEventType } from '@shared/protocol/opcodes.js';
 import { createTestScene } from './harness.js';
 import type { Effect } from '@client-webgl/effects/effect.js';
 import type { SyncedInventoryItem } from '@shared/protocol/codec.js';
@@ -50,7 +51,7 @@ describe('EffectManager', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Helpers: spawn entity with health, deliver HP delta via worldDelta
+// Helpers: spawn entity, deliver CombatHitDealt
 // ---------------------------------------------------------------------------
 
 function spawnCreatureWithHealth(
@@ -72,82 +73,62 @@ function spawnCreatureWithHealth(
   });
 }
 
-function deliverHealthUpdate(
+function deliverHit(
   conn: { deliver(msg: unknown): void },
-  entityId: number,
-  currentHp: number,
-  maxHp: number,
+  attackerId: number,
+  targetId: number,
+  damage: number,
+  targetHp = 0,
+  targetMaxHp = 100,
 ) {
   conn.deliver({
-    type: 'worldDelta',
-    data: {
-      tick: 1,
-      entityUpdates: [{
-        entityId,
-        components: { health: { currentHp, maxHp } },
-      }],
-      entityRemovals: [],
-      tileUpdates: [],
-    },
+    type: 'gameEvents',
+    tick: 1,
+    events: [{
+      type: WireEventType.CombatHitDealt,
+      attackerId, targetId, damage, targetHp, targetMaxHp,
+    }],
   });
 }
 
 // ---------------------------------------------------------------------------
-// Damage numbers
+// Damage numbers — driven by the authoritative CombatHitDealt event.
 // ---------------------------------------------------------------------------
 
 describe('Damage numbers', () => {
-  it('spawns a damage effect when HP decreases', async () => {
+  it('spawns a damage effect on CombatHitDealt when target is known', async () => {
     const { scene, conn } = await createTestScene();
-    spawnCreatureWithHealth(conn, 7, 100, 100);
-    deliverHealthUpdate(conn, 7, 80, 100);
+    spawnCreatureWithHealth(conn, 50, 100, 100); // attacker
+    spawnCreatureWithHealth(conn, 51, 100, 100); // target
+    deliverHit(conn, 50, 51, 12, 88, 100);
 
-    expect(scene.effects.active).toHaveLength(1);
-    expect(scene.effects.active[0].kind).toBe('damage');
+    const damage = scene.effects.active.filter(e => e.kind === 'damage');
+    expect(damage).toHaveLength(1);
   });
 
-  it('does not spawn when HP stays the same', async () => {
+  it('spawns regardless of prior health-update history (regression: HP-diff path was lossy)', async () => {
+    // The old path needed a prior `existing.health.currentHp` snapshot. The
+    // event-driven path doesn't — this test asserts the decoupling.
     const { scene, conn } = await createTestScene();
-    spawnCreatureWithHealth(conn, 7, 100, 100);
-    deliverHealthUpdate(conn, 7, 100, 100);
+    // Target arrives via entityFullState with the post-damage HP already set —
+    // i.e. the same situation that broke the old diff path on creature
+    // re-entry near the interest-range boundary.
+    spawnCreatureWithHealth(conn, 51, 60, 100);
+    spawnCreatureWithHealth(conn, 50, 100, 100);
+    deliverHit(conn, 50, 51, 8, 52, 100);
 
-    expect(scene.effects.active).toHaveLength(0);
+    const damage = scene.effects.active.filter(e => e.kind === 'damage');
+    expect(damage).toHaveLength(1);
   });
 
-  it('does not spawn when HP increases (heal)', async () => {
+  it('skips the damage number on killing hit when target is gone (WS path)', async () => {
     const { scene, conn } = await createTestScene();
-    spawnCreatureWithHealth(conn, 7, 50, 100);
-    deliverHealthUpdate(conn, 7, 75, 100);
+    // Attacker known; target never delivered (mirrors WS-killing-hit ordering
+    // where WorldDelta removes the target before CombatHitDealt arrives).
+    spawnCreatureWithHealth(conn, 50, 100, 100);
+    deliverHit(conn, 50, 51, 25, 0, 100);
 
-    expect(scene.effects.active).toHaveLength(0);
-  });
-
-  it('does not spawn on first full-state arrival (no prior HP)', async () => {
-    const { scene, conn } = await createTestScene();
-    // entityFullState with health — no prior entity, so no delta.
-    spawnCreatureWithHealth(conn, 7, 80, 100);
-
-    expect(scene.effects.active).toHaveLength(0);
-  });
-
-  it('does not spawn when update has no health component', async () => {
-    const { scene, conn } = await createTestScene();
-    spawnCreatureWithHealth(conn, 7, 100, 100);
-    // Position-only update — no health field.
-    conn.deliver({
-      type: 'worldDelta',
-      data: {
-        tick: 1,
-        entityUpdates: [{
-          entityId: 7,
-          components: { position: { tileX: 6, tileY: 5 } },
-        }],
-        entityRemovals: [],
-        tileUpdates: [],
-      },
-    });
-
-    expect(scene.effects.active).toHaveLength(0);
+    expect(scene.effects.active.some(e => e.kind === 'damage')).toBe(false);
   });
 });
 

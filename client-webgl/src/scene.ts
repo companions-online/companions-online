@@ -676,20 +676,8 @@ export async function createScene(
     onEntityUpdate(update) {
       const existing = entities.get(update.entityId);
       if (existing) {
-        const prevHp = existing.health?.currentHp;
         const prevActionType = existing.currentAction?.actionType;
         applyComponentsToEntity(existing, update.components, this.time);
-
-        // Damage number: spawn when HP decreased.
-        if (prevHp !== undefined
-          && update.components.health !== undefined
-          && update.components.health.currentHp < prevHp) {
-          const delta = prevHp - update.components.health.currentHp;
-          effects.spawn(createDamageNumber(
-            existing, delta, this.time, textSurfaceFactory,
-            { largeFont: existing.id === this.myEntityId },
-          ));
-        }
 
         // Death smoke puff: currentAction transitioned into Dead. Covers the
         // player-death case where the entity persists (no EntityDied event
@@ -729,9 +717,9 @@ export async function createScene(
         case WireEventType.CombatHitDealt: {
           const attacker = entities.get(event.attackerId);
           const target = entities.get(event.targetId);
-          // Midpoint when both alive; attacker-only on the killing hit (target
-          // already removed by the preceding WorldDelta — smoke puff covers the
-          // moment of kill anyway).
+          // Slash: midpoint when both alive; attacker-only on the killing hit
+          // (target already removed by the preceding WorldDelta on the WS path
+          // — smoke puff covers the moment of kill anyway).
           const ax = target
             ? ((attacker?.visualX ?? target.visualX) + target.visualX) / 2
             : attacker?.visualX;
@@ -747,6 +735,20 @@ export async function createScene(
               scale: 0.5,
               alpha: 0.5,
             }));
+          }
+          // Damage number: only when target still exists. On the WS killing-hit
+          // path the target is already removed; we deliberately skip rather
+          // than anchor on the attacker (would visually attribute damage to
+          // the attacker themselves). EntityDied smoke puff covers the kill.
+          if (target) {
+            effects.spawn(createDamageNumber(
+              event.damage,
+              target.visualX, target.visualY,
+              event.targetId,
+              this.time,
+              textSurfaceFactory,
+              { largeFont: event.targetId === this.myEntityId },
+            ));
           }
           break;
         }
