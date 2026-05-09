@@ -30,7 +30,7 @@ import { handleCookingClick } from '../ui/cooking-highlight.js';
 import { hitTestHudButton, handleHudButtonClick } from '../ui/hud-buttons.js';
 import { isInputCaptured } from '../overlay.js';
 
-function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
+export function applyTurnPrediction(scene: Scene, action: DecodedAction): void {
   if (action.action !== ClientAction.MoveTo) return;
   if (scene.myEntityId === null) return;
   const me = scene.entities.get(scene.myEntityId);

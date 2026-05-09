@@ -8,7 +8,7 @@ import { ActionType } from '@shared/actions.js';
 import { buildCursorContext, buildContextFromEntity } from './controls/cursor-context.js';
 import { hitTestEntities } from './controls/mouse.js';
 import type { Scene } from './scene.js';
-import type { KeyboardState } from './controls/keyboard.js';
+import type { KeyboardControls } from './controls/keyboard.js';
 import type { TextSurface } from './effects/text-surface.js';
 import { drawHud } from './ui/hud.js';
 import { drawPlacementGhost } from './ui/placement.js';
@@ -25,7 +25,7 @@ const OVERLAY_GAP = 4;
  * RAF loop: tick entities, drain dirty chunks, draw terrain + Y-sorted
  * sprites (entities + walls) + effects + HUD. One frame per requestAnimationFrame.
  */
-export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard: KeyboardState) {
+export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard: KeyboardControls) {
   const gl = scene.gl;
   let lastTime = 0;
 
@@ -79,6 +79,10 @@ export function createRenderer(canvas: HTMLCanvasElement, scene: Scene, keyboard
     // Tick the autopilot first so the latest observerFocus drives this frame's
     // camera + lighting.
     scene.observerCamera?.tick(now);
+
+    // WASD held-direction → single-tile MoveTo. Cheap (object reads + at most
+    // one connection.send); fires per RAF.
+    keyboard.tick();
 
     // Camera follows the player entity once it arrives from the server;
     // in observer mode it follows scene.observerFocus instead. Pass ground z
