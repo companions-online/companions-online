@@ -125,11 +125,18 @@ export function startHarvest(eid: number, tileX: number, tileY: number, world: S
 }
 
 export function cancelHarvest(eid: number, world: SystemState): void {
-  if (world.harvestStates.has(eid)) {
-    world.harvestStates.delete(eid);
-    world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
-    world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
-  }
+  const state = world.harvestStates.get(eid);
+  if (!state) return;
+  // In the channel phase, the cooldown is harvest's own (first-yield wait
+  // or per-yield residue) — drop it so a switch to movement / combat is
+  // immediately responsive instead of stalling for up to tickCost ticks.
+  // In the pathfinding phase, the cooldown on the entity is the
+  // movement-step residue from runMovement; preserving it is what keeps
+  // a Harvest(far)→MoveTo alternation from bypassing the per-step rate.
+  if (!state.pathfinding) world.clearCooldown(eid);
+  world.harvestStates.delete(eid);
+  world.entities.currentAction.set(eid, { actionType: ActionType.Idle });
+  world.entities.nextWaypoint.set(eid, { tileX: WAYPOINT_NONE, tileY: WAYPOINT_NONE });
 }
 
 export function isHarvesting(eid: number, world: SystemState): boolean {
