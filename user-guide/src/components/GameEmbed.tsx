@@ -80,7 +80,7 @@ function GameEmbedInner() {
         <div className={styles.idleStack}>
           <img
             className={styles.logo}
-            src="/assets/game-logo.png"
+            src="/assets/ui/game-logo.png"
             alt="Companions Online"
           />
           <button type="button" className={styles.playBtn} onClick={onPlay}>

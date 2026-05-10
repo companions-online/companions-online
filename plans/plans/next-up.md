@@ -1,21 +1,5 @@
 
 
-walls/floors/buildings can be destroyed by hammer
-* and they break down / drop their components -so eg walls can be moved further away
-
-
-
-
-Remaining assets:
-* wooden wall, floor tile sprites
-* NPCs + new variants for player
-
-
----
-* trees to also drop saplings / seeds that can be picked up & planted somewhere else -> it grows things over time
-
----
-
 
 
 Product update:
@@ -26,8 +10,6 @@ Product update:
 --license
 
 game:
--splash page  -> create single player game, join game somewhere
---game bottom: settings, inventory
 --first game launch -> tutorial-ish: welcome to companions online, how to start
 
 -soundtracks dir
@@ -40,9 +22,9 @@ game:
 
 
 
+--------------
 
-
-World refresh update:
+V2 World refresh update:
 next stage of game design:
 * in-house elements to build/craft: internal decor (fireplace, table, chair, etc)
 * palm trees
@@ -57,6 +39,11 @@ next stage of game design:
 * town generator: find an empty place, put 3-4 houses in there
 
 
+walls/floors/buildings can be destroyed by hammer
+* and they break down / drop their components -so eg walls can be moved further away
+
+* trees to also drop saplings / seeds that can be picked up & planted somewhere else -> it grows things over time
+
 ---
 mcp: multiple pickups / quantity for craft
 
@@ -66,19 +53,8 @@ product:
 * music into S3 bucket
 * bottom buttons: inventory / options
 * main menu: world select / create world + get API key
-* website rest: mcp prompt
-* stand-alone demo maybe
 
-------
-companion economy:
-characters:
-** peon -builds buildings
-* merchant / trader -trades items
-* hunter -goes out & hunts animals
-* princess -high&mighty
-
-
-
+----
 
 * health+: when user heals, we currently have a short animation that plays -additionally, we want to show a green "+5" bubbling up -similar to damage, but no star background
 * and we want both health + damage displays to be smaller -about half of current size
@@ -93,11 +69,6 @@ characters:
 ---
 * quantize environment lighting -each hour? so it's visible
 ----
-
-
--when doing AABB sprite selection on click, look at alpha on the clicked area, and pass through click to the next one, if there are no active pixels there
-
----
 
 
 * MCP map legend is currently static; we want a map legend which shows the characters & their meanings that are
@@ -339,3 +310,28 @@ bug: can't place a chest on wooden floor?
 
 ------
 no "quick action" button, rather, if a quick-actionable item is quickslot-selected, left-click always does the action (cooking, placing buildings). if the item is consumable, selecting it on quick-action item automatically: equips it -> consumes 1 unit
+
+------
+keyboard movement
+
+-----
+game:
+-splash page  -> create single player game, join game somewhere
+--game bottom: settings, inventory
+
+----
+companion economy:
+characters:
+** peon -builds buildings
+* merchant / trader -trades items
+* hunter -goes out & hunts animals
+* princess -high&mighty
+
+
+------
+-when doing AABB sprite selection on click, look at alpha on the clicked area, and pass through click to the next one, if there are no active pixels there
+
+------
+Remaining assets:
+* wooden wall, floor tile sprites
+* NPCs + new variants for player
