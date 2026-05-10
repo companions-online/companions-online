@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/companions-online/companions-online/main/user-guide/static/assets/ui/game-logo.png" alt="Companions Online" width="480" />
+  <img src="https://raw.githubusercontent.com/companions-online/companions-online/main/client-webgl/assets/ui/game-logo.png" alt="Companions Online" width="480" />
 </p>
 
 <p align="center">
