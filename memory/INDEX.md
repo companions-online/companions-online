@@ -55,7 +55,8 @@ All project knowledge Claude needs to work here. Structured and incrementally up
 - [client-webgl/](client-webgl/overview.md) — WebGL client; also see architecture, file-map, gotchas, testing
 - [client-webgl/lighting](client-webgl/lighting.md) — day/night cycle + tinted point lights + wall-aware shadowcast
 - [client-webgl/inventory-panel](client-webgl/inventory-panel.md) — drag-and-drop inventory UI + placement mode + optimistic-decrement flicker fix
-- [client-webgl/standalone-observer](client-webgl/standalone-observer.md) — boot mode toggle (WS vs in-tab), observer-mode wiring, autopilot camera
+- [client-webgl/standalone](client-webgl/standalone.md) — in-browser singleplayer build; embedded GameWorld via @server esbuild alias; bridges in standalone-connection.ts
+- [client-webgl/observer-mode](client-webgl/observer-mode.md) — passive viewer (no entity); menu-backdrop consumer today; autopilot camera; networked observer is a future seam
 - [client-webgl/menu](client-webgl/menu.md) — main menu (widget kit, screen state machine, host normalizer, connectTo, ConnectionRef, /avatar wire, build-version pipeline)
 - [harness/overview](harness/overview.md) — what the harness is, the three CLI surfaces, the variants/helpers/cli/eval split
 - [harness/architecture](harness/architecture.md) — runner + VariantStrategy contract, two-tool-source dispatch, decider seam, scratchpad↔memory naming, single-sessionId convention, cost+rate tracking, inline-config + quiet logger

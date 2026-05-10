@@ -1,11 +1,11 @@
-// Shared esbuild plumbing for the client-webgl build/dev/dev-standalone
-// scripts. Resolves three monorepo source-tree aliases:
+// Shared esbuild plumbing for the client-webgl build/dev scripts.
+// Resolves three monorepo source-tree aliases:
 //
 //   @shared/*       → ../shared/src/*.ts
 //   @server/*       → ../server/src/*.ts
 //   @client-webgl/* → ./src/*.ts        (self — symmetric with @server/@shared)
 //
-// `@server` resolution is what lets the standalone boot path (see
+// `@server` resolution is what lets the in-tab observer boot path (see
 // network/standalone-connection.ts) bundle a GameWorld + GameLoop into the
 // browser bundle. The @client-webgl self-alias is harmless and keeps the
 // import surface symmetric between the three trees.

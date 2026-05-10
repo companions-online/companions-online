@@ -1,9 +1,14 @@
 # Main Menu
 
-Canvas-native menu drawn on top of a live observer-mode world. Both
-standalone and game-server-served boots mount it; the only mode-driven
-difference is whether the host field is autofilled from
-`window.GAME_SERVER_HOST`.
+Canvas-native menu drawn on top of a live observer-mode world. The
+backdrop is observer mode running against a standalone-embedded world
+— two independent concepts paired here for convenience (see
+`standalone.md` + `observer-mode.md`). The menu mounts the same way
+whether the page is served by the game server or by Docusaurus; the
+only mode-driven difference is whether the Join Game host field is
+autofilled from `window.GAME_SERVER_HOST`. **New Game** (standalone
+singleplayer) is always available — it is a menu choice, not gated on
+serving conditions.
 
 ## Boot flow
 

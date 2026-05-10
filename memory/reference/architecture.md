@@ -81,12 +81,12 @@ interface PlayerConnection {
 }
 ```
 
-Five implementations (three server-side, two in `client-webgl/src/network/standalone-connection.ts` for the in-tab build):
+Five implementations (three server-side, two in `client-webgl/src/network/standalone-connection.ts` for the standalone build):
 - **WebSocketConnection** (`server/src/connections/ws-connection.ts`) — binary protocol encoding. `onGameEvent` is a no-op (point-to-point events are MCP-only); `onBroadcastEvent` translates to `WireEvent` via `WIRE_EVENT_MAP`, queues in `pendingEvents`, flushes one `ServerOpcode.GameEvents` batch per tick after `WorldDelta`.
 - **HeadlessConnection** (`server/src/connections/headless-connection.ts`) — test spy. Captures point-to-point events into `gameEvents[]` and broadcasts into `broadcastEvents[]` separately. Used by both player and observer tests (observer-channel events arrive with `entityId=0`).
 - **McpConnection** (`server/src/connections/mcp-connection.ts`) — MCP player, holds live GameWorldView ref + EventBuffer, action blocking via onTick. `onBroadcastEvent` is a no-op — MCP narration stays first-person.
-- **StandaloneConnection** (`client-webgl/src/network/standalone-connection.ts`) — in-tab player bridge. Implements both `PlayerConnection` (server-facing) and the client's `Connection` interface (client-facing). Forwards GameWorld callbacks straight into `scene.on*()` — bypasses the binary protocol. `bootStandalone(scene, seed)` factory.
-- **StandaloneObserverConnection** (same file) — in-tab observer bridge. Narrower surface: no `send`, no inventory/container/dialogue routing. `bootStandaloneObserver(scene, seed)` factory wires it up with the autopilot camera.
+- **StandaloneConnection** (`client-webgl/src/network/standalone-connection.ts`) — singleplayer player bridge for the standalone build. Implements both `PlayerConnection` (server-facing) and the client's `Connection` interface (client-facing). Forwards GameWorld callbacks straight into `scene.on*()` — bypasses the binary protocol. `bootStandalone(scene, seed)` factory. Invoked by the menu's **New Game** handler. Full orientation: `memory/client-webgl/standalone.md`.
+- **StandaloneObserverConnection** (same file) — observer bridge for the standalone build. Narrower surface: no `send`, no inventory/container/dialogue routing. `bootStandaloneObserver(scene, seed)` factory wires it up with the autopilot camera. Used as the menu backdrop. Observer mode itself is independent of standalone — see `memory/client-webgl/observer-mode.md`.
 
 ## Event System
 
@@ -314,13 +314,15 @@ never enters another player's `entered` set, doesn't appear in
 nameplate broadcasts, doesn't occupy a tile). Free invariant from the
 data layout.
 
-Today's only consumer is the standalone build's background world
-(`bootStandaloneObserver` in `client-webgl/src/network/standalone-connection.ts`),
-which adds one observer at SPAWN and runs an autopilot camera that
-calls `setObserverFocus` whenever the rounded focus tile changes.
-Future consumers (godview debug tooling, networked spectator mode)
-plug into the same `addObserver`/`setObserverFocus` API. Coverage in
-`test/e2e/observer.test.ts` (10 cases).
+Today's only consumer is the client-side menu backdrop, which runs an
+observer against a standalone-embedded world via `bootStandaloneObserver`
+(`client-webgl/src/network/standalone-connection.ts`). Observer mode
+and the standalone build are independent concepts — the pairing here
+is convenience, not coupling. Future consumers (godview debug tooling,
+networked spectator mode via `?observe=1` on `/ws`) plug into the same
+`addObserver`/`setObserverFocus` API. Coverage in
+`test/e2e/observer.test.ts` (10 cases). Client-side orientation:
+`memory/client-webgl/observer-mode.md`.
 
 ## Telemetry
 

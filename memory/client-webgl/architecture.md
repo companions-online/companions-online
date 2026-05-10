@@ -35,16 +35,21 @@ so `main.ts` calls `connect()`:
   to `[0, 2000]`.
 - Queues outbound sends before socket open; flushes on open.
 
-**Standalone (`network/standalone-connection.ts`)** — `index-standalone.html`
-omits `GAME_SERVER_HOST`, so `main.ts` calls `bootStandaloneObserver(scene, seed)`:
+**Standalone (`network/standalone-connection.ts`)** — `main.ts` always
+calls `bootStandaloneObserver(scene, seed)` to back the menu's live
+pan, regardless of how the page was served:
 - Spins up `createDefaultWorld(seed)` + `GameLoop` in the same browser tab.
 - Registers a `StandaloneObserverConnection` (PlayerConnection peer of
   the WS connection) that forwards GameWorld callbacks straight into
   `scene.on*()` — no codec round-trip, no WebSocket.
 - Adds an observer (not a player), starts the autopilot camera. See
   [observer mode](#observer-mode) below.
-- `bootStandalone(scene, seed)` (player path, sibling factory) is
-  available for future menu integration; not used today.
+- `bootStandalone(scene, seed)` (singleplayer player path) is invoked
+  by the menu's **New Game** handler — standalone is always available
+  as a menu choice, not gated on `GAME_SERVER_HOST`.
+
+Full orientation: `memory/client-webgl/standalone.md` (the build +
+bridges) and `memory/client-webgl/observer-mode.md` (the concept).
 
 `wire-scene.ts` is the WS-only switch routing decoded messages into
 `scene.on*()` mutators. Used by `main.ts` in networked mode and by
@@ -401,7 +406,9 @@ input-routing modes, not modal screens.
 ## Observer mode
 
 The renderer / lighting / chunk eviction support a "no player entity"
-path used by the standalone build's background world. When
+path used by the menu's observer-mode backdrop (which today runs
+against a standalone-embedded world; the two are independent concepts
+paired here for convenience — see `observer-mode.md`). When
 `scene.myEntityId === null`:
 
 - Camera follow falls back to `scene.observerFocus: {tileX, tileY}` (float tile coords, mirror of `visualX/visualY`).

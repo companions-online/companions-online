@@ -11,11 +11,12 @@ them; they only share `shared/src/`.
 ## Boot flow
 
 ```
-index{,-standalone}.html loads /dist/main.js
+index.html loads /dist/main.js
   → main.ts: canvas + WebGL2 context
   → createScene(gl)            — boots renderers + loads sprite + static assets + widget palette
   → bootStandaloneObserver(scene, seed)   — always: in-tab GameWorld + GameLoop +
                                             StandaloneObserverConnection + autopilot camera
+                                            (menu backdrop; see observer-mode.md)
   → connRef = new ConnectionRef(observerConn)   — swappable wrapper used by all controls
   → wireSceneToConnection(scene, connRef)
   → loadMenuLogo(gl) + createMenuController(...) + attachMenuInput(canvas, scene, menu)
@@ -24,10 +25,12 @@ index{,-standalone}.html loads /dist/main.js
   → renderer.start()           — RAF loop
 ```
 
-Both standalone and game-server-served boots now mount the same menu
-on top of an observer-mode world. `window.GAME_SERVER_HOST` is read
-only to autofill the menu's "Remote Host" field. Game-start happens
-through the menu: **New Game** tears down the observer and runs
+Single HTML entry. The menu mounts on top of a live observer-mode
+world regardless of how the page was served. `window.GAME_SERVER_HOST`
+is read only to autofill the menu's Join Game host field — it does
+**not** gate which mode is available; the player can always pick
+**New Game** for in-tab singleplayer. Game-start happens through the
+menu: **New Game** tears down the observer and runs
 `bootStandalone(scene, chosenSeed)` on the same scene; **Join Game**
 runs `connectTo(url)`, swaps `connRef` to the resulting WS connection,
 and applies `/nick` + `/avatar` if the user changed defaults. Detail:
@@ -37,28 +40,28 @@ Networked path: the scene starts empty; chunks + entities fill in as
 the server streams them. Standalone path: same wire model, same
 `Scene.on*()` mutators, but the server lives in the same browser tab
 and bypasses the binary protocol via `StandaloneConnection` /
-`StandaloneObserverConnection`.
+`StandaloneObserverConnection`. Full orientation:
+`memory/client-webgl/standalone.md`.
 
-## Same-origin serving + standalone serving
+## How the bundle is served
 
-**Networked**: the game server's Hono instance (`server/src/app.ts`)
-has a catch-all static handler that serves `client-webgl/` from the
-repo. `index.html` injects `window.GAME_SERVER_HOST = window.location.host`
-so `main.ts` picks the WS path. Running on `PORT=3002` (e.g.) for a
-second session Just Works.
+The same `client-webgl/build.ts` output is consumed in two places:
 
-**Standalone**: `client-webgl/dev-standalone.ts` runs esbuild's serve
-mode against `client-webgl/` on a separate port (default 3002),
-serving `index-standalone.html` (no `GAME_SERVER_HOST` injected).
-`main.ts` falls through to the standalone boot.
+- **Game server** (`server/src/app.ts`) — catch-all static handler
+  serves `client-webgl/` from the repo. `index.html` injects
+  `window.GAME_SERVER_HOST = window.location.host` so the menu's Join
+  Game field autofills. Running on a non-default `PORT` for a second
+  session Just Works.
+- **Docs site** — `user-guide/scripts/copy-assets.mjs` copies the
+  bundle into `user-guide/static/game/`. Docusaurus's
+  `GameEmbed.tsx` loads `/game/main.js` directly; no
+  `GAME_SERVER_HOST` injected (the Join field starts empty).
 
 Dev loops:
-- `npm run dev` — game server. Serves `client-webgl/index.html` →
+- `npm run dev` — game server. Serves `client-webgl/index.html` for
   networked play.
 - `npm run dev:client-gl` — esbuild watch only (no dev server); use
   alongside the game server so the bundle rebuilds on change.
-- `npm run dev:standalone` — esbuild serve, no game server. Serves
-  `client-webgl/index-standalone.html` → standalone observer mode.
 
 ## Where to look next
 

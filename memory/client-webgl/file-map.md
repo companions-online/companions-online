@@ -18,7 +18,7 @@ network/connect-to.ts            connectTo(url, {timeoutMs?, latencyMs?}) — ex
 network/connection-ref.ts        ConnectionRef implements Connection — swappable proxy. send/onMessage/close/isOpen forward to a target connection that can be replaced via swap(next). Re-installs the latest onMessage handler on the new target so wireSceneToConnection's dispatch survives observer→player and observer→networked transitions without re-attaching listeners.
 network/host-normalizer.ts       normalizeHost(input) → {url} | {error}. Local-host heuristic (localhost/127.x/::1/*.local → ws://, else wss://); explicit scheme always wins; explicit non-/ paths preserved literally; otherwise appends /ws.
 network/wire-scene.ts            Decoded message → scene mutator dispatch. Networked path only; standalone bypasses (StandaloneConnection.onMessage is a no-op).
-network/standalone-connection.ts Virtual-network peer of the WS connection. StandaloneConnection (player bridge: PlayerConnection ↔ Connection ↔ in-tab GameWorld) + StandaloneObserverConnection (observer bridge: no inventory, no actions, no player entity). StandaloneObserverRefs interface + tearDownStandaloneObserver(refs, scene) helper used by menu-driven game-start. bootStandalone + bootStandaloneObserver factories spin up GameWorld + GameLoop + connection + addPlayer/addObserver.
+network/standalone-connection.ts Standalone-build connection bridges. StandaloneConnection (player bridge: PlayerConnection ↔ Connection ↔ in-tab GameWorld) + StandaloneObserverConnection (observer bridge: no inventory, no actions, no player entity). StandaloneObserverRefs interface + tearDownStandaloneObserver(refs, scene) helper used by menu-driven game-start. bootStandalone + bootStandaloneObserver factories spin up GameWorld + GameLoop + connection + addPlayer/addObserver. Full orientation: memory/client-webgl/standalone.md (and observer-mode.md for the observer concept itself).
 ```
 
 ## Controls
@@ -127,12 +127,10 @@ test/persistence.test.ts                Save/load round-trips tickOffset + new-w
 
 ## Assets + HTML + build
 ```
-client-webgl/index.html             Networked-mode entry. Inline script sets window.GAME_SERVER_HOST = window.location.host so the menu autofills the Join Game host field.
-client-webgl/index-standalone.html  Standalone-mode entry. No GAME_SERVER_HOST → menu's host field starts empty.
+client-webgl/index.html             Single HTML entry. Inline script sets window.GAME_SERVER_HOST = window.location.host when served by the game server, so the menu's Join Game field autofills; Docusaurus GameEmbed loads /game/main.js without injecting the host, leaving the field empty. Standalone vs networked is a menu choice, not an HTML-file toggle.
 client-webgl/assets/                Sprite PNGs in sub-folders mirroring Blueprint.category: creatures/, npcs/, items/{tools,weapons,armor,consumables,misc}/, resources/, placeables/ — plus sibling effects/ (anim sheets) and ui/ (game-logo, unknown-entity). Filenames are kebab-case; sprite-manifest.ts::filename holds the full relative path.
-client-webgl/build-shared.ts        Shared esbuild plumbing — makeAliasPlugin resolving @shared/*, @server/*, @client-webgl/*. Also exports readBuildNumber(clientWebglDir) for the __BUILD_VERSION__ define.
+client-webgl/build-shared.ts        Shared esbuild plumbing — makeAliasPlugin resolving @shared/*, @server/*, @client-webgl/*. The @server alias is what bundles GameWorld into the browser for standalone. Also exports readBuildNumber(clientWebglDir) for the __BUILD_VERSION__ define.
 client-webgl/build.ts               esbuild one-shot build. Defines __BUILD_VERSION__ from .build-number.
 client-webgl/dev.ts                 esbuild --watch. No dev server — game server (npm run dev) serves the built bundle. Defines __BUILD_VERSION__.
-client-webgl/dev-standalone.ts      esbuild watch + serve mode (default :3002, servedir = client-webgl/). Used by `npm run dev:standalone` for offline iteration. Defines __BUILD_VERSION__.
 .build-number                       Repo-root counter. Vitest global setup increments on every test run; build scripts read it as the production build version.
 ```
