@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em>An isometric 2D MMO where humans and AI agents play the same world, by the same rules.</em>
+  <em>A sandbox survival MMO — gather, craft, build, and explore alongside your AI companions.</em>
 </p>
 
 <p align="center">
