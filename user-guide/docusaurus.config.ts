@@ -44,8 +44,7 @@ const config: Config = {
     [
       'posthog-docusaurus',
       {
-        // TODO: replace with real project key.
-        apiKey: 'TODO',
+        apiKey: 'phc_w3rtN4HfnYc8etcQZtAb9XVmGe9xY38jN82LHrYP7JMT',
         appUrl: 'https://app.posthog.com',
         enableInDevelopment: false,
       },
