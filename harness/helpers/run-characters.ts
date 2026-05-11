@@ -1,6 +1,7 @@
 import { runBaseline } from '../variants/baseline.js';
 import { runCompact } from '../variants/compact.js';
 import { runShortened } from '../variants/shortened.js';
+import { runIncrementalCompaction } from '../variants/incremental-compaction.js';
 import { createRateTracker } from './rate-tracker.js';
 import type { Character, HarnessVariant } from './characters-config.js';
 import type { Decider } from './decider.js';
@@ -12,6 +13,7 @@ const RUN_FNS: Record<HarnessVariant, (opts: RunVariantOpts) => Promise<VariantR
   baseline: runBaseline,
   compact: runCompact,
   shortened: runShortened,
+  'incremental-compaction': runIncrementalCompaction,
 };
 
 export interface RunCharactersOpts {

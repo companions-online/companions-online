@@ -20,7 +20,7 @@
     }
   },
   {
-    "prompt": "peon",
+    "prompt": "peon-baseline",
     "harness": "baseline",
     "model": {
       "type": "model",
@@ -28,5 +28,16 @@
       "temperature": 1,
       "reasoning": { "effort": "none" }
     }
+  },
+  {
+    "prompt": "peon-compaction",
+    "harness": "incremental-compaction",
+    "model": {
+      "type": "model",
+      "model": "google/gemini-3.1-flash-lite-preview",
+      "temperature": 1,
+      "reasoning": { "effort": "none" }
+    }
   }
+
 ]

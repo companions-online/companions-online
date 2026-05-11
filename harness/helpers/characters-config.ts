@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { CHARACTERS_DIR } from './paths.js';
 import type { ModelConfig } from './config.js';
 
-export type HarnessVariant = 'baseline' | 'compact' | 'shortened';
+export type HarnessVariant = 'baseline' | 'compact' | 'shortened' | 'incremental-compaction';
 
 export interface Character {
   /** Resolves to `harness/characters/<prompt>.md` (or `harness/config/<prompt>.md`). */
@@ -14,7 +14,7 @@ export interface Character {
   model: ModelConfig;
 }
 
-const VARIANTS: ReadonlySet<HarnessVariant> = new Set(['baseline', 'compact', 'shortened']);
+const VARIANTS: ReadonlySet<HarnessVariant> = new Set(['baseline', 'compact', 'shortened', 'incremental-compaction']);
 
 /** Default location: `harness/characters/config.json`. */
 export function defaultCharactersConfigPath(): string {

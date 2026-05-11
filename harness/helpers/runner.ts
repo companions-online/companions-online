@@ -64,19 +64,21 @@ export interface ToolResultCtx {
   dispatched: DispatchResult;
   inlineText: string;
   assistantMsg: ChatMessage;
+  usage?: TokenUsage;
 }
 
 export interface NoToolCallCtx {
   step: number;
   inlineText: string;
   assistantMsg: ChatMessage;
+  usage?: TokenUsage;
 }
 
 export interface VariantStrategy<S> {
   initialize(b: Bootstrap): S;
   buildMessages(state: S, memory: string): ChatMessage[];
-  onToolResult(state: S, ctx: ToolResultCtx): void;
-  onNoToolCall(state: S, ctx: NoToolCallCtx): void;
+  onToolResult(state: S, ctx: ToolResultCtx): void | Promise<void>;
+  onNoToolCall(state: S, ctx: NoToolCallCtx): void | Promise<void>;
 }
 
 function shortText(text: string | null | undefined, max = 120): string {
@@ -130,7 +132,7 @@ export async function runHarness<S>(
     let lastToolName: string | undefined;
     if (calls.length === 0) {
       log.stdout(`assistant: (no tool call)`);
-      strategy.onNoToolCall(state, { step: stepCount, inlineText, assistantMsg });
+      await strategy.onNoToolCall(state, { step: stepCount, inlineText, assistantMsg, usage });
     } else {
       const call = calls[0] as ToolCall;
       lastToolName = call.function.name;
@@ -149,7 +151,7 @@ export async function runHarness<S>(
 
       if (opts.usage && dispatched.kind === 'mcp') opts.usage.mcpCalls++;
 
-      strategy.onToolResult(state, { step: stepCount, call, dispatched, inlineText, assistantMsg });
+      await strategy.onToolResult(state, { step: stepCount, call, dispatched, inlineText, assistantMsg, usage });
     }
 
     if (opts.onTurnComplete) {
