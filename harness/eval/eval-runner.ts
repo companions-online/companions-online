@@ -13,13 +13,12 @@ import type { TurnCompleteCtx } from '../helpers/runner.js';
 import type { Decider } from '../helpers/decider.js';
 import type { Logger } from '../helpers/logger.js';
 import type { Scratchpad } from '../helpers/scratchpad.js';
-import type { RunVariantOpts, VariantResult } from '../helpers/runner.js';
+import { computeAps, type RunVariantOpts, type VariantResult, type UsageAccumulator } from '../helpers/runner.js';
 import { runCompact } from '../variants/compact.js';
 import { runBaseline } from '../variants/baseline.js';
 import { runShortened } from '../variants/shortened.js';
 import { Scoreboard } from './scoreboard.js';
 import type { Checkpoint } from './match.js';
-import type { UsageAccumulator } from '../helpers/runner.js';
 
 export type HarnessVariant = 'compact' | 'baseline' | 'shortened';
 
@@ -51,6 +50,10 @@ export interface EvalResult {
   totalTokens: number;
   promptTokens: number;
   completionTokens: number;
+  /** Number of MCP tool calls dispatched during the run. */
+  mcpCallCount: number;
+  /** Cumulative MCP calls per second over the run's wall-clock duration. */
+  actionsPerSec: number;
   stopReason: StopReason;
   error?: string;
   aiEid: number | null;
@@ -106,6 +109,10 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
   const prevMcpUrl = process.env.MCP_URL;
   process.env.MCP_URL = `http://127.0.0.1:${actualPort}/mcp`;
 
+  const usage: UsageAccumulator = opts.usage ?? {
+    prompt: 0, completion: 0, total: 0, costUsd: 0, mcpCalls: 0, startedAtMs: Date.now(),
+  };
+
   let totalTokens = 0;
   let promptTokens = 0;
   let completionTokens = 0;
@@ -134,7 +141,7 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
       logger: opts.logger,
       memory: opts.memory,
       onTurnComplete,
-      usage: opts.usage,
+      usage,
     });
     if (stopReason == null) {
       if (variantResult.stopReason === 'aborted') stopReason = 'aborted';
@@ -163,6 +170,8 @@ export async function runEval(opts: RunEvalOpts): Promise<EvalResult> {
     totalTokens,
     promptTokens,
     completionTokens,
+    mcpCallCount: usage.mcpCalls,
+    actionsPerSec: computeAps(usage),
     stopReason: stopReason ?? 'error',
     error: errorMessage,
     aiEid: scoreboard.getAiEid(),
@@ -189,5 +198,6 @@ export function formatResultLine(result: EvalResult): string {
   const hits = result.checkpointsHit.length === 0 ? 'none' : result.checkpointsHit.join(', ');
   const err = result.error ? ` — error: ${result.error}` : '';
   const tokens = `in=${result.promptTokens}/out=${result.completionTokens}/total=${result.totalTokens}`;
-  return `score ${result.score}/${result.total} — hit: ${hits} — turns: ${result.turnCount} — tokens: ${tokens} — stop: ${result.stopReason}${err}`;
+  const actions = `${result.mcpCallCount} (${result.actionsPerSec.toFixed(1)}/s)`;
+  return `score ${result.score}/${result.total} — hit: ${hits} — turns: ${result.turnCount} — tokens: ${tokens} — actions: ${actions} — stop: ${result.stopReason}${err}`;
 }

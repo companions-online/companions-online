@@ -1,4 +1,4 @@
-import type { UsageAccumulator } from './runner.js';
+import { computeAps, type UsageAccumulator } from './runner.js';
 import type { RateTracker } from './rate-tracker.js';
 
 export interface CharacterRow {
@@ -14,7 +14,7 @@ export interface Dashboard {
   stop(): void;
 }
 
-const LINE = '─'.repeat(78);
+const LINE = '─'.repeat(90);
 
 function formatUptime(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -31,14 +31,16 @@ function truncate(s: string, n: number): string {
 
 function renderRow(row: CharacterRow): string {
   const tps = row.rate.rate(10_000);
+  const aps = computeAps(row.usage);
   const name = row.name.padEnd(10);
   const model = truncate(row.modelLabel, 32).padEnd(32);
   const step = String(row.status.step).padStart(5);
   const tpsStr = tps.toFixed(1).padStart(8);
+  const apsStr = aps.toFixed(1).padStart(8);
   const tok = String(row.usage.completion).padStart(7);
   const cost = `$${row.usage.costUsd.toFixed(4)}`.padStart(9);
   const tag = row.done ? ' done' : '';
-  return ` ${name} ${model}  ${step}  ${tpsStr}  ${tok}  ${cost}${tag}`;
+  return ` ${name} ${model}  ${step}  ${tpsStr}  ${apsStr}  ${tok}  ${cost}${tag}`;
 }
 
 /**
@@ -59,7 +61,9 @@ export function startDashboard(rows: CharacterRow[], intervalMs = 250): Dashboar
     lines.push('');
     lines.push(` Companions Online — characters    uptime ${formatUptime(performance.now() - startedAt)}`);
     lines.push(LINE);
-    lines.push(` NAME       MODEL                              STEP   TPS(10s)     TOK       COST`);
+    lines.push(
+      ` ${'NAME'.padEnd(10)} ${'MODEL'.padEnd(32)}  ${'STEP'.padStart(5)}  ${'TPS(10s)'.padStart(8)}  ${'APS'.padStart(8)}  ${'TOK'.padStart(7)}  ${'COST'.padStart(9)}`,
+    );
     for (const row of rows) lines.push(renderRow(row));
     lines.push(LINE);
     lines.push(' [Ctrl-C] quit');
@@ -83,8 +87,9 @@ export function printFinalSummary(rows: CharacterRow[]): void {
   console.log('');
   for (const row of rows) {
     const cost = row.usage.costUsd > 0 ? ` cost=$${row.usage.costUsd.toFixed(4)}` : '';
+    const aps = computeAps(row.usage).toFixed(1);
     console.log(
-      `[${row.name}] steps=${row.status.step} tokens: in=${row.usage.prompt} out=${row.usage.completion} total=${row.usage.total}${cost}`,
+      `[${row.name}] steps=${row.status.step} actions=${row.usage.mcpCalls} aps=${aps} tokens: in=${row.usage.prompt} out=${row.usage.completion} total=${row.usage.total}${cost}`,
     );
   }
 }

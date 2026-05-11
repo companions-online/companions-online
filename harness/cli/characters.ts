@@ -11,8 +11,11 @@ async function main(): Promise<void> {
   }
 
   const ac = new AbortController();
+  // SIGINT always ends with exit
   process.on('SIGINT', () => {
     ac.abort();
+    printFinalSummary(rows);
+    process.exit(0);
   });
 
   const rows = createCharacterRows(characters);

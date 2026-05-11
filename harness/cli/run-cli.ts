@@ -1,4 +1,4 @@
-import type { UsageAccumulator } from '../helpers/runner.js';
+import { computeAps, type UsageAccumulator } from '../helpers/runner.js';
 
 /**
  * Shared CLI plumbing: SIGINT → AbortController, error logging, exit code,
@@ -11,10 +11,13 @@ export async function runCli(
   fn: (ac: AbortController, usage: UsageAccumulator) => Promise<unknown>,
 ): Promise<void> {
   const ac = new AbortController();
-  const usage: UsageAccumulator = { prompt: 0, completion: 0, total: 0, costUsd: 0 };
+  const usage: UsageAccumulator = { prompt: 0, completion: 0, total: 0, costUsd: 0, mcpCalls: 0, startedAtMs: Date.now() };
+  // SIGINT always ends with exit
   process.on('SIGINT', () => {
     console.error(`\n[${name}] SIGINT — shutting down`);
+    printUsage(name, usage);
     ac.abort();
+    process.exit(0);
   });
   try {
     await fn(ac, usage);
@@ -28,5 +31,6 @@ export async function runCli(
 
 function printUsage(name: string, usage: UsageAccumulator): void {
   const cost = usage.costUsd > 0 ? ` cost=$${usage.costUsd.toFixed(4)}` : '';
-  console.log(`[${name}] tokens: in=${usage.prompt} out=${usage.completion} total=${usage.total}${cost}`);
+  const aps = computeAps(usage).toFixed(1);
+  console.log(`[${name}] tokens: in=${usage.prompt} out=${usage.completion} total=${usage.total} actions=${usage.mcpCalls} aps=${aps}${cost}`);
 }

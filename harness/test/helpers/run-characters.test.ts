@@ -77,6 +77,8 @@ describe('runCharacters', () => {
     expect(rows[0].status.lastToolName).toBe('memory_update');
     expect(rows[0].done).toBe(true);
     expect(rows[0].rate.rate(60_000)).toBeGreaterThan(0);
+    // Only memory_update was dispatched → harness kind, must not count as an MCP action.
+    expect(rows[0].usage.mcpCalls).toBe(0);
 
     // Hunter: 3 turns × {prompt 20, completion 6, total 26, cost 0.0013}
     expect(rows[1].usage.prompt).toBe(60);
@@ -85,6 +87,7 @@ describe('runCharacters', () => {
     expect(rows[1].usage.costUsd).toBeCloseTo(0.0039, 6);
     expect(rows[1].status.step).toBe(3);
     expect(rows[1].done).toBe(true);
+    expect(rows[1].usage.mcpCalls).toBe(0);
   }, 15_000);
 
   it('aborts all characters when the abort signal fires', async () => {

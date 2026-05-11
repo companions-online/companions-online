@@ -189,6 +189,9 @@ describe('runEval', () => {
     expect(result.stopReason).toBe('all_checkpoints');
     expect(result.score).toBe(1);
     expect(result.checkpointsHit).toEqual(['harvest_tree']);
+    // identify + harvest are real MCP tools, so mcpCalls should be > 0 and APS should be positive.
+    expect(result.mcpCallCount).toBeGreaterThanOrEqual(1);
+    expect(result.actionsPerSec).toBeGreaterThan(0);
   }, 15_000);
 
   it('stops on max_tokens when the budget is exhausted', async () => {

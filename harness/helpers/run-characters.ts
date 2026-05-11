@@ -37,7 +37,7 @@ export function createCharacterRows(characters: Character[]): CharacterRow[] {
   return characters.map((c) => ({
     name: c.prompt,
     modelLabel: c.model.model,
-    usage: { prompt: 0, completion: 0, total: 0, costUsd: 0 } as UsageAccumulator,
+    usage: { prompt: 0, completion: 0, total: 0, costUsd: 0, mcpCalls: 0, startedAtMs: Date.now() } as UsageAccumulator,
     rate: createRateTracker(),
     status: { step: 0 },
     done: false,

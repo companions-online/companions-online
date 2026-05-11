@@ -21,6 +21,16 @@ export interface UsageAccumulator {
   total: number;
   /** Cumulative dollars billed (sum of `usage.cost` per turn; 0 when provider doesn't report cost). */
   costUsd: number;
+  /** Count of MCP tool calls dispatched (game actions). Harness-local tools excluded. */
+  mcpCalls: number;
+  /** Wall-clock ms when this accumulator was created — anchor for cumulative APS. */
+  startedAtMs: number;
+}
+
+/** Cumulative actions/sec (MCP calls per second since the accumulator was created). */
+export function computeAps(u: UsageAccumulator, nowMs: number = Date.now()): number {
+  const elapsedMs = Math.max(1, nowMs - u.startedAtMs);
+  return (u.mcpCalls * 1000) / elapsedMs;
 }
 
 /**
@@ -136,6 +146,8 @@ export async function runHarness<S>(
         dispatched = { text: `ERROR: ${errText}`, raw: null, isError: true, kind: 'mcp' };
       }
       log.event('tool_result', { step: stepCount, callId: call.id, result: dispatched });
+
+      if (opts.usage && dispatched.kind === 'mcp') opts.usage.mcpCalls++;
 
       strategy.onToolResult(state, { step: stepCount, call, dispatched, inlineText, assistantMsg });
     }
