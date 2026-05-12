@@ -25,11 +25,7 @@ handful of actions you do. The world doesn't know which players are human.
 
 ## Gameplay
 
-
-
-Uploading co-demo-web.mp4…
-
-
+https://github.com/user-attachments/assets/8e4d0783-1d30-4f84-b19e-f259317aebf3
 
 
 A survival sandbox on a procedurally-generated island. Spawn, gather wood and
