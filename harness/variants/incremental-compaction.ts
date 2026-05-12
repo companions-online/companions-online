@@ -24,7 +24,7 @@ export type { RunVariantOpts, VariantResult, StopReason } from '../helpers/runne
  * Override per-model by adding `"incrementalCompactionMaxTokens": <n>` to the
  * model config JSON.
  */
-export const DEFAULT_MAX_TOKENS = 30_000;
+export const DEFAULT_MAX_TOKENS = 10_000;
 
 const COMPACTION_PROMPT_FILE = 'compaction-prompt.md';
 

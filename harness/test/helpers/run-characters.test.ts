@@ -53,7 +53,7 @@ describe('runCharacters', () => {
 
     const rows = createCharacterRows(characters);
     expect(rows.map(r => r.name)).toEqual(['princess', 'hunter']);
-    expect(rows.every(r => r.usage.costUsd === 0 && r.status.step === 0)).toBe(true);
+    expect(rows.every(r => r.usage.costUsd === 0 && r.progress.step === 0 && r.status === 'running')).toBe(true);
 
     const deciders = [
       new ScriptedDecider('princess', { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, cost: 0.0007 }),
@@ -73,9 +73,9 @@ describe('runCharacters', () => {
     expect(rows[0].usage.completion).toBe(12);
     expect(rows[0].usage.total).toBe(42);
     expect(rows[0].usage.costUsd).toBeCloseTo(0.0021, 6);
-    expect(rows[0].status.step).toBe(3);
-    expect(rows[0].status.lastToolName).toBe('memory_update');
-    expect(rows[0].done).toBe(true);
+    expect(rows[0].progress.step).toBe(3);
+    expect(rows[0].progress.lastToolName).toBe('memory_update');
+    expect(rows[0].status).toBe('done');
     expect(rows[0].rate.rate(60_000)).toBeGreaterThan(0);
     // Only memory_update was dispatched → harness kind, must not count as an MCP action.
     expect(rows[0].usage.mcpCalls).toBe(0);
@@ -85,8 +85,8 @@ describe('runCharacters', () => {
     expect(rows[1].usage.completion).toBe(18);
     expect(rows[1].usage.total).toBe(78);
     expect(rows[1].usage.costUsd).toBeCloseTo(0.0039, 6);
-    expect(rows[1].status.step).toBe(3);
-    expect(rows[1].done).toBe(true);
+    expect(rows[1].progress.step).toBe(3);
+    expect(rows[1].status).toBe('done');
     expect(rows[1].usage.mcpCalls).toBe(0);
   }, 15_000);
 
@@ -123,9 +123,47 @@ describe('runCharacters', () => {
     });
 
     expect(result.failures).toEqual([]);
-    expect(rows.every(r => r.done)).toBe(true);
+    expect(rows.every(r => r.status === 'done')).toBe(true);
     // Both characters should have completed at least one turn before abort.
-    expect(rows[0].status.step).toBeGreaterThanOrEqual(1);
-    expect(rows[1].status.step).toBeGreaterThanOrEqual(1);
+    expect(rows[0].progress.step).toBeGreaterThanOrEqual(1);
+    expect(rows[1].progress.step).toBeGreaterThanOrEqual(1);
+  }, 15_000);
+
+  it('retries the decider on transient errors without exiting the run', async () => {
+    mcp = await startTestMcpServer();
+    process.env.MCP_URL = mcp.url;
+
+    const characters: Character[] = [
+      { prompt: 'princess', harness: 'baseline', model: { type: 'model', model: 'test/mock-a' } },
+    ];
+    const rows = createCharacterRows(characters);
+
+    // Flaky decider: throws on the first two calls, succeeds afterwards.
+    let throws = 0;
+    const flaky: Decider = {
+      async decide(): Promise<DecideResult> {
+        if (throws < 2) { throws++; throw new Error(`simulated 503 #${throws}`); }
+        return {
+          message: { role: 'assistant', content: null, tool_calls: [{
+            id: `c-${throws}`, type: 'function',
+            function: { name: 'memory_update', arguments: JSON.stringify({ content: 'ok' }) },
+          }] },
+          usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+        };
+      },
+    };
+
+    const result = await runCharacters(characters, rows, {
+      deciders: [flaky],
+      logger: createNoopLogger(),
+      maxSteps: 1,
+      deciderRetryDelaysMs: [5, 5, 5],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(throws).toBe(2);
+    expect(rows[0].progress.step).toBe(1);
+    // Final liveness after the run is 'done'; in-flight it transitioned through 'retry'.
+    expect(rows[0].status).toBe('done');
   }, 15_000);
 });

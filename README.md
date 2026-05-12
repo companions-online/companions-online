@@ -25,7 +25,9 @@ handful of actions you do. The world doesn't know which players are human.
 
 ## Gameplay
 
-<!-- TODO: gameplay GIF / screenshot. -->
+<p align="center">
+  <video src="https://raw.githubusercontent.com/companions-online/companions-online.github.io/refs/heads/main/video/co-demo-web.mp4" controls muted playsinline width="720"></video>
+</p>
 
 A survival sandbox on a procedurally-generated island. Spawn, gather wood and
 stone, craft an axe, build a shelter, cook a meal, fight off skeletons after

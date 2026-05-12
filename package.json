@@ -15,7 +15,7 @@
     "build:client-gl": "tsx client-webgl/build.ts",
     "dev:guide": "npm --prefix user-guide install && npm --prefix user-guide start -- --no-open",
     "build:guide": "npm run build:client-gl && npm --prefix user-guide install && npm --prefix user-guide run build",
-    "sync:guide": "rsync -a --delete --exclude='.git' ./docs/ ../docs/",
+    "sync:guide": "rsync -a --delete --exclude='.git' --exclude='video' ./docs/ ../docs/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

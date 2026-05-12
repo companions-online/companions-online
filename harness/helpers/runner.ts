@@ -5,6 +5,17 @@ import type { RateTracker } from './rate-tracker.js';
 
 export type StopReason = 'aborted' | 'max_steps' | 'host_stop' | 'completed';
 
+/** Tri-state liveness signal surfaced to hosts (e.g. the multi-character dashboard). */
+export type RunStatus = 'running' | 'retry' | 'done';
+
+/**
+ * Backoff schedule for decider retries: 1s, 3s, 5s, 5s, 5s, … The runner
+ * computes the delay as `delays[Math.min(attempt-1, delays.length-1)]`, so
+ * attempt 1 waits 1s, attempt 2 waits 3s, attempts 3+ wait 5s. No upper
+ * bound on attempts — `decider.decide` is retried forever.
+ */
+export const DECIDER_RETRY_DELAYS_MS: readonly number[] = [1000, 3000, 5000];
+
 export interface VariantResult {
   stepCount: number;
   stopReason: StopReason;
@@ -56,6 +67,10 @@ export interface RunVariantOpts extends BootstrapOpts {
   usage?: UsageAccumulator;
   /** Trailing-window completion-token tracker, pushed once per turn for live tps display. */
   rate?: RateTracker;
+  /** Host hook for liveness state — flips to 'retry' during decider backoff, back to 'running' on successful decide. The host owns the 'done' transition. */
+  setStatus?: (s: RunStatus) => void;
+  /** Test-only retry schedule override. Defaults to `DECIDER_RETRY_DELAYS_MS`. */
+  deciderRetryDelaysMs?: readonly number[];
 }
 
 export interface ToolResultCtx {
@@ -87,6 +102,25 @@ function shortText(text: string | null | undefined, max = 120): string {
   return clean.length <= max ? clean : clean.slice(0, max - 1) + '…';
 }
 
+/**
+ * Sleep for `ms`, resolving early (with `true`) if `signal` aborts. Used for
+ * decider-retry backoff so an abort during a 5s wait doesn't get swallowed.
+ */
+function sleepInterruptible(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(false);
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export async function runHarness<S>(
   strategy: VariantStrategy<S>,
   opts: RunVariantOpts,
@@ -107,13 +141,27 @@ export async function runHarness<S>(
     const tools = dispatcher.buildOpenAITools();
     log.event('request', { step: stepCount, messages, tools });
 
-    let result;
-    try {
-      result = await decider.decide({ messages, tools });
-    } catch (e) {
-      log.event('decider_error', { step: stepCount, error: String((e as Error).message ?? e) });
-      throw e;
+    // Infinite retry on transient decider failures (e.g. provider 503).
+    // Agents never give up: the host can stop us via abort or `onTurnComplete`.
+    const delays = opts.deciderRetryDelaysMs ?? DECIDER_RETRY_DELAYS_MS;
+    let result: Awaited<ReturnType<typeof decider.decide>> | undefined;
+    let attempt = 0;
+    let aborted = false;
+    while (result === undefined) {
+      try {
+        result = await decider.decide({ messages, tools });
+      } catch (e) {
+        attempt++;
+        const errText = String((e as Error).message ?? e);
+        const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+        log.event('decider_error', { step: stepCount, attempt, delayMs: delay, error: errText });
+        opts.setStatus?.('retry');
+        log.stdout(`decider error (attempt ${attempt}); retrying in ${delay}ms: ${shortText(errText)}`);
+        if (await sleepInterruptible(delay, opts.abortSignal)) { aborted = true; break; }
+      }
     }
+    if (aborted || !result) { stopReason = 'aborted'; break; }
+    opts.setStatus?.('running');
     const { message: assistantMsg, usage } = result;
     log.event('response', { step: stepCount, assistantMsg, usage });
 

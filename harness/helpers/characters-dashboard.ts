@@ -1,4 +1,4 @@
-import { computeAps, type UsageAccumulator } from './runner.js';
+import { computeAps, type RunStatus, type UsageAccumulator } from './runner.js';
 import type { RateTracker } from './rate-tracker.js';
 
 export interface CharacterRow {
@@ -6,8 +6,10 @@ export interface CharacterRow {
   modelLabel: string;
   usage: UsageAccumulator;
   rate: RateTracker;
-  status: { step: number; lastToolName?: string; lastInlineText?: string };
-  done: boolean;
+  /** Per-turn progress: which step the character is on, and what it just did. */
+  progress: { step: number; lastToolName?: string; lastInlineText?: string };
+  /** Liveness: 'running' while active, 'retry' during decider backoff, 'done' after runHarness exits. */
+  status: RunStatus;
 }
 
 export interface Dashboard {
@@ -34,12 +36,12 @@ function renderRow(row: CharacterRow): string {
   const aps = computeAps(row.usage);
   const name = row.name.padEnd(10);
   const model = truncate(row.modelLabel, 32).padEnd(32);
-  const step = String(row.status.step).padStart(5);
+  const step = String(row.progress.step).padStart(5);
   const tpsStr = tps.toFixed(1).padStart(8);
   const apsStr = aps.toFixed(1).padStart(8);
   const tok = String(row.usage.completion).padStart(7);
   const cost = `$${row.usage.costUsd.toFixed(4)}`.padStart(9);
-  const tag = row.done ? ' done' : '';
+  const tag = row.status === 'running' ? '' : ` ${row.status}`;
   return ` ${name} ${model}  ${step}  ${tpsStr}  ${apsStr}  ${tok}  ${cost}${tag}`;
 }
 
@@ -89,7 +91,7 @@ export function printFinalSummary(rows: CharacterRow[]): void {
     const cost = row.usage.costUsd > 0 ? ` cost=$${row.usage.costUsd.toFixed(4)}` : '';
     const aps = computeAps(row.usage).toFixed(1);
     console.log(
-      `[${row.name}] steps=${row.status.step} actions=${row.usage.mcpCalls} aps=${aps} tokens: in=${row.usage.prompt} out=${row.usage.completion} total=${row.usage.total}${cost}`,
+      `[${row.name}] steps=${row.progress.step} actions=${row.usage.mcpCalls} aps=${aps} tokens: in=${row.usage.prompt} out=${row.usage.completion} total=${row.usage.total}${cost}`,
     );
   }
 }

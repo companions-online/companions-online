@@ -24,6 +24,8 @@ export interface RunCharactersOpts {
   logger?: Logger;
   /** Test-only step cap forwarded to each variant. */
   maxSteps?: number;
+  /** Test-only retry-backoff override forwarded to each variant. */
+  deciderRetryDelaysMs?: readonly number[];
 }
 
 export interface RunCharactersResult {
@@ -41,8 +43,8 @@ export function createCharacterRows(characters: Character[]): CharacterRow[] {
     modelLabel: c.model.model,
     usage: { prompt: 0, completion: 0, total: 0, costUsd: 0, mcpCalls: 0, startedAtMs: Date.now() } as UsageAccumulator,
     rate: createRateTracker(),
-    status: { step: 0 },
-    done: false,
+    progress: { step: 0 },
+    status: 'running',
   }));
 }
 
@@ -93,11 +95,15 @@ async function runOne(
       maxSteps: opts.maxSteps,
       usage: row.usage,
       rate: row.rate,
+      deciderRetryDelaysMs: opts.deciderRetryDelaysMs,
       onTurnComplete: ({ step, lastToolName, lastInlineText }) => {
-        row.status = { step, lastToolName, lastInlineText };
+        row.progress = { step, lastToolName, lastInlineText };
+      },
+      setStatus: (s) => {
+        row.status = s;
       },
     });
   } finally {
-    row.done = true;
+    row.status = 'done';
   }
 }
